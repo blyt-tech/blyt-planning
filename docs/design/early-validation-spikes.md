@@ -39,6 +39,10 @@ non-trivial retro-era game loop leaves at least half the frame budget (~8 ms)
 for subsystem overhead not modelled by the benchmarks. Published RV32 soft-
 core scores provide a useful reference baseline.
 
+**Secondary output:** The measured effective MIPS figure from this spike
+becomes the emulator MIPS cap baked into all emulator builds (ADR-0082).
+Until this spike runs, the cap is unset and emulators run at full host speed.
+
 **Platform:** Raspberry Pi Zero 2 W or equivalent Cortex-A53 device.
 
 ---
