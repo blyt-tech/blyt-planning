@@ -78,17 +78,60 @@ toggle. This allows players who always need subtitles to enable them
 immediately without navigating each cart's options, and to turn them off
 just as quickly regardless of what any individual cart has configured.
 
+### Automatic subtitle rendering
+
+Each speech resource is associated with a locale key at pack time. When a
+speech line plays and subtitles are active, the runtime automatically
+renders the locale-resolved subtitle text as an overlay — no cart code
+required. Carts that want custom subtitle presentation (different position,
+font, styling) can suppress the automatic overlay and render manually using
+`fc_subtitles_active()` as before.
+
+This means subtitle support is an accessibility guarantee at the platform
+level: any cart that uses the speech API gets subtitles for free. The cart
+author only needs to provide the locale key text (which they must do anyway
+for localisation); subtitle display follows automatically from the player's
+preference.
+
+Subtitles also work in languages for which no dubbed audio exists: a cart
+dubbed only in English will still show subtitle text in French, Japanese, or
+any other language present in the locale data, without additional audio
+assets.
+
+### Speech pacing preference (cart-cooperative)
+
+An accessibility preference — "pause before next line" — lets players read
+each subtitle at their own pace before continuing. When enabled, the
+expected flow is: speech line plays and completes → subtitle remains
+visible → player presses a confirm button → cart proceeds to the next line.
+
+The runtime cannot implement this automatically because the cart controls
+when it calls `console.speech.play()` for the next line. The runtime
+provides:
+
+- A readable preference (`FC_PREF_SPEECH_WAIT_FOR_ACK` or equivalent).
+- A query `console.subtitles.waiting()` — true when subtitles are visible
+  and the pacing preference is on, indicating the cart should hold before
+  advancing.
+
+Cart code checks `console.subtitles.waiting()` in its dialogue sequencing
+logic and waits for a button press before playing the next line. Carts that
+do not check this preference are unaffected; the feature only works in
+carts that opt in to honouring it.
+
 ### Lua
 
 ```lua
+-- Subtitles render automatically when active — no cart code needed.
 local voice = console.speech.play(R_LINE_HELLO)
 
--- In update:
+-- In update (lip sync only — subtitles handled by runtime):
 local shape = voice:mouth_shape()  -- "A".."X"
 mouth_sprite:blit(MOUTH_FRAMES[shape], mx, my)
 
+-- Custom subtitle rendering (suppresses automatic overlay):
 if console.subtitles.active() then
-  console.text.draw(subtitle_text, 10, 220)
+  console.text.draw(L.LINE_HELLO, 10, 220, { style = "my_subtitle_style" })
 end
 ```
 

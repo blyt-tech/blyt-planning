@@ -40,7 +40,8 @@ protocol; `console watch` signals hot reload via this same connection using
 a custom DAP command.
 
 **`console new myproject`** creates a project with:
-- Pre-configured manifest, VS Code workspace, recommended extensions.
+- Pre-configured manifest with `size_class: standard` (ADR-0030 default),
+  VS Code workspace, and recommended extensions.
 - Starter Lua or native-cart code with inline comments explaining the API.
 - Example sprite sheet, tilemap, tracker module in correct formats — a
   runnable "hello world" game the author modifies.

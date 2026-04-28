@@ -9,3 +9,5 @@ dev-mode instrumentation that compiles away to nothing in release builds.
 | [0044](0044-cli-packer-vscode-dev-loop.md) | CLI packer and VS Code dev loop |
 | [0045](0045-hot-reload-via-save-restore.md) | Hot reload via the save/restore mechanism |
 | [0065](0065-dev-instrumentation-noop-in-release.md) | Dev instrumentation — fc_dev_* as no-ops in release builds |
+| [0074](0074-dev-mode-rewind-capture.md) | Dev-mode rewind capture for debugging |
+| [0080](0080-build-and-dev-platform-targets.md) | Build and development platform targets |

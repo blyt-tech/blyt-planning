@@ -35,6 +35,17 @@ Layout schema is encoded in the `.cart.config` ELF section, readable by the
 runtime at load time — enabling migration (ADR-0045 hot reload) and
 cross-platform compatibility.
 
+**NaN canonicalization on f32 field writes.** Writing a NaN value to an f32
+state buffer field canonicalizes it to `0x7FC00000` — the RISC-V canonical
+NaN (positive quiet NaN, zero mantissa payload), which x86 and ARM also
+produce as their default NaN. This prevents cross-platform divergence from
+NaN payload bits, which are architecturally meaningless but not bit-identical
+across implementations. In dev mode, a NaN write additionally triggers a
+warning with the source location ("NaN written to `enemies.x[3]`") — NaN
+in game state is almost always a bug in upstream arithmetic, and silent
+canonicalization should not mask it during development. In release builds
+the canonicalization is silent.
+
 ## Consequences
 
 - Save/load is essentially memcpy of tracked regions — simple, fast,

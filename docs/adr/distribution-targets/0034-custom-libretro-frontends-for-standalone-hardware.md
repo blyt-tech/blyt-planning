@@ -24,6 +24,15 @@ provides a branded experience. The options were:
 and hardware distribution. This is not RetroArch — it is a separate program
 using `libretro-common` (MIT-licensed) to host the libretro core.
 
+**Desktop platform targets: Windows, macOS, and Linux.** If the standalone
+frontend ships on Linux it must ship on Windows and macOS too — they are the
+same codebase and SDL2 handles the platform differences. Primary development
+is on macOS, so it is the first-class dev and test platform; Linux and
+Windows are built and tested in CI. macOS distribution requires code signing
+and notarization; Windows distribution is a zip or installer. All three
+use the same SDL2 display/input/audio backend; no per-platform frontend
+logic is expected.
+
 **What the custom frontend provides:**
 - Branded boot experience (startup chime, splash, console identity).
 - Cart picker UI (browse local carts, launch with one action).

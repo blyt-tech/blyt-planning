@@ -13,3 +13,4 @@ shake, pause menu, credits).
 | [0061](0061-palette-cycling.md) | Palette cycling — manifest-declared, auto-advancing |
 | [0064](0064-pause-menu-credits-quit.md) | Pause menu, credits, and quit — runtime-provided with manifest declaration |
 | [0014](0014-manifest-declared-achievements.md) | Achievements — deferred to a future version |
+| [0075](0075-gameplay-capture.md) | Gameplay capture — GIF and screenshot |

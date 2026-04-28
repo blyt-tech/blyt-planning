@@ -25,3 +25,6 @@ work as structural properties of the system rather than bolt-ons.
 | [0032](0032-major-minor-api-versioning.md) | Major.minor API versioning |
 | [0037](0037-fixed-timestep-main-loop.md) | Fixed-timestep main loop with accumulator |
 | [0038](0038-two-layer-sandboxing.md) | Two-layer sandboxing — RISC-V ABI and Lua environment |
+| [0076](0076-draw-is-read-only.md) | draw() is read-only over tracked state |
+| [0078](0078-frozen-major-version-api-layers.md) | Frozen major-version API layers — backwards-compatible runtime subsystem |
+| [0081](0081-text-mode-deferred.md) | Text mode — 80×30 character grid at 640×480 (deferred, v1.5+) |
