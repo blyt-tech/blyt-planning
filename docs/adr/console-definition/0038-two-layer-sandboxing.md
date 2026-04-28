@@ -1,0 +1,71 @@
+# ADR-0038: Two-layer sandboxing — RISC-V ABI and Lua environment
+
+## Status
+Accepted
+
+## Context
+
+Carts are third-party code; the runtime must protect the host system from
+malicious or buggy carts. Sandboxing at a single layer (e.g., only at the
+Lua level) would leave native carts unsandboxed. Sandboxing only at the
+RISC-V level would leave Lua carts able to reach the host via Lua's standard
+library (`os`, `io`, `require`, etc.) — unless the Lua environment is also
+restricted.
+
+## Decision
+
+Two layers of sandboxing. The host enforces one; the VM enforces the other.
+
+**Layer 1: RISC-V ABI sandbox (applies to all carts, enforced by the host).**
+
+Every cart is a RISC-V ELF running in a controlled execution environment.
+The cart can only affect the outside world via ECALL (invoking the console
+API). On emulated platforms, the RISC-V interpreter bounds-checks memory
+accesses. On real RISC-V hardware, the runtime relies on Linux userspace
+isolation for the cart process.
+
+Carts cannot: access the host filesystem, open network sockets, read memory
+outside allocated regions, execute privileged instructions, or escape via
+side channels. Any API call with external effects goes through the ECALL
+surface, which is the complete host-level audit boundary.
+
+**Layer 2: Lua environment sandbox (applies to Lua carts, enforced inside
+the VM by the Lua interpreter itself).**
+
+Because the Lua interpreter runs inside the RISC-V sandbox (ADR-0025), the
+host never sees Lua API calls directly — they are ordinary function calls
+within the VM. The Lua environment is configured before cart code runs to
+strip dangerous standard library access:
+
+- **Removed:** `os`, `io`, `package`, `require`, `loadfile`, `dofile`,
+  `debug` (mostly) — anything reaching the host filesystem or OS.
+- **Kept:** `string`, `table`, `math` (with console's deterministic
+  transcendentals), `coroutine`, basic globals.
+- **Console-provided:** graphics, audio, input, state, resource loading,
+  time, RNG, deterministic math — all via ECALL.
+
+The `debug` library is not exposed, so authors cannot escape the sandbox
+via `debug.getinfo` into C land.
+
+**Combined effect:** a Lua cart is sandboxed at the RISC-V level (what the
+cart's binary can do on the host) and at the Lua level (what the Lua script
+can see within the VM). A native cart is sandboxed only at the RISC-V level,
+which is sufficient. The RISC-V boundary is the single consistent host-level
+security perimeter for all carts.
+
+## Consequences
+
+- Carts can be distributed and run without trust in the author.
+- The ECALL surface is the complete host security boundary; auditing what
+  carts can do means auditing the ECALL list.
+- Lua sandboxing is now the VM's own responsibility. The host runtime has no
+  Lua-specific security logic; it does not need to know whether a cart is
+  implemented in Lua or native code.
+- Lua authors lose access to `os.time`, `os.clock`, `io.open`, `require`,
+  and `pcall` on dynamically loaded modules. Console equivalents are provided
+  where needed.
+- The Lua sandbox is enforced at VM configuration time (dangerous globals are
+  simply not defined in the initial environment); it is not bypassable from
+  script.
+- On hardware, Linux process isolation supplements the RISC-V memory layout
+  controls — belt-and-suspenders for the native execution path.

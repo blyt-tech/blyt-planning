@@ -709,26 +709,22 @@ signals unlock.
 
 **Cart manifest:**
 
-```
--- cart.manifest snippet
-achievements = {
-  final_boss = {
-    name = "Regicide",
-    description = "Defeat the Shadow King",
-    icon = "crown"          -- references cart resource
-  },
-  flawless = {
-    name = "Untouchable",
-    description = "Complete the game without taking damage",
-    hidden = true           -- shown as ??? until unlocked
-  },
-  collector = {
-    name = "Completionist",
-    description = "Collect all 100 artifacts",
-    -- optional progress metadata for runtime browser display
-    progress = {current = 0, total = 100}
-  },
-}
+```yaml
+# cart.config.yaml
+achievements:
+  final_boss:
+    name_key:    ach.final_boss.name
+    desc_key:    ach.final_boss.desc
+    icon:        crown            # references cart resource
+  flawless:
+    name_key:    ach.flawless.name
+    desc_key:    ach.flawless.desc
+    hidden:      true             # shown as ??? until unlocked
+  collector:
+    name_key:    ach.collector.name
+    desc_key:    ach.collector.desc
+    # optional progress metadata for runtime browser display
+    progress:    { current: 0, total: 100 }
 ```
 
 **Cart API:**
@@ -886,12 +882,16 @@ Steam's achievement API; subscribes to "save written" and triggers
 Steam Cloud sync for that cart's save directory; etc. Cart and
 runtime know nothing about Steam.
 
-*2. Stable cart identity.*
+*2. Frontend-owned cart identity.*
 
-Cart manifest declares a permanent `cart_id` used for save directories
-and service keying. Services identify content by some ID; the cart's
-manifest ID maps to Steam app IDs, GOG entitlements, itch.io game IDs,
-etc. This is already planned for save directories.
+Carts carry no `cart_id` field. Each distribution channel keys saves
+and service entitlements with the identifier native to that channel —
+Steam app ID, GOG product ID, itch.io game ID, etc. Standalone
+frontends pick a scheme appropriate for how they store carts (a
+path-derived key, a user-named slot, or a content hash). Avoiding a
+global cart-id namespace removes the coordination/collision problems
+that come with one and lets each service use its existing identity
+model unchanged.
 
 *3. Cart save directories are filesystem-visible.*
 
@@ -1208,11 +1208,11 @@ for each player regardless of source. Everything else runs identically.
 The frontend uses cart manifest data to present netplay UI — cart name,
 icon, supported player count, etc.
 
-```
--- cart.manifest snippet
-name = "Party Brawler"
-min_players = 2
-max_players = 4
+```yaml
+# cart.info.yaml
+title:       Party Brawler
+min_players: 2
+max_players: 4
 ```
 
 The frontend reads this before loading to populate lobby displays
@@ -1377,8 +1377,10 @@ to see and join rooms with one button press. The lobby is purely a
 discovery mechanism — actual game traffic is peer-to-peer.
 
 Rooms are identified by core + game. For the console, the game
-identifier is `cart_id + cart_version` from the cart manifest. Players
-need matching carts (same `cart_id` and version) to join a room.
+identifier is the BLAKE3-256 hash of the loaded cart binary. Players
+need byte-identical carts to join a room. The cart's display title
+(taken from `cart.info`) is also broadcast for UI; only the hash is
+used for matching.
 
 NAT traversal: RetroArch uses UPnP to open the host's port (TCP 55435
 default). If UPnP fails, a "Relay Server" option proxies traffic
@@ -1452,8 +1454,9 @@ happy to use RetroArch.
 - UDP broadcast on a chosen port, periodic (~1-2 second intervals)
   while hosting.
 - UDP listener on the same port, receiving broadcasts while browsing.
-- Broadcast payload: cart_id, cart_version, host name, player count
-  (current/max), host IP.
+- Broadcast payload: cart binary hash (BLAKE3-256), cart title (display
+  only, taken from `cart.info`), host name, player count (current/max),
+  host IP.
 - Listener maintains a list of discovered hosts with last-seen
   timestamps; hosts aged out after ~5 seconds without broadcasts.
 
@@ -1471,9 +1474,12 @@ happy to use RetroArch.
   show rejoin option. Host disconnect: clients see "session ended."
 
 *Cart compatibility check:*
-- Join attempt includes joining client's cart_id + cart_version.
-- Host validates match before accepting. Mismatch returns clear error
-  ("you have cart version 1.0.2; host has 1.0.3").
+- Join attempt includes the joining client's cart hash.
+- Host accepts only when hashes match exactly. Mismatch returns a clear
+  error ("your cart does not match the host's cart"). Hashing the loaded
+  binary is stricter than a developer-declared id+version — there is no
+  way for two builds to claim the same identity, and authors do not need
+  to remember to bump a version field.
 
 *Connection protocol:*
 - Uses libretro-common's netplay infrastructure for input exchange
@@ -1618,15 +1624,20 @@ one distribution story.
 - Single file (`.cart`).
 - Standard ELF structure (RV32IMFC, little-endian, statically linked).
 - Resources embedded in ELF sections under the `.cart.*` namespace.
-- Metadata (title, author, API version, content type, size class) in a
-  `.cart.manifest` section.
+- Metadata distributed across `.cart.info` (frontend-facing — title, author,
+  API version, size class, etc.) and `.cart.config` (runtime-facing — state
+  buffer schemas, voice groups, achievements, etc.); see ADR-0073.
 - Size-class-based caps (see "Size-class-based cart caps" decision below).
 
 **ELF section conventions:**
 - `.text`, `.data`, `.bss`, `.rodata` — standard code and data.
-- `.cart.manifest` — cart metadata.
-- `.cart.layouts` — state buffer layout declarations (readable by the
-  runtime at load time).
+- `.cart.info` — frontend-readable cart metadata, FlatBuffers compiled from
+  `cart.info.yaml` (ADR-0073).
+- `.cart.config` — runtime-readable configuration (state buffer schemas,
+  voice groups, achievements, etc.), FlatBuffers compiled from
+  `cart.config.yaml` (ADR-0073).
+- `.cart.lua` — Lua-specific runtime configuration, present only in Lua
+  carts; read by `liblua.rv32` (ADR-0073).
 - `.cart.resources` — single section containing a directory of named
   resources (sprites, tilemaps, tracker modules, sample sets, Lua
   source, etc.), accessed by name through the resource API.
@@ -1820,9 +1831,9 @@ Resources the cart always needs (primary font, main palette,
 player sprites, UI elements) can be declared persistent in the
 cart manifest:
 
-```
--- cart.manifest snippet
-persistent_resources = ["font_ui", "palette_main", "player_sprites"]
+```yaml
+# cart.config.yaml
+persistent_resources: [font_ui, palette_main, player_sprites]
 ```
 
 Persistent resources load automatically at cart init and remain in
@@ -1875,9 +1886,9 @@ file size on disk.
 
 **Cart manifest declaration:**
 
-```
--- cart.manifest snippet
-size_class = "large"
+```yaml
+# cart.info.yaml
+size_class: large
 ```
 
 **Rationale:**
@@ -1918,10 +1929,10 @@ size class, this captures the cart's nature on two orthogonal axes.
 
 **Manifest declaration:**
 
-```
--- cart.manifest snippet
-size_class = "demo"
-interactive = false
+```yaml
+# cart.info.yaml
+size_class:  demo
+interactive: false
 ```
 
 **Two settings:**
@@ -1936,10 +1947,10 @@ interactive = false
 
 **Additional non-interactive-only manifest fields:**
 
-```
--- when interactive = false
-duration_hint = "2m30s"      -- optional: approximate duration
-loops = true                 -- default true; false means defined ending
+```yaml
+# cart.info.yaml — when interactive: false
+duration_hint: 2m30s    # optional: approximate duration
+loops:         true     # default true; false means defined ending
 ```
 
 Loop behavior:
@@ -2007,9 +2018,9 @@ handle the streaming/working-set management for larger carts.
 
 ### Decision: Major.minor API versioning.
 
-Cart declares target API version in the `.cart.manifest` section.
-Runtime refuses carts requiring a newer major version. Minor bumps are
-backward-compatible feature additions.
+Cart declares target API version in `cart.info.yaml` (compiled to the
+`.cart.info` ELF section). Runtime refuses carts requiring a newer major
+version. Minor bumps are backward-compatible feature additions.
 
 ---
 
@@ -2696,10 +2707,10 @@ experience but can still play.
 
 **Cart-declared touch shoulder style (manifest):**
 
-```
--- cart.manifest snippet
-touch_scheme = "virtual_gamepad_classic"
-touch_shoulder_style = "corner_buttons"  -- or "long_press" or "custom"
+```yaml
+# cart.config.yaml
+touch_scheme:         virtual_gamepad_classic
+touch_shoulder_style: corner_buttons   # or long_press or custom
 ```
 
 - `corner_buttons` (default): small L and R buttons in the corners of
@@ -2739,17 +2750,20 @@ unused controls entirely.
 
 **Manifest syntax:**
 
+```yaml
+# cart.config.yaml
+inputs_used: [dpad, button_a, button_b, start]
 ```
--- cart.manifest snippet
-inputs_used = ["dpad", "button_a", "button_b", "start"]
 
--- or with labels for tooltips / prompts:
-inputs_used = {
-  dpad = "Move",
-  button_a = "Jump",
-  button_b = "Attack",
-  start = "Pause",
-}
+Or with labels for tooltips / prompts:
+
+```yaml
+# cart.config.yaml
+inputs_used:
+  dpad:     Move
+  button_a: Jump
+  button_b: Attack
+  start:    Pause
 ```
 
 **Group keywords** expand to their members: `dpad` = 4 directions,

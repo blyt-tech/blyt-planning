@@ -1,0 +1,54 @@
+# ADR-0030: Size-class-based cart caps
+
+## Status
+Accepted
+
+## Context
+
+A single cart size cap would either be too loose for small games (reducing
+constraint pressure) or too tight for ambitious projects. Games genuinely need
+different storage budgets: a jam game fits in 2 MB; a full voice-acted
+adventure needs 60+ MB.
+
+A variable cap declared by the author was considered — but without named
+tiers, there is no cultural meaning attached to scope, no cataloging axis for
+players, and no natural community around a particular size discipline.
+
+## Decision
+
+Carts declare a **size class** in their manifest. The packer enforces the cap
+for that class. The runtime treats all classes identically at runtime (same
+memory budget, same API, same format); the class determines only the maximum
+cart file size on disk.
+
+| Class | Cap | Typical use |
+|-------|-----|-------------|
+| **Demo** | 256 KB | Demoscene-style intros, generative art, coding exercises |
+| **Mini** | 2 MB | Short jam games, chiptune/tracker only, Lua-only carts |
+| **Standard** | 16 MB | Full platformer, puzzle game, short RPG, text-only adventure |
+| **Large** | 64 MB | Voice-acted adventures, mid-length RPGs (Day of the Tentacle scale) |
+| **Flagship** | 256 MB | Commercial-indie-scope (Grim Fandango scale, 7+ hours voice) |
+
+The Demo class deliberately sits close to demoscene-tradition tight-size
+categories. After baseline overhead (~20–30 KB), a Demo cart has ~200 KB of
+content budget — enough for compressed Lua, a small sprite atlas, and a
+tracker module. Sub-tiers (`demo-64k`, `demo-4k`) can be added if community
+demand emerges, without breaking existing Demo carts.
+
+## Consequences
+
+- Different scope games have appropriate caps; no single cap compromises both
+  ends.
+- Declared scope signals design intent and invites appropriate critique
+  ("remarkable amount packed into Mini").
+- Size class becomes a discovery and cataloging axis: players can filter
+  ("show me Mini carts for quick play").
+- Runtime behavior (memory budget, API access) is identical across classes —
+  a Mini and a Flagship run in the same 32 MB runtime budget; the class
+  determines on-disk size, not runtime capability.
+- Opus streamed audio (ADR-0004) is restricted to Large and Flagship classes
+  at packer enforcement time.
+- Browser load time scales with cart size; this is surfaced in cart metadata
+  so players can set expectations.
+- The day-of-the-tentacle-scale calibration check: ~62–81 MB for 3.5 hours
+  of dialog at 8–11 kHz ADPCM + music + art + code — fits in Large.
