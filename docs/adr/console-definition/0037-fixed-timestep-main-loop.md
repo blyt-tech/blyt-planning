@@ -35,9 +35,14 @@ with smooth presentation.
   severe overrun degrades gracefully to slow-motion gameplay rather than
   spiraling.
 - **Watchdog:** a single `update` call exceeding a hard time limit (e.g.,
-  2 seconds) terminates the cart with a diagnostic. Enforced via Lua
-  instruction-count hook for Lua carts; emulator-level for native carts;
-  acknowledged as a limitation on bare RISC-V hardware.
+  2 seconds) terminates the cart with a diagnostic. Enforced via
+  emulator-level instruction budget for all carts on emulated platforms;
+  OS timer (`SIGALRM` or equivalent) for all carts on real RISC-V
+  hardware. A Lua instruction-count hook is not used: because Lua runs as
+  a RISC-V library inside the emulator (ADR-0025), Lua carts are
+  indistinguishable from native carts at the emulator level, and a
+  hook-based abort would travel through Lua's error system where `pcall`
+  could intercept it (ADR-0084).
 
 The libretro frontend delegates frame pacing to RetroArch via `retro_run`;
 the fixed-timestep logic is its own accumulator loop for non-libretro

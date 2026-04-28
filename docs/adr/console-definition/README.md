@@ -28,3 +28,5 @@ work as structural properties of the system rather than bolt-ons.
 | [0076](0076-draw-is-read-only.md) | draw() is read-only over tracked state |
 | [0078](0078-frozen-major-version-api-layers.md) | Frozen major-version API layers — backwards-compatible runtime subsystem |
 | [0081](0081-text-mode-deferred.md) | Text mode — 80×30 character grid at 640×480 (deferred, v1.5+) |
+| [0082](0082-emulator-mips-cap.md) | Emulator MIPS cap fixed to minimum emulation host throughput |
+| [0083](0083-lua-cart-crash-diagnostics.md) | Lua cart crash diagnostics — runtime-owned dump |

@@ -16,3 +16,4 @@ names), and the performance strategy that informs API shape decisions.
 | [0068](0068-lua-handles-are-objects.md) | Lua handles are objects with methods |
 | [0077](0077-lua-gc-strategy.md) | Lua GC strategy — generational mode, per-tick minor collection, emergency fallback |
 | [0079](0079-lua-standard-library-allowlist.md) | Lua standard library — allowlist, removals, and aliases |
+| [0084](0084-lua-error-model.md) | Lua error model — three tiers, VM-external panic termination |
