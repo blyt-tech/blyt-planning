@@ -158,6 +158,14 @@ is compatible with the runtime's structure (memory layout, threading
 assumptions, audio timing), and whether the double-interpretation stack is
 survivable on a mid-range Android device running in a browser tab.
 
+Note: a modest Chromebook or mid-range Android may itself be slower than a
+Pi Zero 2 W, meaning the MIPS cap (ADR-0082) is not sufficient to guarantee
+correct behaviour on those devices. Finding the true WASM floor requires
+broader device testing with a realistic workload; the Doom port is the
+intended vehicle for that. This spike does not resolve that question — it
+only validates that the WASM target is viable in principle. The Pi-derived
+MIPS cap stands as the interim floor.
+
 **What to build:**
 - Compile the interpreter + Lua workload from Spike B to WASM using
   Emscripten, with a minimal HTML shell that drives a `requestAnimationFrame`

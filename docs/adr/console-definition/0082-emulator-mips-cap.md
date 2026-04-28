@@ -26,6 +26,16 @@ hardware is the real performance ceiling for any cart running under emulation.
 That ceiling applies whether the emulator is running on a Pi, a desktop, or
 in a browser — the cart cannot know or benefit from the faster host.
 
+A separate concern exists for WASM: a modest Chromebook or mid-range Android
+device running the emulator in a browser may itself be slower than a Pi Zero
+2 W, meaning the Pi-derived cap would still permit carts that exceed what
+those devices can sustain. Determining the true WASM floor requires testing
+against a broader range of devices with a realistic workload (a Doom port is
+the intended benchmark). This is explicitly a post-spike concern; the
+infrastructure and the realistic workload need to exist before the measurement
+is meaningful. The Pi Zero 2 W cap serves as the interim floor for WASM until
+that work is done.
+
 ## Decision
 
 **All emulator runs cap guest instruction throughput to the measured effective
