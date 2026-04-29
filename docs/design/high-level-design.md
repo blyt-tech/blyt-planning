@@ -3364,10 +3364,10 @@ tests for representative cart workloads.
   C-flat / Lua-nested duality documented).
 - **Error handling convention:** Resolved — ADR-0084 (three-tier Lua error
   model; panics bypass Lua via VM-external termination).
-- **Cart lifecycle entry points:** Exact signatures of `init`, `update`,
-  `draw`, `on_save`, `on_load`, `cleanup`. All carts (Lua and native)
-  share the same ELF-level contract; the SDK's Lua-cart template handles
-  forwarding these into Lua automatically.
+- **Cart lifecycle entry points:** Resolved — ADR-0087 (entry point
+  signatures and Lua names; reset always in pause menu; autosave slot
+  mechanism; save metadata with thumbnail and playtime; on_return_to_title
+  deferred to v2).
 - **ECALL calling convention and number space:** Resolved — ADR-0085
   (Linux ABI convention; subsystem-grouped number space mirroring error
   codes; specific assignments are an implementation task).
