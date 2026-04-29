@@ -19,12 +19,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /spike-a
 
-# Copy rv32emu source tree + our config
+# ── rv32emu ──────────────────────────────────────────────────────────────────
 COPY rv32emu/ rv32emu/
 COPY configs/rv32emu.config rv32emu/.config
-
-# Build rv32emu (headless, RV32IMFC interpreter)
 RUN make -C rv32emu OUT=build -j"$(nproc)"
 
-# Sanity check: confirm the binary exists and reports usage
-RUN rv32emu/build/rv32emu --help 2>&1 | head -5 || true
+# ── CoreMark (RV32IMFC guest ELF) ────────────────────────────────────────────
+COPY coremark/ coremark/
+COPY ports/ ports/
+# Default ITERATIONS sized for ~10s of CoreMark on Apple Silicon's arm64 Docker;
+# real-hardware runs override it. 'compile' just builds the ELF — running is
+# left to `make docker-bench` so the image build stays cheap.
+RUN make -C coremark PORT_DIR=../ports/rv32emu ITERATIONS=20000 compile
+
+# Sanity check: ELF exists and is RV32 (ELFCLASS32, EM_RISCV). Running the
+# benchmark itself takes ~12s; that's deferred to `make docker-bench`.
+RUN test -f coremark/coremark.elf \
+ && riscv64-linux-gnu-readelf -h coremark/coremark.elf | grep -E "(Class|Machine):"
