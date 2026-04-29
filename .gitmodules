@@ -1,0 +1,3 @@
+[submodule "spikes/spike-a/rv32emu"]
+	path = spikes/spike-a/rv32emu
+	url = https://github.com/sysprog21/rv32emu.git
