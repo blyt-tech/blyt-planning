@@ -18,3 +18,4 @@ names), and the performance strategy that informs API shape decisions.
 | [0079](0079-lua-standard-library-allowlist.md) | Lua standard library — allowlist, removals, and aliases |
 | [0084](0084-lua-error-model.md) | Lua error model — three tiers, VM-external panic termination |
 | [0085](0085-ecall-calling-convention.md) | ECALL calling convention and number space |
+| [0086](0086-api-surface-shape.md) | API surface shape — getter/setter convention and complete module map |

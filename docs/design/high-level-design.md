@@ -3359,10 +3359,9 @@ tests for representative cart workloads.
 
 ### To resolve before freezing the API header
 
-- **API surface shape:** Module organization (`gfx.*`, `snd.*`,
-  `input.*`, etc.), naming conventions, verb-object ordering, getter/setter
-  pairs vs. modal functions. Strong lean: modules, verbose-ish names,
-  consistent verb ordering.
+- **API surface shape:** Resolved — ADR-0086 (explicit `_get`/`_set`
+  convention, complete Lua module map including spatial and color modules,
+  C-flat / Lua-nested duality documented).
 - **Error handling convention:** Resolved — ADR-0084 (three-tier Lua error
   model; panics bypass Lua via VM-external termination).
 - **Cart lifecycle entry points:** Exact signatures of `init`, `update`,
