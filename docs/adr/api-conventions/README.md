@@ -17,3 +17,4 @@ names), and the performance strategy that informs API shape decisions.
 | [0077](0077-lua-gc-strategy.md) | Lua GC strategy — generational mode, per-tick minor collection, emergency fallback |
 | [0079](0079-lua-standard-library-allowlist.md) | Lua standard library — allowlist, removals, and aliases |
 | [0084](0084-lua-error-model.md) | Lua error model — three tiers, VM-external panic termination |
+| [0085](0085-ecall-calling-convention.md) | ECALL calling convention and number space |

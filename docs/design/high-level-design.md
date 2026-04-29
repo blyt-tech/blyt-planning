@@ -3363,16 +3363,16 @@ tests for representative cart workloads.
   `input.*`, etc.), naming conventions, verb-object ordering, getter/setter
   pairs vs. modal functions. Strong lean: modules, verbose-ish names,
   consistent verb ordering.
-- **Error handling convention:** Fallible ops return nil + retrievable
-  last-error; unrecoverable errors trap with diagnostic. (Needs final ratification.)
+- **Error handling convention:** Resolved — ADR-0084 (three-tier Lua error
+  model; panics bypass Lua via VM-external termination).
 - **Cart lifecycle entry points:** Exact signatures of `init`, `update`,
   `draw`, `on_save`, `on_load`, `cleanup`. All carts (Lua and native)
   share the same ELF-level contract; the SDK's Lua-cart template handles
   forwarding these into Lua automatically.
-- **Exact Lua-host API surface:** The ~10-15 ECALLs that the cart-side
-  Lua shim wraps. Minimum sufficient set for typical Lua carts without
-  bloating the ECALL surface unnecessarily.
-- **Lua standard library allowlist:** Final explicit list.
+- **ECALL calling convention and number space:** Resolved — ADR-0085
+  (Linux ABI convention; subsystem-grouped number space mirroring error
+  codes; specific assignments are an implementation task).
+- **Lua standard library allowlist:** Resolved — ADR-0079.
 - **Asset pipeline input formats:** Exact formats accepted, conversion
   rules, manifest format.
 - **Cart crash display:** Visual style of the runtime's crash screen
