@@ -21,7 +21,7 @@ runs directly from the staging directory without packing.
 
 **Watch mode:** `console watch ./myproject` runs the incremental build loop:
 on any source or asset change, the packer reprocesses only the affected files
-into `.build/`, then signals the runtime via the DAP connection to hot-reload
+into `build/`, then signals the runtime via the DAP connection to hot-reload
 from the directory (ADR-0045). The ELF bundling step is skipped entirely
 during watch mode. Compression is also skipped in the staging directory —
 resources are written uncompressed for rebuild speed; the runtime reads them

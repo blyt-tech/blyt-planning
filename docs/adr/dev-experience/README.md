@@ -11,3 +11,4 @@ dev-mode instrumentation that compiles away to nothing in release builds.
 | [0065](0065-dev-instrumentation-noop-in-release.md) | Dev instrumentation — fc_dev_* as no-ops in release builds |
 | [0074](0074-dev-mode-rewind-capture.md) | Dev-mode rewind capture for debugging |
 | [0080](0080-build-and-dev-platform-targets.md) | Build and development platform targets |
+| [0088](0088-asset-pipeline.md) | Asset pipeline — packer architecture, resource types, and constant naming |

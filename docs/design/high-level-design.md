@@ -3372,8 +3372,10 @@ tests for representative cart workloads.
   (Linux ABI convention; subsystem-grouped number space mirroring error
   codes; specific assignments are an implementation task).
 - **Lua standard library allowlist:** Resolved — ADR-0079.
-- **Asset pipeline input formats:** Exact formats accepted, conversion
-  rules, manifest format.
+- **Asset pipeline input formats:** Resolved — ADR-0088 (two-phase packer
+  architecture, incremental builds, staging directory, resource type
+  identification by extension and path keyword, audio encoding rules,
+  single-palette mode, constant naming).
 - **Cart crash display:** Visual style of the runtime's crash screen
   (thematic; e.g., PICO-8's red error text is iconic).
 
