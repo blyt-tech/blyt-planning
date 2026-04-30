@@ -24,6 +24,11 @@ COPY rv32emu/ rv32emu/
 COPY configs/rv32emu.config rv32emu/.config
 RUN make -C rv32emu OUT=build -j"$(nproc)"
 
+# ── Berkeley SoftFloat (RV32 ilp32f static archive) ──────────────────────────
+COPY berkeley-softfloat-3/ berkeley-softfloat-3/
+COPY softfloat-build/ softfloat-build/
+RUN make -C softfloat-build -j"$(nproc)"
+
 # ── CoreMark (RV32IMFC guest ELF) ────────────────────────────────────────────
 COPY coremark/ coremark/
 COPY ports/ ports/

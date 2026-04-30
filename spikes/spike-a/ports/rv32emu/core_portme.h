@@ -31,11 +31,9 @@ typedef uint32_t CORE_TICKS;
 
 /* ── CoreMark config ─────────────────────────────────────────────────────── */
 
-/* HAS_FLOAT=0: CoreMark uses integer arithmetic throughout (secs_ret == ee_u32).
- * The Ubuntu riscv64-linux-gnu toolchain has no rv32 multilib, so soft-double
- * helpers (__subdf3 etc) are unavailable. We emit a high-precision elapsed-ns
- * diagnostic line ourselves alongside CoreMark's integer-seconds output. */
-#define HAS_FLOAT           0
+/* HAS_FLOAT=1: secs_ret is double. The double-precision soft-float helpers
+ * (__subdf3 etc) come from softfloat-glue.c forwarding to Berkeley SoftFloat. */
+#define HAS_FLOAT           1
 #define HAS_TIME_H          0
 #define USE_CLOCK           0
 #define HAS_STDIO           0

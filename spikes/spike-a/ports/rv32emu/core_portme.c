@@ -77,12 +77,11 @@ CORE_TICKS get_time(void)
     return dsec * 1000000U + (uint32_t)dnsec / 1000U;
 }
 
-/* secs_ret is ee_u32 (HAS_FLOAT=0); integer seconds let CoreMark's
- * Iterations/Sec formula divide cleanly. The 32-bit microsecond CORE_TICKS
- * value is also surfaced as a diagnostic in portable_fini for finer grain. */
+/* secs_ret is double (HAS_FLOAT=1); the conversion goes through softfloat
+ * via __floatunsidf and __divdf3 in softfloat-glue.c. */
 secs_ret time_in_secs(CORE_TICKS ticks_us)
 {
-    return (secs_ret)(ticks_us / 1000000U);
+    return (secs_ret)ticks_us / 1000000.0;
 }
 
 /* ── boilerplate ─────────────────────────────────────────────────────────── */
@@ -99,8 +98,7 @@ void portable_init(core_portable *p, int *argc, char *argv[])
     p->portable_id = 1;
 }
 
-/* CoreMark prints integer-second timing under HAS_FLOAT=0; this hook adds a
- * microsecond-precision diagnostic so the score isn't whole-number-rounded. */
+/* Microsecond diagnostic alongside CoreMark's float-formatted seconds. */
 void portable_fini(core_portable *p)
 {
     ee_printf("Elapsed (us)     : %u\n", get_time());

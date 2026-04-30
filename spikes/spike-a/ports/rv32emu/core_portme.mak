@@ -13,19 +13,26 @@ PORT_CFLAGS += -ffreestanding -nostdlib -fno-stack-protector -fno-common
 # Static + no-PIE: rv32emu loads ELFs raw, with no dynamic linker — anything
 # requiring /lib/ld-linux-riscv32-ilp32f.so.1 silently fails to start.
 PORT_CFLAGS += -static -no-pie -fno-pie
+
+# Berkeley SoftFloat provides the IEEE 754 double-precision helpers that the
+# Ubuntu rv64 libgcc.a doesn't have an rv32 counterpart for. softfloat-glue.c
+# wraps the f64_* API as the libgcc names GCC emits (__subdf3, __ltdf2 etc).
+SOFTFLOAT_DIR ?= /spike-a/softfloat-build
+SOFTFLOAT_INC ?= /spike-a/berkeley-softfloat-3/source/include
+
 FLAGS_STR    = "$(PORT_CFLAGS) $(XCFLAGS)"
 
 OUTFLAG  = -o
-CFLAGS   = $(PORT_CFLAGS) -I$(PORT_DIR) -I. -DFLAGS_STR=\"$(FLAGS_STR)\"
+CFLAGS   = $(PORT_CFLAGS) -I$(PORT_DIR) -I$(SOFTFLOAT_INC) -I. \
+           -DFLAGS_STR=\"$(FLAGS_STR)\"
 
-# syscalls.c is compiled as part of SRCS (via PORT_SRCS).
-# crt0.S is passed at link time via LFLAGS_END so it lands last on the
-# command line, after all .c sources, which is what GCC expects.
-# No -lgcc: the Ubuntu riscv64-linux-gnu toolchain's libgcc.a is rv64
-# (ELFCLASS64), incompatible with our rv32 link. With HAS_FLOAT=0 and our
-# own memset/memcpy in syscalls.c, no libgcc helpers are needed.
-PORT_SRCS    = $(PORT_DIR)/syscalls.c $(PORT_DIR)/core_portme.c
-LFLAGS_END   = $(PORT_DIR)/crt0.S -Wl,--build-id=none
+# syscalls.c, core_portme.c, softfloat-glue.c compiled as part of SRCS.
+# crt0.S goes last on the link line via LFLAGS_END (after softfloat.a so the
+# archive can resolve symbols GCC emitted from the .c files above).
+PORT_SRCS    = $(PORT_DIR)/syscalls.c $(PORT_DIR)/core_portme.c \
+               $(PORT_DIR)/softfloat-glue.c
+LFLAGS_END   = $(SOFTFLOAT_DIR)/softfloat.a $(PORT_DIR)/crt0.S \
+               -Wl,--build-id=none
 EXTRA_DEPENDS = $(PORT_DIR)/core_portme.mak
 
 EXE  = .elf

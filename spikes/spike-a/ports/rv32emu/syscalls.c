@@ -93,8 +93,24 @@ static void emit_int(long v)
     emit_uint((unsigned long)v, 10);
 }
 
-/* No %f: HAS_FLOAT=0, and any double op would pull in rv32 soft-float
- * helpers (__subdf3 etc) which the Ubuntu rv64 libgcc.a doesn't provide. */
+/* Format a double with 6 decimal places. Soft-double ops route through
+ * softfloat-glue.c (__floatunsidf, __subdf3, __muldf3, __fixunsdfsi). */
+static void emit_double(double v)
+{
+    if (v < 0) { emit('-'); v = -v; }
+    unsigned long ipart = (unsigned long)v;
+    double fpart = v - (double)ipart;
+    emit_uint(ipart, 10);
+    emit('.');
+    for (int i = 0; i < 6; i++) {
+        fpart *= 10.0;
+        int d = (int)fpart;
+        if (d < 0) d = 0; else if (d > 9) d = 9;
+        emit('0' + d);
+        fpart -= (double)d;
+    }
+}
+
 int ee_printf(const char *fmt, ...)
 {
     va_list ap;
@@ -116,6 +132,8 @@ int ee_printf(const char *fmt, ...)
         case 'x': case 'X':
             emit_uint(is_long ? va_arg(ap, unsigned long)
                               : va_arg(ap, unsigned int), 16); break;
+        case 'f': case 'g': case 'e':
+            emit_double(va_arg(ap, double)); break;
         case 's': { const char *s = va_arg(ap, const char *);
                     emit_str(s ? s : "(null)"); break; }
         case 'c': emit((char)va_arg(ap, int)); break;

@@ -3,3 +3,6 @@ rv32emu/build*
 rv32emu/build-*
 coremark/.git
 coremark/*.log
+berkeley-softfloat-3/.git
+softfloat-build/*.o
+softfloat-build/*.a

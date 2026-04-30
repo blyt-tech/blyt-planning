@@ -4,3 +4,6 @@
 [submodule "spikes/spike-a/coremark"]
 	path = spikes/spike-a/coremark
 	url = https://github.com/eembc/coremark.git
+[submodule "spikes/spike-a/berkeley-softfloat-3"]
+	path = spikes/spike-a/berkeley-softfloat-3
+	url = https://github.com/ucb-bar/berkeley-softfloat-3.git
