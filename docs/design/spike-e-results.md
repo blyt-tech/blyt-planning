@@ -172,6 +172,17 @@ in milliseconds per tick:
 | `binarytrees`   |      70.5    |     462.7      |    **230.5**      |       3.27×     | n/a                        |
 | `doom_tick_c`   |       1.3    |       3.9      |      **2.0**      |       1.50×     | n/a                        |
 
+A fourth column — Chrome 147 + WASM with the rv32emu layer *removed*
+(Lua compiled directly to WASM, no RV32IMFC step) — is measured in
+[Spike F](spike-f-results.md). It collapses the load-bearing Lua workload
+from 123 ms mean to 1.7 ms mean (≈72×) and brings every cart well under
+the 16.67 ms budget on desktop. The cost is the *sandbox-model* asymmetry
+between WASM and hardware/native targets (different CPU-cap and
+memory-failure surfaces); float-determinism is reachable with build
+discipline because Emscripten links musl libm/stdio into the .wasm,
+so transcendentals and `printf` are not host-dependent. Spike F
+documents both points.
+
 Two things stand out:
 
 1. **Chrome's V8 wasm is roughly twice as fast as Node 22's V8 wasm** on

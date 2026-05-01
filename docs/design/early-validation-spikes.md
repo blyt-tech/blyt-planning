@@ -198,10 +198,26 @@ is validated essentially for free.
 
 ## Spike F — Lua compiled directly to WASM (no rv32emu layer)
 
-**Status:** not yet run. Motivated by Spike E's finding that the
-`rv32emu` + Lua-in-RV32IMFC stack on WASM misses the frame budget by 7.4×
-on the load-bearing Lua workload, and by ADR-0025's explicit fallback
-clause and Spike E open question #3.
+**Status:** results in [`spike-f-results.md`](spike-f-results.md). Build
+and stack end-to-end complete; correctness verified against the same
+Spike B benchmark `.lua` files under Node + WASM and headless Chrome 147;
+desktop measurements taken on Apple Silicon Chrome 147 — every Lua
+benchmark fits the 16.67 ms frame budget, with the load-bearing
+`doom_tick` at 1.71 ms mean / 3.40 ms p99 (a 72× / 37× reduction relative
+to Spike E's rv32emu+Lua-in-RV32IMFC stack on the same workload, and 36×
+faster than the Spike B Docker arm64 native path on the same workload).
+Mid-range Android measurement is the open question and is handed off as
+a manual run; the desktop projection (2–4× mid-range-Android factor)
+suggests realistic per-frame Lua tics fit the budget on phones at both
+ends of the projection band. Spike F's recommendation is to **adopt
+Lua-direct-to-WASM for the WASM target only**. The cost is the
+*sandbox-model* asymmetry ADR-0025 names — different CPU-cap and
+memory-failure surfaces than RV32IMFC. Float-determinism, by contrast,
+is reachable with build-config discipline (matched musl version,
+no `-ffast-math`); Emscripten links musl libm and stdio into the
+.wasm so transcendentals and `printf` are *not* host-dependent.
+Spike F revises the earlier "no cross-target byte-deterministic
+replay" framing accordingly.
 
 **The question:** Does Lua 5.4 compiled *directly* to WASM (no `rv32emu`
 layer, no RV32IMFC step — just the Lua VM as a WASM module) hold 60 fps in
