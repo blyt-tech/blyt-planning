@@ -1,0 +1,10 @@
+{
+  "name": "fc32-spike-e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Spike E — rv32emu + Lua-cart in the browser. Uses puppeteer-core to drive the system Chrome binary against the harness for desktop measurement.",
+  "type": "commonjs",
+  "dependencies": {
+    "puppeteer-core": "^22.15.0"
+  }
+}

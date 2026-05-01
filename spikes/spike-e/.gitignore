@@ -1,0 +1,8 @@
+emsdk/
+rv32emu/
+build-wasm/
+demo/
+elfs/
+baselines/
+node_modules/
+package-lock.json

@@ -148,6 +148,14 @@ proceeding.
 
 ## Spike E — Performance and correctness in a WASM container
 
+**Status:** results in [`spike-e-results.md`](spike-e-results.md). Build and
+correctness verified across Docker arm64 / Node-WASM / headless Chrome 147.
+Desktop measurement: load-bearing Lua workload (`doom_tick`) runs at
+~123 ms / tick on Apple Silicon Chrome — **7.4× over the 16.67 ms budget**.
+Native-C cart (`doom_tick_c`) runs at ~2 ms — **fits comfortably**.
+Mid-range Android phone measurement is the open follow-up.
+
+
 **The question:** Does the interpreter and Lua-in-interpreter stack, compiled
 to WASM via Emscripten, run at acceptable frame rates in a browser on both a
 development desktop and a modern mid-range smartphone?
