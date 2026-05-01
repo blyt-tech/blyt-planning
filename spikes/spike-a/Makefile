@@ -1,16 +1,18 @@
 ## Spike A — RV32IMFC interpreter throughput on Cortex-A53
 ##
 ## Targets:
-##   make native          Build rv32emu for the local host (smoke-test, macOS)
-##   make docker-build    Build rv32emu + CoreMark inside an arm64 Docker container
-##   make docker-shell    Drop into the arm64 container (rv32emu + CoreMark built)
-##   make docker-bench    Run CoreMark under rv32emu inside Docker, print results
-##   make aarch64         Cross-compile rv32emu for aarch64-linux-gnu (QEMU path)
-##   make clean           Remove all build artefacts
+##   make native            Build rv32emu for the local host (smoke-test, macOS)
+##   make docker-build      Build rv32emu + CoreMark + Embench inside an arm64 Docker container
+##   make docker-shell      Drop into the arm64 container (rv32emu + benchmarks built)
+##   make docker-bench      Run CoreMark under rv32emu inside Docker, print results
+##   make docker-embench    Run all Embench benchmarks under rv32emu inside Docker
+##   make aarch64           Cross-compile rv32emu for aarch64-linux-gnu (QEMU path)
+##   make clean             Remove all build artefacts
 ##
 ## Recommended path on Apple Silicon (arm64 Docker, no cross-compiler needed):
-##   make docker-bench    # builds everything and runs CoreMark
-##   make docker-shell    # interactive shell for exploration
+##   make docker-bench      # builds everything and runs CoreMark
+##   make docker-embench    # runs all 18 Embench benchmarks
+##   make docker-shell      # interactive shell for exploration
 ##
 ## QEMU path (if you prefer it):
 ##   brew install qemu
@@ -55,6 +57,17 @@ docker-bench: docker-build
 	docker run --rm --platform $(DOCKER_PLATFORM) $(DOCKER_IMAGE) \
 	    /spike-a/rv32emu/build/rv32emu /spike-a/coremark/coremark.elf
 
+# ── Embench ───────────────────────────────────────────────────────────────────
+
+EMBENCH_ELFS_GLOB := /spike-a/ports/rv32emu/embench/build/embench-*.elf
+RV32EMU_BIN       := /spike-a/rv32emu/build/rv32emu
+
+.PHONY: docker-embench
+docker-embench: docker-build
+	@echo "=== Embench-IoT benchmarks (RV32IMFC under rv32emu, arm64 Docker) ==="
+	docker run --rm --platform $(DOCKER_PLATFORM) $(DOCKER_IMAGE) \
+	    sh -c 'for f in $(EMBENCH_ELFS_GLOB); do $(RV32EMU_BIN) "$$f"; done'
+
 # ── aarch64 cross-build (QEMU user-mode path) ────────────────────────────────
 
 .PHONY: aarch64
@@ -69,3 +82,4 @@ clean:
 	$(MAKE) -C $(RV32EMU_DIR) OUT=build-aarch64 clean || true
 	$(RM) $(RV32EMU_DIR)/.config
 	$(MAKE) -C coremark PORT_DIR=../ports/rv32emu clean || true
+	$(MAKE) -C ports/rv32emu/embench clean || true

@@ -7,3 +7,6 @@
 [submodule "spikes/spike-a/berkeley-softfloat-3"]
 	path = spikes/spike-a/berkeley-softfloat-3
 	url = https://github.com/ucb-bar/berkeley-softfloat-3.git
+[submodule "spikes/spike-a/embench-iot"]
+	path = spikes/spike-a/embench-iot
+	url = https://github.com/embench/embench-iot.git

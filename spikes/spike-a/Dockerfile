@@ -41,3 +41,13 @@ RUN make -C coremark PORT_DIR=../ports/rv32emu ITERATIONS=20000 compile
 # benchmark itself takes ~12s; that's deferred to `make docker-bench`.
 RUN test -f coremark/coremark.elf \
  && riscv64-linux-gnu-readelf -h coremark/coremark.elf | grep -E "(Class|Machine):"
+
+# ── Embench-IoT (18 RV32IMFC guest ELFs) ─────────────────────────────────────
+COPY embench-iot/ embench-iot/
+RUN make -C ports/rv32emu/embench \
+        OUTDIR=/spike-a/ports/rv32emu/embench/build \
+        -j"$(nproc)"
+
+# Sanity check: at least one ELF exists and is RV32.
+RUN ls ports/rv32emu/embench/build/embench-*.elf | head -1 | \
+    xargs riscv64-linux-gnu-readelf -h | grep -E "(Class|Machine):"

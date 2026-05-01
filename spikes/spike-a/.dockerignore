@@ -6,3 +6,5 @@ coremark/*.log
 berkeley-softfloat-3/.git
 softfloat-build/*.o
 softfloat-build/*.a
+embench-iot/.git
+ports/rv32emu/embench/build
