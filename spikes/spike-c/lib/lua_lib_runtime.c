@@ -866,3 +866,49 @@ int vfprintf(struct __FILE *f, const char *fmt, va_list ap)
     return n;
 }
 int sscanf(const char *s, const char *fmt, ...) { (void)s; (void)fmt; return 0; }
+
+/* libgcc 64-bit divmod helpers.  The riscv64-linux-gnu toolchain only
+ * ships rv64 multilib, so we cannot link libgcc into an rv32 .so.  Lua
+ * emits a small number of 64-bit / 32-bit divides; supply them here. */
+
+static unsigned long long udivmoddi4(unsigned long long n, unsigned long long d,
+                                     unsigned long long *rem)
+{
+    if (d == 0) { if (rem) *rem = 0; return 0; }
+    if (d > n) { if (rem) *rem = n; return 0; }
+    int shift = 0;
+    while ((d << 1) <= n && ((d << 1) >> 1) == d) { d <<= 1; shift++; }
+    unsigned long long q = 0;
+    while (shift >= 0) {
+        if (n >= d) { n -= d; q |= (1ULL << shift); }
+        d >>= 1; shift--;
+    }
+    if (rem) *rem = n;
+    return q;
+}
+
+unsigned long long __udivdi3(unsigned long long a, unsigned long long b)
+{
+    return udivmoddi4(a, b, 0);
+}
+unsigned long long __umoddi3(unsigned long long a, unsigned long long b)
+{
+    unsigned long long r; udivmoddi4(a, b, &r); return r;
+}
+long long __divdi3(long long a, long long b)
+{
+    int neg = (a < 0) ^ (b < 0);
+    unsigned long long ua = a < 0 ? -(unsigned long long)a : (unsigned long long)a;
+    unsigned long long ub = b < 0 ? -(unsigned long long)b : (unsigned long long)b;
+    unsigned long long q = udivmoddi4(ua, ub, 0);
+    return neg ? -(long long)q : (long long)q;
+}
+long long __moddi3(long long a, long long b)
+{
+    int neg = a < 0;
+    unsigned long long ua = a < 0 ? -(unsigned long long)a : (unsigned long long)a;
+    unsigned long long ub = b < 0 ? -(unsigned long long)b : (unsigned long long)b;
+    unsigned long long r;
+    udivmoddi4(ua, ub, &r);
+    return neg ? -(long long)r : (long long)r;
+}

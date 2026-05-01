@@ -34,15 +34,15 @@ $(OUTDIR)/spike_c_cart.elf: \
 		$(OUTDIR)/crt0.o \
 		$(OUTDIR)/cart_runtime.o \
 		$(OUTDIR)/spike_c_cart.o
-	$(CROSS) $(ARCH) -nostdlib \
+	$(CROSS) $(ARCH) -nostdlib -no-pie \
 	    -Wl,--build-id=none \
 	    -Wl,-rpath-link,$(LIB_DIR) \
 	    -Wl,--dynamic-linker,/no/interp \
-	    -L$(LIB_DIR) -llua54 \
 	    -o $@ \
 	    $(OUTDIR)/crt0.o \
 	    $(OUTDIR)/cart_runtime.o \
-	    $(OUTDIR)/spike_c_cart.o
+	    $(OUTDIR)/spike_c_cart.o \
+	    -L$(LIB_DIR) -llua54
 
 clean:
 	$(RM) -r $(OUTDIR)

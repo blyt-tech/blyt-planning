@@ -209,13 +209,12 @@ bool fc32_dynload(memory_t *mem, const uint8_t *cart_data, const char *libpath)
     const struct Elf32_Ehdr *ehdr = (const struct Elf32_Ehdr *)cart_data;
 
     /* --- locate PT_DYNAMIC in cart --- */
-    uint32_t dyn_fileoff = 0, dyn_filesz = 0;
+    uint32_t dyn_fileoff = 0;
     for (int p = 0; p < ehdr->e_phnum; p++) {
         const struct Elf32_Phdr *ph = (const struct Elf32_Phdr *)
             (cart_data + ehdr->e_phoff + p * ehdr->e_phentsize);
         if (ph->p_type == PT_DYNAMIC) {
             dyn_fileoff = ph->p_offset;
-            dyn_filesz  = ph->p_filesz;
             break;
         }
     }
@@ -273,7 +272,10 @@ bool fc32_dynload(memory_t *mem, const uint8_t *cart_data, const char *libpath)
         fseek(lf, 0, SEEK_SET);
         uint8_t *lib_data = (uint8_t *)malloc((size_t)lsz);
         if (!lib_data) { fclose(lf); return false; }
-        fread(lib_data, 1, (size_t)lsz, lf);
+        if (fread(lib_data, 1, (size_t)lsz, lf) != (size_t)lsz) {
+            fprintf(stderr, "fc32_dynload: short read on %s\n", path);
+            free(lib_data); fclose(lf); return false;
+        }
         fclose(lf);
 
         const struct Elf32_Ehdr *lhdr = (const struct Elf32_Ehdr *)lib_data;
@@ -462,6 +464,22 @@ bool fc32_dynload(memory_t *mem, const uint8_t *cart_data, const char *libpath)
                         if (sa) fc32_write32(mem, r_off, sa + (uint32_t)r_add);
                         else fprintf(stderr,
                             "fc32_dynload: unresolved RELA symbol '%s'\n", sname);
+                    }
+                    break;
+                case R_RISCV_32:
+                    /* For an ET_EXEC cart, R_RISCV_32 against a symbol writes
+                     * the symbol's absolute value + addend.  Symbol may be
+                     * cart-internal (use st_value directly) or supplied by a
+                     * loaded library (look up in fc32 symbol table). */
+                    if (rsym && cart_dsym) {
+                        const struct Elf32_Sym *sym = (const struct Elf32_Sym *)
+                            ((const uint8_t *)cart_dsym + rsym * cart_syment);
+                        const char *sname = cart_strtab + sym->st_name;
+                        uint32_t sa = fc32_sym_find(sname);
+                        if (!sa) sa = sym->st_value;
+                        fc32_write32(mem, r_off, sa + (uint32_t)r_add);
+                    } else {
+                        fc32_write32(mem, r_off, (uint32_t)r_add);
                     }
                     break;
                 case R_RISCV_RELATIVE:

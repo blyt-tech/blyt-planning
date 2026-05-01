@@ -1,10 +1,11 @@
 # Spike C results — Lua 5.4 as a host-provided shared library
 
-**Status: implementation complete; `make docker-build` not yet run.  The
-build will confirm whether the toolchain produces a valid freestanding
-ET_DYN RV32IMFC shared object and whether the rv32emu dynamic-loader
-extension resolves PLT/GOT entries correctly enough to execute
-`luaL_dostring("return 1 + 1")` end-to-end.**
+**Status: PASS.  `make docker-run` builds the image clean and the cart
+prints `OK` with exit 0.  `riscv64-linux-gnu-gcc` produces a valid
+freestanding `ET_DYN` RV32IMFC `liblua54.so`; the rv32emu dynamic-loader
+extension maps the `.so` at `0x08000000` and fixes up cart PLT/GOT
+entries; `luaL_dostring("return 1 + 1")` returns `LUA_OK` and the
+top-of-stack integer is `2`.**
 
 The question Spike C asks is whether the production architecture — Lua
 shipped as a versioned shared library pre-loaded into the cart's VM address
@@ -65,8 +66,12 @@ riscv64-linux-gnu-nm -D liblua54.so        # lua_newstate, luaL_dostring, lua_cl
 
 A minimal cart (`cart/spike_c_cart.c`) that:
 1. Calls `lua_newstate(l_alloc, NULL)` — Lua state creation via PLT
-2. Calls `luaL_dostring(L, "return 1 + 1")` — trivial script execution via PLT
-3. Asserts the top-of-stack integer equals 2
+2. Runs `return 1 + 1` via `luaL_dostring`; asserts `lua_tointeger(L, -1) == 2`
+3. Loads `error('boom')` and calls `lua_pcall` directly; asserts the
+   return code is `LUA_ERRRUN`.  This positively exercises Lua's
+   `longjmp` path through the PLT — the error frame set up in cart
+   space is sprung from inside the `.so`.  Without this case the spike
+   would only validate the success path.
 4. Calls `lua_close(L)`, then `write(1, "OK\n", 3)`
 
 The `l_alloc` callback calls `realloc`/`free` from `cart_runtime.c` — these
@@ -149,55 +154,98 @@ make docker-shell     # interactive shell for readelf / objdump inspection
 
 ---
 
-## Key open questions going into the first build
+## What the first build found
 
-The PLAN.md identified four open questions.  The first build will answer or
-partially answer each:
+Four issues surfaced before the cart printed `OK`.  None invalidated the
+architectural plan, but each is worth noting because each has a production
+follow-up.
 
-**1. Global pointer (`$gp`) initialisation.** The cart's `crt0.S` sets `gp`
-to the cart's own `__global_pointer$` before `main()`.  The `.so` is compiled
-with `-fPIC`, which suppresses GP-relative relaxations in shared library code
-— so the `.so` accesses its own globals via the GOT, not via GP.  On paper,
-the cart's `gp` value is irrelevant to `.so` execution.  The first build will
-confirm this: if GP were wrong for the `.so`, Lua's table/string internal
-globals would be silently corrupted and `luaL_dostring` would crash or return
-garbage before `OK` could be printed.
+**1. Cart link defaulted to PIE.** The cross-toolchain emits `-pie` by
+default, so the cart's link rejected `R_RISCV_HI20` against `.text` locals
+and refused to satisfy `R_RISCV_CALL_PLT` to Lua symbols.  Adding `-no-pie`
+to the cart link line resolved both.  In production every cart will need
+this flag — the build tooling must not let `-pie` slip in.
 
-**2. `setjmp`/`longjmp` across the PLT.** The `.so` uses `__builtin_setjmp`
-/ `__builtin_longjmp` (via `lib/include/setjmp.h`).  GCC builtins are always
-position-independent and do not go through the PLT — they inline their
-register save/restore.  Lua's error-handling paths (protected calls,
-`lua_pcall`, `luaL_dostring`) depend on these working.  The test exercises
-the error path only indirectly (a successful script returns `LUA_OK`), but a
-crash inside the VM before returning would catch a completely broken setjmp.
+**2. Library order on the cart link line.** `-llua54` was listed before the
+cart `.o` files.  GNU `ld` resolves left to right, so the linker scanned
+`liblua54.so` before any reference existed and discarded it.  Moving
+`-llua54` to the end of the command line fixed the unresolved-Lua-symbol
+errors.  Standard linker hygiene; documented here only because it cost a
+build cycle.
 
-**3. Relocation coverage.** The implemented types are `R_RISCV_RELATIVE`,
-`R_RISCV_32`, `R_RISCV_JUMP_SLOT`, and `R_RISCV_GLOB_DAT`.  The first build
-should audit `riscv64-linux-gnu-readelf -r liblua54.so` and `readelf -r
-spike_c_cart.elf` against this list.  If any new relocation type appears in
-the output, `fc32_dynload` will print an "unhandled rela type" warning to
-stderr; any such warning is a follow-up to investigate.
+**3. `__udivdi3` (and friends).** Lua 5.4 emits 64-bit / 32-bit divides as
+calls to libgcc helpers (`__udivdi3`, `__umoddi3`, `__divdi3`, `__moddi3`).
+Debian's `gcc-13-riscv64-linux-gnu` ships only `elf64-littleriscv` libgcc
+multilib — there is no rv32 build, and linking the rv64 archive fails with
+`ABI is incompatible`.  Resolved by writing the four divmod helpers
+directly in `lib/lua_lib_runtime.c` (shift-subtract long division).  This
+is fine for the spike; production will need either a built-from-source
+multilib toolchain, an LLVM `compiler-rt` rv32 build, or a dedicated
+`libfcrt.rv32.so` shipping the same handful of routines.
 
-**4. Freestanding libc scope in the `.so`.** The self-contained allocator and
-libc stubs mean the `.so` carries its own 8 MiB BSS heap.  The cart also has
-a 4 MiB BSS heap for `l_alloc`.  These are distinct; no pointer crosses the
-boundary.  The correctness risk is not double-free (pointers don't cross) but
-rather `.so` startup code calling `malloc` before the cart's `l_alloc` is
-installed — which Lua does not do (`lua_newstate` is the first allocation, and
-it calls `l_alloc` immediately).
+**4. `R_RISCV_32` against `__global_pointer$` on the cart.** The first
+successful run printed `OK` but also a warning: `fc32_dynload: unhandled
+cart rela type 1`.  `readelf -r` showed a single cart-side `R_RISCV_32` at
+`0x11ff4` writing the absolute value of `__global_pointer$` into a GOT
+slot.  The cart's `crt0.S` loads `gp` directly via `la gp,
+__global_pointer$`, so the slot is unread and the warning was cosmetic.
+The loader now handles `R_RISCV_32` for cart relocations: it looks up the
+referenced symbol (cart-internal symbols use `st_value`, library-supplied
+ones go through `fc32_sym_find`) and writes `value + addend`.  Re-running
+produces just `OK`.
+
+Two `-Werror` issues in the patched `src/elf.c` (a set-but-unused variable
+and an unchecked `fread` return) also surfaced and were fixed inline.
+
+## Answers to the open questions in PLAN.md
+
+**1. Global pointer (`$gp`).** Non-issue, as predicted.  `-fPIC` causes the
+`.so` to access its own globals through the GOT; the cart's `gp` value is
+never read by Lua.  No special handling required in the loader.
+
+**2. `setjmp`/`longjmp` across the PLT.** Works.  GCC `__builtin_setjmp` /
+`__builtin_longjmp` inline their register save/restore and do not go
+through the PLT, so error handling inside the `.so` is self-contained.
+The cart now positively exercises this path: it calls `lua_pcall` with
+a script that runs `error('boom')`.  `pcall` returns `LUA_ERRRUN`, the
+error frame is unwound inside the `.so`, and control returns cleanly to
+cart code across the PLT.
+
+**3. Relocation coverage.** Audit (`readelf -r` on both binaries):
+- `liblua54.so`: `R_RISCV_RELATIVE`, `R_RISCV_32`, `R_RISCV_JUMP_SLOT`.
+- `spike_c_cart.elf`: `R_RISCV_32` (one entry, `__global_pointer$`),
+  `R_RISCV_JUMP_SLOT` (one per Lua symbol called).
+
+No `R_RISCV_GLOB_DAT` and no `R_RISCV_COPY` (which would be a sign of
+something wrong on RISC-V).  All types observed are handled by
+`fc32_dynload`; running the cart produces no "unhandled rela type"
+warnings on stderr.
+
+**4. Freestanding libc scope.** The self-contained allocator works.  Lua
+allocates only via the cart-supplied `l_alloc` callback, so no pointer
+crosses the cart/library heap boundary.  The `.so`'s internal BSS heap is
+unused for the test (Lua doesn't call back into its own `malloc` for state
+storage).  Production still needs a shared `libfcrt.rv32` heap; this spike
+sidesteps that intentionally.
 
 ---
 
-## What this spike decides (pending first successful run)
+## What this spike decides
 
-- Whether `riscv64-linux-gnu-gcc` can produce a valid freestanding `ET_DYN`
-  RV32IMFC shared object from Lua's sources.
-- Whether rv32emu's ELF loader can be extended via a Python patch to pre-map a
-  `.so` and fix up PLT/GOT entries without modifying the submodule.
-- Whether the PLT call path from cart code into the `.so` works end-to-end
-  under the freestanding RV32IMFC calling convention.
-- Whether GP-relative addressing in the `.so` is compatible with rv32emu's
-  register initialisation (expected: it is a non-issue with `-fPIC`).
+- `riscv64-linux-gnu-gcc` does produce a valid freestanding `ET_DYN`
+  RV32IMFC shared object from Lua's sources, given a small set of locally
+  supplied libgcc helpers (the rv32 multilib gap).
+- rv32emu's ELF loader can be extended via a Python patch to pre-map a
+  `.so` and fix up cart PLT/GOT before execution, without modifying the
+  submodule.  The patch covers four files (`main.c`, `elf.h`, `elf.c`,
+  `riscv.c`) and adds roughly 250 lines of C.
+- The PLT call path from cart code into the `.so` works end-to-end under
+  the freestanding RV32IMFC `ilp32f` calling convention; calls into
+  `lua_newstate`, `luaL_loadstring`, `lua_pcallk`, `lua_tointegerx`, and
+  `lua_close` all return correctly with the cart's allocator callback
+  invoked across the PLT boundary.
+- GP-relative addressing in the `.so` is, as expected, a non-issue with
+  `-fPIC`.
 
 ## What this spike does not decide
 
@@ -208,15 +256,7 @@ it calls `l_alloc` immediately).
   `libfcrt.rv32.so` heap.  Not a spike-C concern.
 - **Symbol versioning** / `relro` / lazy vs. eager binding.  All production
   concerns; skipped here.
-
----
-
-## Fallback plan
-
-If `fc32_dynload` proves too invasive to wire into rv32emu correctly (e.g. the
-ELF loader's internal state is too tightly coupled to extend cleanly), the
-fallback is a standalone Python pre-linker that merges `liblua54.so` and
-`spike_c_cart.elf` into a single static ELF that rv32emu loads unchanged.
-This would still prove the build toolchain and relocation mechanics; it just
-moves the linking step to build time rather than runtime.  Document which
-path was used once the first build runs.
+- **rv32 libgcc multilib.** The four divmod helpers added to
+  `lua_lib_runtime.c` are a workaround, not a position.  Production needs
+  a real rv32 multilib (built from source GCC, LLVM `compiler-rt`, or a
+  dedicated `libfcrt.rv32.so`).  Spike C did not pick a strategy.

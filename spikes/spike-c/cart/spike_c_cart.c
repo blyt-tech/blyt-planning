@@ -24,6 +24,17 @@ int main(void)
 
     lua_Integer result = lua_tointeger(L, -1);
     if (result != 2) { write(1, "FAIL: wrong result\n", 19); return 1; }
+    lua_pop(L, 1);
+
+    /* Force a Lua error so longjmp-across-PLT actually runs.  luaL_dostring
+     * is a `||` macro that flattens the error code to 1, so call the
+     * underlying pieces directly to read the real LUA_ERRRUN. */
+    if (luaL_loadstring(L, "error('boom')") != LUA_OK) {
+        write(1, "FAIL: load\n", 11); return 1;
+    }
+    rc = lua_pcall(L, 0, 0, 0);
+    if (rc != LUA_ERRRUN) { write(1, "FAIL: pcall\n", 12); return 1; }
+    lua_pop(L, 1);  /* error message */
 
     lua_close(L);
     write(1, "OK\n", 3);
