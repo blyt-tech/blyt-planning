@@ -329,11 +329,87 @@ follow-up if and when D produces reference digests.
 
 ---
 
+## Spike G — WASM Lua-direct: per-frame CPU budget enforcement
+
+**The question:** Can per-frame CPU exhaustion be enforced in the
+Lua-direct WASM execution model — recommended by Spike F — with
+overhead low enough to preserve Spike F's timing numbers?
+
+**Why this is a risk:** Spike F's recommendation to adopt Lua-direct on
+the WASM target removes the `rv32emu` instruction-cycle counter that
+ADR-0082's MIPS cap relies on. On the `rv32emu` path, the interpreter
+counts every guest instruction and throttles via `nanosleep` to simulate
+Pi-class throughput and prevent CPU exhaustion. On Lua-direct there is
+no instruction counter. Whether an adequate replacement can be enforced
+without unacceptable overhead is the unknown this spike resolves.
+
+### Proposed two-tier enforcement policy
+
+**Tier 1 — per-tic step budget (`lua_sethook`).**
+At the start of each tic, the host calls `lua_sethook(L, hook_fn,
+LUA_MASKCOUNT, N)`. The hook reads wall-clock time and aborts the tic
+via `lua_error()` if the frame budget (16.67 ms) is exceeded. This
+catches well-behaved carts that simply do too much work per tic. But
+`lua_sethook` is not free: every N instructions requires a conditional
+branch into the hook, and tight values of N degrade throughput. The
+spike determines whether an acceptable N exists.
+
+**Tier 2 — external hard timeout (~1 s watchdog).**
+`LUA_MASKCOUNT` fires on function calls and returns; a cart that spins
+in a tight loop with no calls (`while true do end`) will not trigger
+it. Rather than adding `LUA_MASKLINE` (which fires every source line
+and is more expensive), carts that evade Tier 1 are terminated by an
+external watchdog — e.g. a `setTimeout` of ~1 s that kills the Web
+Worker. A 1 s termination for a cart that is actively bypassing the
+budget mechanism is an acceptable outcome. `LUA_MASKLINE` is therefore
+out of scope for this spike.
+
+**What to build:**
+
+- Extend the Spike F host shim (`host.c`) to add `lua_sethook` (Tier 1)
+  at the start of each tic, with a hook that checks wall-clock elapsed
+  and calls `lua_error()` if the frame budget (16.67 ms) is exceeded.
+  Parameterise the step count N at build time.
+- Re-run Spike F's full timing suite (at minimum: `doom_tick`,
+  `entity_update`, `binarytrees`, `mandelbrot`) with step counting
+  enabled at a range of N values. Report p50/p95/p99 and overhead
+  relative to Spike F's baseline (with no hook). Identify the minimum N
+  at which overhead is < 10% of Spike F's `doom_tick` p99 (i.e.
+  < 0.34 ms added to the 3.40 ms baseline).
+
+**Success criterion:**
+
+- *Primary:* `lua_sethook` overhead at the chosen N is < 10% of Spike
+  F's `doom_tick` p99 (< 0.34 ms added), with the hook enabled.
+- *Secondary:* The chosen N and the two-tier policy are documented as
+  the production values for the WASM Lua-direct runtime path.
+
+**What this spike does and does not decide:**
+
+- Decides whether Tier 1 (`lua_sethook`) is viable. If overhead exceeds
+  the 10% threshold, an alternative Tier 1 mechanism (e.g.
+  `Atomics.waitAsync` watchdog replacing the step hook) becomes the
+  candidate; evaluating that alternative would be the spike's follow-up.
+  Tier 2 (the ~1 s hard timeout) stands regardless of the Tier 1 result.
+- Does not address the *development-feedback* asymmetry: cart authors
+  working in Chrome on an M-series Mac see Lua-direct's ~36× faster
+  throughput rather than Pi-class throughput. This is an authoring
+  tooling concern (a "Pi perf projection" indicator in the dev UI),
+  not a runtime mechanism, and is out of scope for this spike.
+- Does not replace Spike A. The Pi target continues to use `rv32emu`
+  with ADR-0082's instruction-cap throttle; this spike applies only to
+  the WASM Lua-direct execution path.
+
+**Dependency:** Spike F (timing baseline and `host.c` shim codebase).
+
+---
+
 ## Ordering
 
 A → B → C and D and E and F (B is the dependency for C, D, and E; F
 depends on B and E). C, D, E can proceed in parallel once B is done; F
 runs after E because it consumes E's harness and baseline numbers.
+G depends on F.
 
 ```
 A (interpreter)
@@ -342,11 +418,14 @@ A (interpreter)
     ├── D (determinism)
     └── E (WASM, rv32emu+Lua) ← also uses D for comparison
         └── F (WASM, Lua-direct) ← contingent on E's miss; uses E's
-                                    harness and cross-stack baseline
+            │                       harness and cross-stack baseline
+            └── G (WASM Lua-direct CPU cap) ← depends on F's host.c
+                                               and timing baseline
 ```
 
 Spike C can begin as soon as A produces a working interpreter, since it
 is about build/linker feasibility rather than performance. The
 performance question in C is answered by B. Spike F is contingent on
 Spike E missing the desktop-WASM budget — if E had passed, F would not
-need to run.
+need to run. Spike G is contingent on Spike F's adoption recommendation
+— if F had not recommended Lua-direct for WASM, G would not be needed.
