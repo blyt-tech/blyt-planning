@@ -8,3 +8,4 @@ softfloat-build/*.o
 softfloat-build/*.a
 embench-iot/.git
 ports/rv32emu/embench/build
+patches/__pycache__

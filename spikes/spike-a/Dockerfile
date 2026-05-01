@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     bc \
     git \
     ca-certificates \
+    python3 \
     # RISC-V cross-toolchain; can target rv32 with -march=rv32imfc_zicsr -mabi=ilp32f
     gcc-riscv64-linux-gnu \
     binutils-riscv64-linux-gnu \
@@ -22,7 +23,18 @@ WORKDIR /spike-a
 # ── rv32emu ──────────────────────────────────────────────────────────────────
 COPY rv32emu/ rv32emu/
 COPY configs/rv32emu.config rv32emu/.config
-RUN make -C rv32emu OUT=build -j"$(nproc)"
+
+# Apply ADR-0082 MIPS cap patch to rv32emu source (idempotent; cap disabled
+# when FC32_MIPS_CAP=0, which is the default).
+COPY patches/ patches/
+RUN cd rv32emu && python3 ../patches/apply-mips-cap.py
+
+# FC32_MIPS_CAP=0 → uncapped (identical to upstream behaviour).
+# Pass --build-arg FC32_MIPS_CAP=N to enable the throttle at N MIPS.
+ARG FC32_MIPS_CAP=0
+RUN make -C rv32emu OUT=build \
+        FC32_EXTRA_CFLAGS="-DFC32_MIPS_CAP=${FC32_MIPS_CAP}" \
+        -j"$(nproc)"
 
 # ── Berkeley SoftFloat (RV32 ilp32f static archive) ──────────────────────────
 COPY berkeley-softfloat-3/ berkeley-softfloat-3/

@@ -1,18 +1,23 @@
 ## Spike A — RV32IMFC interpreter throughput on Cortex-A53
 ##
 ## Targets:
-##   make native            Build rv32emu for the local host (smoke-test, macOS)
-##   make docker-build      Build rv32emu + CoreMark + Embench inside an arm64 Docker container
-##   make docker-shell      Drop into the arm64 container (rv32emu + benchmarks built)
-##   make docker-bench      Run CoreMark under rv32emu inside Docker, print results
-##   make docker-embench    Run all Embench benchmarks under rv32emu inside Docker
-##   make aarch64           Cross-compile rv32emu for aarch64-linux-gnu (QEMU path)
-##   make clean             Remove all build artefacts
+##   make native                 Build rv32emu for the local host (smoke-test, macOS)
+##   make docker-build           Build rv32emu + CoreMark + Embench inside an arm64 Docker container
+##   make docker-shell           Drop into the arm64 container (rv32emu + benchmarks built)
+##   make docker-bench           Run CoreMark under rv32emu inside Docker, print results
+##   make docker-embench         Run all Embench benchmarks under rv32emu inside Docker
+##   make docker-bench-capped    Run CoreMark with the ADR-0082 MIPS cap active (MIPS_CAP=N)
+##   make docker-embench-capped  Run Embench with the ADR-0082 MIPS cap active (MIPS_CAP=N)
+##   make aarch64                Cross-compile rv32emu for aarch64-linux-gnu (QEMU path)
+##   make clean                  Remove all build artefacts
 ##
 ## Recommended path on Apple Silicon (arm64 Docker, no cross-compiler needed):
-##   make docker-bench      # builds everything and runs CoreMark
-##   make docker-embench    # runs all 18 Embench benchmarks
-##   make docker-shell      # interactive shell for exploration
+##   make docker-bench           # builds everything and runs CoreMark
+##   make docker-embench         # runs all 18 Embench benchmarks
+##   make docker-shell           # interactive shell for exploration
+##
+## ADR-0082 MIPS cap (spike the throttle mechanism before Pi numbers are known):
+##   make docker-bench-capped MIPS_CAP=500   # ~half the measured Docker speed
 ##
 ## QEMU path (if you prefer it):
 ##   brew install qemu
@@ -25,8 +30,14 @@ AARCH64_CC     ?= aarch64-unknown-linux-gnu-gcc
 QEMU_AARCH64   ?= qemu-aarch64
 QEMU_LD_PREFIX ?= $(shell $(AARCH64_CC) -print-sysroot 2>/dev/null)
 
-DOCKER_IMAGE   ?= fc32-spike-a
-DOCKER_PLATFORM := linux/arm64
+DOCKER_IMAGE      ?= fc32-spike-a
+DOCKER_IMAGE_CAP  ?= fc32-spike-a-capped
+DOCKER_PLATFORM   := linux/arm64
+
+# ADR-0082: effective MIPS cap for the capped build targets.
+# Set to 500 as a spike value (~half the measured Docker/Apple-Silicon speed).
+# Replace with the Pi Zero 2 W measurement once available.
+MIPS_CAP ?= 500
 
 NATIVE_OUT  := $(RV32EMU_DIR)/build-native
 AARCH64_OUT := $(RV32EMU_DIR)/build-aarch64
@@ -56,6 +67,29 @@ docker-shell: docker-build
 docker-bench: docker-build
 	docker run --rm --platform $(DOCKER_PLATFORM) $(DOCKER_IMAGE) \
 	    /spike-a/rv32emu/build/rv32emu /spike-a/coremark/coremark.elf
+
+# ── ADR-0082 MIPS cap smoke-test ──────────────────────────────────────────────
+# Builds a separate image with FC32_MIPS_CAP baked in.  Running this alongside
+# docker-bench lets you verify the throttle is active: the capped CoreMark score
+# should be roughly MIPS_CAP / (uncapped_MIPS) × uncapped_score.
+
+.PHONY: docker-build-capped
+docker-build-capped:
+	docker build --platform $(DOCKER_PLATFORM) \
+	    --build-arg FC32_MIPS_CAP=$(MIPS_CAP) \
+	    -t $(DOCKER_IMAGE_CAP) .
+
+.PHONY: docker-bench-capped
+docker-bench-capped: docker-build-capped
+	@echo "=== CoreMark with ADR-0082 MIPS cap = $(MIPS_CAP) ==="
+	docker run --rm --platform $(DOCKER_PLATFORM) $(DOCKER_IMAGE_CAP) \
+	    /spike-a/rv32emu/build/rv32emu /spike-a/coremark/coremark.elf
+
+.PHONY: docker-embench-capped
+docker-embench-capped: docker-build-capped
+	@echo "=== Embench-IoT with ADR-0082 MIPS cap = $(MIPS_CAP) ==="
+	docker run --rm --platform $(DOCKER_PLATFORM) $(DOCKER_IMAGE_CAP) \
+	    sh -c 'for f in $(EMBENCH_ELFS_GLOB); do $(RV32EMU_BIN) "$$f"; done'
 
 # ── Embench ───────────────────────────────────────────────────────────────────
 
