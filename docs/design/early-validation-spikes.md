@@ -196,19 +196,126 @@ is validated essentially for free.
 
 ---
 
+## Spike F — Lua compiled directly to WASM (no rv32emu layer)
+
+**Status:** not yet run. Motivated by Spike E's finding that the
+`rv32emu` + Lua-in-RV32IMFC stack on WASM misses the frame budget by 7.4×
+on the load-bearing Lua workload, and by ADR-0025's explicit fallback
+clause and Spike E open question #3.
+
+**The question:** Does Lua 5.4 compiled *directly* to WASM (no `rv32emu`
+layer, no RV32IMFC step — just the Lua VM as a WASM module) hold 60 fps in
+a browser on both a development desktop and a mid-range 2–3-year-old
+Android phone, on the same cart workloads Spike E measured?
+
+**Why this is a risk:** Spike E confirmed the current architectural choice
+(Lua → RV32IMFC → rv32emu → WASM) is two-layer interpretation on the WASM
+target: Lua bytecode dispatched by a Lua VM whose machine code is
+RV32IMFC dispatched by `rv32emu`'s interpreter compiled to WASM. The
+desktop-Chrome `doom_tick` mean is 123 ms/tick (7.4× over 16.67 ms) and
+the Lua-vs-C factor widens from 78× on Docker arm64 to ~130× on WASM,
+i.e. Lua carts pay roughly 3× the WASM tax that the native-C cart pays.
+A 2× constant-factor improvement in V8 would still leave `doom_tick` at
+~3.7× over budget. The only plausible path to viable Lua-on-WASM is to
+remove a layer of interpretation.
+
+This question is load-bearing for the platform's WASM target story. If
+Lua-direct-to-WASM holds 60 fps on desktop and is at-most-marginal on
+mid-range Android, the WASM target gets a real Lua authoring story
+(at the cost of a per-target divergence in execution model, which the
+determinism story has to absorb — see below). If it does not hold,
+Lua-on-WASM is structurally infeasible for non-trivial per-frame work
+and the WASM target reduces to native-C carts only.
+
+ADR-0025 names this fallback explicitly: "*If the WASM case fails the
+budget, the fallback is the host-embedded Lua architecture, accepting the
+asymmetric security and debugging model it entails.*" Spike F is the
+measurement that lets us choose between honouring that asymmetry and
+restricting Lua-on-WASM. ADR-0007 (structural determinism) is the other
+side of the trade — Lua-direct-on-WASM means the WASM target's
+deterministic ground truth is the Lua VM's behaviour, not the RV32IMFC
+ISA, which re-opens the determinism question for the WASM target
+specifically. Spike F does not resolve that — it produces the
+performance number that decides whether the determinism conversation
+needs to happen at all.
+
+**What to build:**
+- Lua 5.4 (vanilla PUC, `LUA_32BITS` per ADR-0066) compiled to WASM
+  via Emscripten. This is a standard Emscripten port of upstream Lua —
+  no rv32emu, no RV32IMFC cross-toolchain, no shared-library loader.
+- A thin host shim (C + JS) that exposes `lua_newstate` / `luaL_dostring`
+  / `lua_pcall` to the harness, embeds the cart's Lua source or
+  precompiled bytecode via `--embed-file`, and runs N ticks of the cart's
+  `update()` body emitting the same `FRAME <name> <i> <us>` and
+  `SUMMARY <name> ...` lines Spike E's harness consumes.
+- Reuse Spike E's measurement harness end-to-end: `web/spike_e.html`,
+  `web/spike_e_worker.js`, `web/run_chrome.cjs`, the rAF jank meter, the
+  per-tick distribution + p50/p95/p99 + 32-bin histogram. Only the WASM
+  module URL changes. Add a side-by-side comparison view if it is cheap
+  to do so.
+- The same four workloads Spike E measured: `lua_cart_doom_tick`,
+  `lua_cart_entity_update`, `lua_cart_binarytrees`, and a native-C
+  control. The Lua sources are byte-identical to Spike B/E's; the
+  *runtime that executes them* is what differs. Console-API ECALLs that
+  are not load-bearing for timing (draw, audio) become no-op JS stubs;
+  this spike is a CPU-bound Lua-VM measurement, not a runtime port.
+
+**Success criterion:**
+- **Primary (desktop):** `doom_tick` holds within the 16.67 ms budget at
+  p99 on Apple Silicon Chrome 147. Spike E's `doom_tick_c` p99 of 4.2 ms
+  is the floor for "the WASM tax alone"; Lua-direct should land within a
+  small constant factor of that, not within the 30× factor Spike E saw
+  for `doom_tick` over `doom_tick_c`. A pass is desktop p99 ≤ ~8 ms,
+  giving the 2–4× mobile projection band a fighting chance.
+- **Secondary (mobile):** measured run on a mid-range 2–3-year-old
+  Android device — same hand-off procedure as Spike E. A pass is
+  p99 ≤ 16.67 ms; "marginal" is 16.67–25 ms; anything above is a fail
+  for the load-bearing workload.
+- **Tertiary (cross-stack comparison):** add a row to Spike E's
+  cross-stack table — Docker arm64 / Node 22 + WASM (rv32emu) /
+  Chrome 147 + WASM (rv32emu) / **Chrome 147 + WASM (Lua-direct)**.
+  The interesting datum is the Lua-direct/Docker-arm64 ratio: if
+  Lua-direct on WASM is at-or-better than the rv32emu+Lua stack on
+  native arm64, then WASM-Lua-direct is the best-performing Lua surface
+  the platform has, and the rv32emu-on-WASM choice becomes purely a
+  determinism decision rather than a throughput one.
+
+**What this spike does and does not decide:**
+- Decides whether the *performance* objection to Lua-on-WASM (Spike E's
+  7.4×) is removed by the architectural change.
+- Does not decide whether the architectural change is worth its
+  determinism cost — that is an ADR-level decision informed by Spike D's
+  cross-platform digest results plus this spike's numbers.
+- Does not measure the security model trade-off (sandbox via RV32IMFC
+  ISA vs. sandbox via Lua's `_ENV` plus a stripped standard library).
+  ADR-0038 (two-layer sandboxing) and ADR-0079 (Lua standard library
+  allowlist) already describe what an asymmetric model would look like.
+
+**Dependency:** Spike B (cart workloads — same Lua sources), Spike E
+(measurement harness, baseline numbers, the cross-stack comparison
+methodology). Spike D's hex-digest comparison is the determinism
+follow-up if and when D produces reference digests.
+
+---
+
 ## Ordering
 
-A → B → C and D and E (B is the dependency for C, D, and E; C, D, E can
-proceed in parallel once B is done).
+A → B → C and D and E and F (B is the dependency for C, D, and E; F
+depends on B and E). C, D, E can proceed in parallel once B is done; F
+runs after E because it consumes E's harness and baseline numbers.
 
 ```
 A (interpreter)
 └── B (Lua-in-interpreter)
     ├── C (shared lib architecture)
     ├── D (determinism)
-    └── E (WASM) ← also uses D for comparison
+    └── E (WASM, rv32emu+Lua) ← also uses D for comparison
+        └── F (WASM, Lua-direct) ← contingent on E's miss; uses E's
+                                    harness and cross-stack baseline
 ```
 
-Spike C can begin as soon as A produces a working interpreter, since it is
-about build/linker feasibility rather than performance. The performance
-question in C is answered by B.
+Spike C can begin as soon as A produces a working interpreter, since it
+is about build/linker feasibility rather than performance. The
+performance question in C is answered by B. Spike F is contingent on
+Spike E missing the desktop-WASM budget — if E had passed, F would not
+need to run.
