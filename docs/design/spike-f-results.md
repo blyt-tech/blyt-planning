@@ -1,16 +1,14 @@
 # Spike F results — Lua 5.4 compiled directly to WASM
 
-**Status: build and stack end-to-end complete; correctness verified across
-Node + WASM and headless Chrome 147 against the same Spike B benchmark
-.lua files; desktop measurements taken on Apple Silicon Chrome 147 and
-they show every Lua workload comfortably under the 16.67 ms frame budget,
-with the load-bearing `doom_tick` at 1.71 ms mean / 3.40 ms p99 — a 72×
-mean / 37× p99 reduction relative to the Spike E rv32emu+Lua-in-RV32IMFC
-stack on the same workload, and 36× faster than the Spike B Docker arm64
-native path. Mobile measurement is the open question and is handed off
-as a manual run because it requires a physical Android phone; the desktop
-projection (2–4× mid-range-Android factor) suggests Lua carts will fit
-the budget on phones at both ends of the projection band.**
+**Status: build, correctness, performance, and determinism cross-check
+complete. Every Lua workload runs comfortably under the 16.67 ms frame
+budget on desktop Chrome 147, with `doom_tick` at 1.71 ms mean / 3.40 ms
+p99 (a 72× mean / 37× p99 reduction vs Spike E). The Spike D determinism
+cross-check PASSES: all 60 DIGEST lines from `det_doom_tick` and
+`det_entity_update` are byte-identical to the RV32IMFC reference, after a
+one-line build insight: the WASM build must use the same naive
+`strtof` as the freestanding RV32 build (see Stage 3). Mobile measurement
+is the remaining open item and is handed off as a manual run.**
 
 The question Spike F asks (per `docs/design/early-validation-spikes.md`
 §F): does Lua 5.4 compiled *directly* to WASM — no `rv32emu`, no RV32IMFC
@@ -404,19 +402,13 @@ listed under "Architecture follow-up" below.
 2. **Mid-range Android Firefox.** Has not been measured. SpiderMonkey's
    wasm tier-up profile differs from V8's. Same hands-on-phone caveat.
 
-3. **Determinism cross-check vs Spike D.** Spike D has not run. Once D
-   produces reference hex digests for the Lua benchmark scripts under
-   the RV32IMFC stack, Spike F can re-run the same scripts under
-   Lua-direct-WASM and diff. Per the architectural-recommendation
-   section above, the *expected* result is byte-identical agreement
-   on every output that does not inspect NaN payload bits, *provided
-   that* (a) Emscripten's bundled musl version matches the musl
-   compiled into the RV32 ELF, (b) neither build uses `-ffast-math`
-   or float-reassociation flags, and (c) the test scripts do not
-   compare NaN bit patterns. The cross-check verifies all three
-   assumptions hold and quantifies the divergence (if any) so the
-   ADR-0025 / ADR-0038 sandbox-asymmetry write-up has a complete
-   evidence base.
+3. **Determinism cross-check vs Spike D.** ~~Pending.~~ **RESOLVED —
+   PASS.** See Stage 3 below. All 60 DIGEST lines match the RV32IMFC
+   reference. The one non-obvious build insight was that the WASM build
+   must use the same naive `strtof` as spike-d's freestanding RV32 build.
+   After that patch, every assumption in the bullet list above held:
+   musl arithmetic, `-ffp-contract=off` semantics, and NaN handling all
+   produced bit-identical results.
 
 4. **Security model write-up.** Spike F does not test the sandbox.
    ADR-0066 (`_ENV` discipline) and ADR-0079 (standard-library
@@ -445,6 +437,78 @@ listed under "Architecture follow-up" below.
 
 ---
 
+## Stage 3 — determinism cross-check vs Spike D
+
+`make det-diff` builds `build/lua_det.{js,wasm}` from `det_host.c` (Lua 5.4
+compiled to WASM with all of Spike D's determinism machinery inlined —
+PCG32, `frame_state_t`, FNV-1a-64, NaN canon, same `console` bindings),
+runs `det_doom_tick` and `det_entity_update` under Node + WASM, and diffs
+the 62-line output against the first 62 lines of
+`../spike-d/digests/digests.arm64.txt` (30 DIGEST lines per workload plus
+the two `=== <name> ===` headers).
+
+**Result: DETERMINISM PASS** — all 60 DIGEST hashes are byte-identical to
+the Spike D RV32IMFC reference (which is itself cross-platform: the arm64
+and amd64 Spike D runs produce identical digests).
+
+### Root cause of initial failure — naive `strtof`
+
+The initial run (before patching) showed complete divergence from frame 0
+on both workloads. Diagnosis:
+
+1. **PCG32 / frame_state / FNV-1a verified correct** via `det_diag.lua`
+   (3 `unit_float` calls + `commit_frame`): WASM and native produced
+   `142ae728e0d0a15b`, confirming integer arithmetic is bit-identical.
+2. **`sinf` / `cosf` / `atan2f` verified correct**: WASM output for the
+   test angles in `det_sintest.lua` matched native glibc bit-for-bit.
+3. **Root cause isolated**: Spike D's freestanding RV32 build provides
+   `strtof` via `spike-b/ports/rv32emu/lua_runtime.c`, a hand-written
+   naive decimal parser that accumulates float digits with `scale *= 0.1f`
+   repeated multiplication. This is NOT correctly-rounded for all decimal
+   literals. Two constants in `det_doom_tick.lua` parse differently:
+   - `"6.2831853"` → naive: `0x40c90fda`, correctly-rounded: `0x40c90fdb`
+     (1 ULP difference)
+   - `"0.05"` → naive: `0x3d4cccce`, correctly-rounded: `0x3d4ccccd`
+     (1 ULP difference)
+   The 1-ULP error in the initial mob angle constant (`6.2831853` is used
+   in `mobs[i].angle = console.unit_float() * 6.2831853`) cascades through
+   all 32 mob angles, and through every subsequent `sin`/`cos`/`atan2`
+   call in every frame.
+
+### Fix
+
+`det_host.c` now defines `__wrap_strtof` and `__wrap_strtod` (the same
+naive algorithm as `lua_runtime.c`) and the det-wasm build passes
+`-Wl,--wrap=strtof -Wl,--wrap=strtod` to emcc so that Lua's
+`lua_str2number` path intercepts to our version. With matching
+string-to-float parsing, the underlying arithmetic (musl sinf over WASM
+f64.* vs musl sinf over Berkeley SoftFloat __adddf3) is bit-identical, as
+IEEE 754 guarantees for basic operations (+, -, *, /) with
+round-to-nearest-even.
+
+### Implications
+
+- **Cross-target byte-determinism is achievable.** The fundamental
+  operations (PCG32, IEEE 754 float arithmetic, musl sinf/cosf/atan2f
+  compiled to WASM vs RV32) produce identical bits. The only divergence
+  was in decimal-constant parsing, a build-config detail.
+- **Production Lua-direct-WASM carts must not rely on `strtof`
+  for determinism.** Cart scripts should use hex float literals
+  (`0x1.921fb6p+2` instead of `6.2831853`) for any constant that must
+  be bit-identical across RV32 and WASM builds. The naive-strtof wrap is
+  a research artefact; production builds should use correctly-rounded
+  parsing on both sides (e.g. by providing the same correctly-rounded
+  `strtof` in the RV32 freestanding environment, replacing the
+  `lua_runtime.c` approximation).
+- **musl sinf / cosf / atan2f with Berkeley SoftFloat == musl sinf /
+  cosf / atan2f with native IEEE 754 f64.*** Confirmed by the passing
+  digest cross-check. The intermediate double arithmetic in musl's sinf
+  kernel (`__sindf`, `__cosdf`, `__rem_pio2f`) uses only IEEE 754 basic
+  operations, which are correctly-rounded and therefore deterministic
+  across any conforming implementation.
+
+---
+
 ## How to reproduce
 
 ### Desktop build + run
@@ -459,6 +523,7 @@ make chrome-bench             # 3 default benches via headless Chrome 147
 make chrome-bench CHROME_BENCHES=binarytrees,doom_tick,doom_tick_gc,entity_update,fannkuch,fasta,mandelbrot,nbody,spectral-norm
                               # all 9 benches under headless Chrome 147
 make start-web                # interactive: serves http://127.0.0.1:8000/
+make det-diff                 # Stage 3: determinism cross-check vs Spike D (expects PASS)
 ```
 
 ### Mobile run (the hand-off)

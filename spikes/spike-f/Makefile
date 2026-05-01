@@ -16,6 +16,11 @@
 ##   make start-web-lan   stage-web + http.server on 0.0.0.0:8000 (phone testing)
 ##   make chrome-bench    Drive headless Chrome via puppeteer-core, capture
 ##                        per-cart histograms into baselines/chrome-desktop.json
+##   make det-wasm        Build build/lua_det.{js,wasm} (det_host.c + det workloads)
+##   make node-det-test   Run det_doom_tick + det_entity_update under Node+WASM;
+##                        writes baselines/det-node-wasm.txt
+##   make det-diff        Compare baselines/det-node-wasm.txt against the Spike D
+##                        reference digests; exits 0 on PASS, 1 on FAIL
 ##   make clean           Remove build/ and demo/
 ##   make distclean       clean + remove lua-src/ and emsdk symlink target
 ##
@@ -23,6 +28,7 @@
 ##   emsdk/               Symlink to ../spike-e/emsdk (Emscripten 3.1.51)
 ##   lua-src/             Vendored Lua 5.4.7 source (gitignored, fetched)
 ##   benchmarks/          .lua files copied from ../spike-b/benchmarks/
+##   det_workloads/       Lua determinism scripts copied from spike-d/workloads/
 ##   build/               Output (lua.js, lua.wasm, *.o) — gitignored
 ##   web/                 Harness + driver scripts
 ##   baselines/           Captured per-bench output and JSON
@@ -123,15 +129,16 @@ EMCC_DEFS  := -DLUA_USE_POSIX -DLUA_32BITS
 #    only as a debugging aid in Node.
 #  * No -sPTHREAD_POOL_SIZE — same lesson as spike-e (no SAB, no COOP/COEP).
 #  * --pre-js web/user-pre.js — sets noInitialRun=true and exposes run_user.
-EMCC_FLAGS := -O3 \
+EMCC_FLAGS_BASE := -O3 \
               -sINITIAL_MEMORY=64MB \
               -sALLOW_MEMORY_GROWTH \
               -sEXPORTED_FUNCTIONS=_main \
               -sEXPORTED_RUNTIME_METHODS=callMain,FS \
               -sFORCE_FILESYSTEM=1 \
               --pre-js web/user-pre.js \
-              $(EMBED_FLAGS) \
               -w
+
+EMCC_FLAGS := $(EMCC_FLAGS_BASE) $(EMBED_FLAGS)
 
 LUA_C_SRCS  := $(patsubst %, $(LUA_SRC)/%, $(LUA_SRCS))
 
@@ -218,6 +225,62 @@ chrome-bench: stage-web node_modules/puppeteer-core/package.json
 	      --out baselines/chrome-desktop.json; \
 	  kill $$(cat /tmp/spike-f-chrome-http.pid) 2>/dev/null || true; \
 	  rm -f /tmp/spike-f-chrome-http.pid)
+
+# ── determinism cross-check (Spike D reference vs Lua-direct-WASM) ────────
+#
+# det_host.c implements the same console API and FNV-1a digest as
+# spike-d/ports/rv32emu/lua_det_bindings.c.  The two det workload scripts
+# are copied from spike-d/workloads/.  The DIGEST output is compared against
+# spike-d/digests/digests.arm64.txt (first 62 lines = doom_tick + entity_update).
+
+DET_HOST_C      := det_host.c
+DET_WORKLOADS   := det_doom_tick det_entity_update
+DET_WORKLOAD_DIR := $(CURDIR)/det_workloads
+DET_OUT         := $(BUILD)/lua_det.js
+
+DET_WORKLOADS_ALL := $(DET_WORKLOADS) det_diag det_sintest
+DET_EMBED_FLAGS := $(foreach w,$(DET_WORKLOADS_ALL),\
+                    --embed-file $(DET_WORKLOAD_DIR)/$(w).lua@/$(w).lua)
+
+SPIKE_D_REF     := $(CURDIR)/../spike-d/digests/digests.arm64.txt
+
+.PHONY: det-wasm
+det-wasm: $(DET_OUT)
+
+$(DET_OUT): $(LUA_SRC)/lua.h $(DET_HOST_C) web/user-pre.js \
+            $(foreach w,$(DET_WORKLOADS),$(DET_WORKLOAD_DIR)/$(w).lua)
+	@mkdir -p "$(BUILD)"
+	$(EM_RUN) "$(EMCC)" $(EMCC_FLAGS_BASE) $(EMCC_DEFS) $(LUA_INCLUDE) \
+	    -Wl,--wrap=strtof -Wl,--wrap=strtod \
+	    -o $(DET_OUT) \
+	    $(DET_HOST_C) $(LUA_C_SRCS) \
+	    $(DET_EMBED_FLAGS)
+
+.PHONY: node-det-test
+node-det-test: det-wasm web/node_det_run.cjs
+	@cp web/node_det_run.cjs "$(BUILD)/"
+	@mkdir -p baselines
+	@echo "--- running det_doom_tick under Node+WASM Lua-direct ---"
+	(cd "$(BUILD)" && "$(NODE)" node_det_run.cjs det_doom_tick) \
+	    > baselines/det-node-wasm.txt
+	@echo "--- running det_entity_update under Node+WASM Lua-direct ---"
+	(cd "$(BUILD)" && "$(NODE)" node_det_run.cjs det_entity_update) \
+	    >> baselines/det-node-wasm.txt
+	@echo "Output written to baselines/det-node-wasm.txt"
+
+# Compare the first 62 lines of the spike-d reference (det_doom_tick header
+# + 30 DIGEST lines + det_entity_update header + 30 DIGEST lines = 62 lines).
+# Whetstone output that follows in the reference is not produced here.
+.PHONY: det-diff
+det-diff: node-det-test
+	@echo "--- diffing against Spike D reference ---"
+	@head -62 "$(SPIKE_D_REF)" > /tmp/spike-f-det-ref.txt
+	@if diff -u /tmp/spike-f-det-ref.txt baselines/det-node-wasm.txt; then \
+	    echo "DETERMINISM PASS — Lua-direct-WASM digests match RV32IMFC reference"; \
+	else \
+	    echo "DETERMINISM FAIL — digest divergence detected (see diff above)"; \
+	    exit 1; \
+	fi
 
 # ── housekeeping ───────────────────────────────────────────────────────────
 
