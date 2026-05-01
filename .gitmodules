@@ -1,6 +1,7 @@
 [submodule "spikes/spike-a/rv32emu"]
 	path = spikes/spike-a/rv32emu
 	url = https://github.com/sysprog21/rv32emu.git
+	ignore = untracked
 [submodule "spikes/spike-a/coremark"]
 	path = spikes/spike-a/coremark
 	url = https://github.com/eembc/coremark.git
