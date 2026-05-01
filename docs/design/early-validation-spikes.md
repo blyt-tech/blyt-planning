@@ -408,8 +408,9 @@ out of scope for this spike.
 
 **The question:** Can a RV32IMFC cart ELF run natively on the Milk-V Duo's
 RISC-V64 Linux kernel, communicate with the runtime via a shared-memory IPC
-library, and be adequately isolated from the host system using OS-level
-mechanisms?
+library, be adequately isolated from the host system using OS-level
+mechanisms, and have its CPU budget capped to match the performance floor
+of the minimum emulation host?
 
 **Why this is a risk:** On every other platform, the console API is
 surfaced to cart code as a thin library wrapper over ECALLs, and the
@@ -421,7 +422,7 @@ process is a Linux system call; it goes to the kernel, not to the
 runtime. A malicious cart can therefore invoke any syscall the kernel
 permits, bypassing the console API entirely.
 
-Three questions compound:
+Four questions compound:
 
 1. *RV32 on RV64 Linux.* Carts are RV32IMFC ELF binaries. The Milk-V
    Duo's C906 is RISC-V64. Running 32-bit RISC-V userspace requires
@@ -449,6 +450,16 @@ Three questions compound:
    (no networking), and no Linux capabilities, this should make
    escape from the cart process difficult even without an interpreter
    as a first line.
+
+4. *cgroups CPU quota.* The emulated paths enforce a per-frame CPU
+   budget via the MIPS cap (ADR-0082) and step counting (Spike G).
+   On native hardware, the equivalent mechanism is a cgroup `cpu.max`
+   quota on the cart child process. If the runtime can determine the
+   hardware's throughput relative to the minimum emulation host (Pi
+   Zero 2 W, measured in Spike A) and express that as a CPU fraction,
+   the kernel will throttle the cart to Pi-class throughput without any
+   instruction-level counting. Whether cgroups v2 is available and
+   configurable in the minimal buildroot environment is unverified.
 
 **What to build:**
 
@@ -478,6 +489,33 @@ Three questions compound:
   - Mount and network namespace isolation prevents any filesystem or
     network access independent of seccomp.
 
+- **Stage 4 — cgroups CPU quota.** Verify that cgroups v2 is
+  mountable and configurable in the buildroot environment. Since the
+  kernel config is under control, set the CFS bandwidth throttle
+  period (`cpu.max` period component) to a fixed 5000 µs. This is
+  short enough to enforce the budget in fine slices at any cart fps
+  (carts may run slower than 60 fps but not faster), avoiding the
+  problem of a period that spans multiple frames at lower rates. Run
+  a calibration benchmark (a fixed CoreMark iteration count,
+  completing in under 1 second) to determine the hardware's throughput
+  relative to the Pi Zero 2 W's Spike A measurement, then set
+  `cpu.max` on the cart child process to `<quota_us> 5000`, where
+  `quota_us = 5000 × (Pi_MIPS / native_MIPS)`. Run the Spike B game-loop workloads inside the
+  cgroup-throttled cart process and confirm they experience the same
+  budget pressure as under the emulated MIPS cap.
+
+  The calibration step has three options in ascending order of
+  simplicity; the spike should confirm which is viable:
+  - *Per-boot measurement:* run the benchmark on every boot and write
+    the result to a tempfile. Adds a small but bounded startup cost.
+  - *Per-installation measurement:* run once at install time and
+    persist the result. Eliminates boot cost; requires a first-run
+    setup step.
+  - *Baked into the boot image:* for known hardware targets (Milk-V
+    Duo, Milk-V Duo S), the CPU quota is a fixed constant included in
+    the image, with no runtime measurement at all. Simplest at runtime;
+    requires a new constant when porting to new hardware.
+
 **Success criterion:**
 
 - *Stage 1:* A RV32IMFC ELF executes natively on the Milk-V Duo,
@@ -489,6 +527,9 @@ Three questions compound:
 - *Stage 3:* All adversarial syscall attempts are blocked; no
   seccomp, namespace, or capability configuration prevents the
   legitimate IPC path from functioning.
+- *Stage 4:* cgroups v2 is available; the cart process experiences
+  budget pressure consistent with the emulated MIPS cap; at least one
+  of the three calibration options is confirmed practical.
 
 **What this spike does and does not decide:**
 
@@ -498,24 +539,17 @@ Three questions compound:
   or Stage 2 (IPC overhead too high) requires rethinking the native
   execution model — e.g. running carts through the interpreter even
   on RISC-V hardware, accepting the performance cost.
+- Decides whether cgroups-based CPU quota is a viable replacement for
+  instruction-level MIPS capping on native hardware. A failure in
+  Stage 4 (cgroups unavailable or quota too coarse) leaves the
+  runtime-side IPC timeout as the only enforcement, accepting that
+  well-behaved carts must be developed under emulation.
 - Does not specify the full seccomp allowlist for production — that
   is an implementation task once the complete set of runtime-side
   syscalls is known. The spike establishes that the approach is sound.
 - Does not replace Spike A. Spike A measures emulation throughput on
   the Pi; this spike is about native execution on RISC-V hardware.
   They address different deployment paths.
-- **Fine-grained per-frame CPU limiting on native hardware is an
-  explicit v1 non-goal.** On emulated paths, the MIPS cap (ADR-0082)
-  and Spike G's step-budget mechanism enforce the performance envelope
-  at the instruction level. Replicating that on native hardware would
-  require ptrace or equivalent — prohibitively expensive. It is also
-  unnecessary: all development happens under emulation, where the
-  limits are enforced; a cart that passes the emulator's budget has
-  already been validated. A coarse watchdog against runaway or
-  malicious carts (a runtime-side timeout on the IPC wait, analogous
-  to Spike G's Tier 2 watchdog) is straightforward given the IPC
-  architecture and is in scope, but it is not the same mechanism as
-  the emulated per-frame cap.
 
 **Platform:** Milk-V Duo or Milk-V Duo S (must be real hardware;
 QEMU does not exercise the `CONFIG_COMPAT` and seccomp questions in
