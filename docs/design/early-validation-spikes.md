@@ -404,6 +404,125 @@ out of scope for this spike.
 
 ---
 
+## Spike H — Native RISC-V cart execution and sandboxing
+
+**The question:** Can a RV32IMFC cart ELF run natively on the Milk-V Duo's
+RISC-V64 Linux kernel, communicate with the runtime via a shared-memory IPC
+library, and be adequately isolated from the host system using OS-level
+mechanisms?
+
+**Why this is a risk:** On every other platform, the console API is
+surfaced to cart code as a thin library wrapper over ECALLs, and the
+RISC-V interpreter intercepts those ECALLs to enforce the sandbox: it
+bounds-checks every memory access and is the sole gateway to host
+effects. On native RISC-V hardware there is no interpreter — the cart
+is a real Linux process. The `ecall` instruction in a native RISC-V
+process is a Linux system call; it goes to the kernel, not to the
+runtime. A malicious cart can therefore invoke any syscall the kernel
+permits, bypassing the console API entirely.
+
+Three questions compound:
+
+1. *RV32 on RV64 Linux.* Carts are RV32IMFC ELF binaries. The Milk-V
+   Duo's C906 is RISC-V64. Running 32-bit RISC-V userspace requires
+   `CONFIG_COMPAT` in the Linux kernel. Minimal buildroot configs
+   frequently omit this; its availability on the Milk-V Duo kernel is
+   unverified.
+
+2. *Console API IPC mechanism.* On native hardware, `libconsole` cannot
+   issue ECALLs to reach the runtime. The library must communicate with
+   the runtime process via a real IPC channel — the most promising
+   candidate is a shared-memory ring buffer with futex synchronisation,
+   mapped into the cart process before execution begins. The runtime
+   services requests from the ring on the other side. This keeps
+   per-API-call overhead low (a futex syscall rather than a context
+   switch) while maintaining a clean process boundary.
+
+3. *OS-level sandbox.* Because the cart is a native process, the
+   security boundary is whatever the OS enforces. A seccomp-bpf filter
+   on the cart process can allowlist the exact syscalls it legitimately
+   needs: `futex` (for the ring buffer), `clock_gettime` (if not
+   handled by the vDSO), and the small set required for process startup
+   and shutdown. Everything else — `open`, `socket`, `mmap` of new
+   regions, `execve` — is blocked at the kernel level. Combined with
+   a mount namespace (no filesystem visibility), a network namespace
+   (no networking), and no Linux capabilities, this should make
+   escape from the cart process difficult even without an interpreter
+   as a first line.
+
+**What to build:**
+
+- **Stage 1 — RV32 execution.** Confirm that a minimal RV32IMFC ELF
+  (a "hello world" that calls `write` via ECALL 64) runs natively on
+  the Milk-V Duo's kernel. If `CONFIG_COMPAT` is absent, determine
+  whether it can be added to the buildroot config and rebuilt, or
+  whether an alternative (e.g. compiling carts as RV64 with RV32
+  ABI constraints) is needed.
+
+- **Stage 2 — IPC library round-trip.** Build a minimal `libconsole`
+  stub: on the cart side, a ring-buffer writer + futex wait; on the
+  runtime side, a reader that processes requests and writes responses.
+  A simple API call (`console_get_frame_count()`) exercises the full
+  round-trip. Measure round-trip latency for a single call and for a
+  batch representative of one frame's worth of draw calls.
+
+- **Stage 3 — seccomp + namespace isolation.** Apply a seccomp-bpf
+  allowlist to the cart child process after the shared-memory mapping
+  is established. Verify that:
+  - Legitimate API calls still work (the ring-buffer path does not
+    require any blocked syscall).
+  - An adversarial cart attempting `open("/etc/passwd", O_RDONLY)`
+    receives `SIGSYS` / `ENOSYS`.
+  - An adversarial cart attempting `socket(AF_INET, SOCK_STREAM, 0)`
+    is likewise blocked.
+  - Mount and network namespace isolation prevents any filesystem or
+    network access independent of seccomp.
+
+**Success criterion:**
+
+- *Stage 1:* A RV32IMFC ELF executes natively on the Milk-V Duo,
+  either via `CONFIG_COMPAT` or a documented alternative.
+- *Stage 2:* The IPC round-trip latency for a single API call is
+  ≤ 10 µs; a simulated frame's worth of calls (100–200 draw
+  primitives) adds ≤ 1 ms of IPC overhead against the 16.67 ms
+  budget.
+- *Stage 3:* All adversarial syscall attempts are blocked; no
+  seccomp, namespace, or capability configuration prevents the
+  legitimate IPC path from functioning.
+
+**What this spike does and does not decide:**
+
+- Decides the IPC mechanism for the native hardware console API and
+  whether OS-level isolation is sufficient to replace the interpreter
+  sandbox on that path. A failure in Stage 3 (isolation insufficient)
+  or Stage 2 (IPC overhead too high) requires rethinking the native
+  execution model — e.g. running carts through the interpreter even
+  on RISC-V hardware, accepting the performance cost.
+- Does not specify the full seccomp allowlist for production — that
+  is an implementation task once the complete set of runtime-side
+  syscalls is known. The spike establishes that the approach is sound.
+- Does not replace Spike A. Spike A measures emulation throughput on
+  the Pi; this spike is about native execution on RISC-V hardware.
+  They address different deployment paths.
+- **Fine-grained per-frame CPU limiting on native hardware is an
+  explicit v1 non-goal.** On emulated paths, the MIPS cap (ADR-0082)
+  and Spike G's step-budget mechanism enforce the performance envelope
+  at the instruction level. Replicating that on native hardware would
+  require ptrace or equivalent — prohibitively expensive. It is also
+  unnecessary: all development happens under emulation, where the
+  limits are enforced; a cart that passes the emulator's budget has
+  already been validated. A coarse watchdog against runaway or
+  malicious carts (a runtime-side timeout on the IPC wait, analogous
+  to Spike G's Tier 2 watchdog) is straightforward given the IPC
+  architecture and is in scope, but it is not the same mechanism as
+  the emulated per-frame cap.
+
+**Platform:** Milk-V Duo or Milk-V Duo S (must be real hardware;
+QEMU does not exercise the `CONFIG_COMPAT` and seccomp questions in
+a representative way).
+
+---
+
 ## Ordering
 
 A → B → C and D and E and F (B is the dependency for C, D, and E; F
@@ -421,6 +540,8 @@ A (interpreter)
             │                       harness and cross-stack baseline
             └── G (WASM Lua-direct CPU cap) ← depends on F's host.c
                                                and timing baseline
+
+H (native RISC-V sandbox) ← independent; requires Milk-V Duo hardware
 ```
 
 Spike C can begin as soon as A produces a working interpreter, since it
@@ -429,3 +550,5 @@ performance question in C is answered by B. Spike F is contingent on
 Spike E missing the desktop-WASM budget — if E had passed, F would not
 need to run. Spike G is contingent on Spike F's adoption recommendation
 — if F had not recommended Lua-direct for WASM, G would not be needed.
+Spike H is independent of the rest of the series; it requires Milk-V
+Duo hardware and can run in parallel with any other spike.
