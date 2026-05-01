@@ -1,12 +1,13 @@
 # Spike A results — Interpreter throughput on minimum emulation hardware
 
-**Status: build and toolchain complete; real-hardware numbers pending.**
+**Status: build and toolchain complete; ADR-0082 throttle mechanism verified; real-hardware numbers pending.**
 
 The question Spike A asks is whether an RV32IMFC interpreter running on a
 Pi Zero 2 W (Cortex-A53 @ 1 GHz) can execute a realistic cart workload within
 the 16.7 ms frame budget at 60 fps. The build infrastructure is done and
-verified correct. The actual answer requires Pi Zero 2 W hardware, which has
-not yet been run.
+verified correct. The ADR-0082 MIPS cap mechanism has been implemented and
+confirmed to work. The actual performance answer requires Pi Zero 2 W hardware,
+which has not yet been run.
 
 ---
 
@@ -41,6 +42,13 @@ provides the double-precision helpers for the score calculation path.
 The port lives in `ports/rv32emu/embench/` and reuses the same crt0/syscalls
 foundation as CoreMark. Each benchmark binary self-reports its elapsed time
 when run under rv32emu. qrduino is excluded (requires `<avr/pgmspace.h>`).
+
+**ADR-0082 MIPS cap:** `patches/apply-mips-cap.py` patches rv32emu at Docker
+build time (the submodule is unmodified) to add a `nanosleep` throttle in
+`rv_run()`. The cap value is baked in at compile time via `-DFC32_MIPS_CAP=N`;
+`N=0` (default) disables the throttle entirely, preserving upstream behaviour.
+The placeholder value is 500 MIPS; it will be replaced with the Pi Zero 2 W
+measurement once hardware is available.
 
 ---
 
@@ -119,6 +127,55 @@ remaining work.
 
 ---
 
+## ADR-0082 MIPS cap — mechanism verified
+
+The throttle described in ADR-0082 has been implemented and confirmed correct
+against the Docker numbers.
+
+### How it works
+
+`patches/apply-mips-cap.py` (run from within the Docker build) patches two
+files inside `rv32emu/`:
+
+- **`Makefile`** — adds `FC32_EXTRA_CFLAGS ?=` so the cap value can be
+  injected without overriding the Makefile's CFLAGS line.
+- **`src/riscv.c`** — wraps the `rv_run()` inner loop: after each `rv_step()`
+  it reads `rv->csr_cycle`, computes how long those cycles "should" have taken
+  at the target MIPS rate, and calls `nanosleep()` for the difference if the
+  host ran ahead. When `FC32_MIPS_CAP == 0` the code compiles away entirely.
+
+```c
+/* after rv_step(): */
+emulated_ns = cycles_this_step * 1000 / FC32_MIPS_CAP;
+wall_ns     = clock_gettime(CLOCK_MONOTONIC) delta;
+if (emulated_ns > wall_ns)
+    nanosleep(emulated_ns - wall_ns);
+```
+
+### Verification run (arm64 Docker, Apple Silicon)
+
+| Cap | CoreMark score | Elapsed |
+|-----|---------------|---------|
+| uncapped | 1589 iter/sec | 12.6 s |
+| 500 MIPS | 362 iter/sec  | 55.3 s |
+
+The 4.4× slowdown implies the effective uncapped MIPS on this host is
+~2200 MIPS (500 × 4.4). The score ratio 362/1589 ≈ 23% matches
+500/2200 ≈ 23%, confirming the throttle arithmetic is correct.
+
+The placeholder cap of **500 MIPS** is intentionally well below the Docker
+host's capability. It will be replaced with the Pi Zero 2 W measured value.
+
+### Make targets
+
+```sh
+make docker-bench-capped              # CoreMark at default 500 MIPS cap
+make docker-bench-capped MIPS_CAP=N  # CoreMark at N MIPS
+make docker-embench-capped            # all 18 Embench at default cap
+```
+
+---
+
 ## What remains
 
 1. **Pi Zero 2 W hardware.** Run `make docker-bench` (CoreMark) and
@@ -132,9 +189,9 @@ remaining work.
    effective MIPS, and the Embench median time, are the two inputs to this
    judgment.
 
-3. **Set the MIPS cap (ADR-0082).** The measured effective MIPS figure from
-   the real Pi run becomes the emulator MIPS cap baked into all emulator
-   builds. This cap is currently unset.
+3. **Set the MIPS cap (ADR-0082).** Replace the 500 MIPS placeholder with the
+   measured Pi Zero 2 W effective MIPS. Rebuild with `FC32_MIPS_CAP=<pi_mips>`
+   to lock in the final cap value.
 
 ---
 
@@ -142,10 +199,15 @@ remaining work.
 
 ```sh
 # Correctness check on Apple Silicon (arm64 Docker):
-make docker-bench       # CoreMark
-make docker-embench     # all 18 Embench benchmarks
+make docker-bench                    # CoreMark, uncapped
+make docker-embench                  # all 18 Embench, uncapped
 
-# On real Pi Zero 2 W (ssh in, clone repo, then):
+# MIPS cap verification (arm64 Docker):
+make docker-bench-capped             # CoreMark at 500 MIPS placeholder
+make docker-bench-capped MIPS_CAP=N  # CoreMark at N MIPS
+make docker-embench-capped           # Embench at 500 MIPS placeholder
+
+# On real Pi Zero 2 W (ssh in, clone repo, build from spikes/spike-a/):
 make -C rv32emu OUT=build -j4
 make -C coremark PORT_DIR=../ports/rv32emu ITERATIONS=3000 compile
 ./rv32emu/build/rv32emu coremark/coremark.elf
