@@ -30,7 +30,9 @@ ELFS_DIR    := /spike-b/elfs
 
 .PHONY: docker-build
 docker-build:
-	$(MAKE) -C ../spike-a docker-build
+	$(MAKE) -C ../spike-a docker-build \
+	    DOCKER_IMAGE=$(SPIKE_A_IMAGE) \
+	    DOCKER_PLATFORM=$(DOCKER_PLATFORM)
 	docker build --platform $(DOCKER_PLATFORM) \
 	    --build-arg SPIKE_A_IMAGE=$(SPIKE_A_IMAGE) \
 	    -t $(DOCKER_IMAGE) .
@@ -43,7 +45,10 @@ docker-shell: docker-build
 
 .PHONY: docker-build-capped
 docker-build-capped:
-	$(MAKE) -C ../spike-a docker-build-capped MIPS_CAP=$(MIPS_CAP)
+	$(MAKE) -C ../spike-a docker-build-capped \
+	    DOCKER_IMAGE_CAP=$(SPIKE_A_IMAGE_CAP) \
+	    DOCKER_PLATFORM=$(DOCKER_PLATFORM) \
+	    MIPS_CAP=$(MIPS_CAP)
 	docker build --platform $(DOCKER_PLATFORM) \
 	    --build-arg SPIKE_A_IMAGE=$(SPIKE_A_IMAGE_CAP) \
 	    -t $(DOCKER_IMAGE_CAP) .

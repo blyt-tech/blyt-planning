@@ -471,12 +471,14 @@ double sqrt(double x)
 }
 
 /* fabs/fabsf: clear the IEEE 754 sign bit. */
+#ifndef HAVE_LIBM
 float fabsf(float x)
 {
     union { float f; uint32_t u; } v = { .f = x };
     v.u &= 0x7FFFFFFFu;
     return v.f;
 }
+#endif
 double fabs(double x)
 {
     union { double d; uint64_t u; } v = { .d = x };
@@ -485,6 +487,7 @@ double fabs(double x)
 }
 
 /* floor/ceil/trunc: integer truncation; only correct for |x| < 2^31. */
+#ifndef HAVE_LIBM
 float floorf(float x)
 {
     int i = (int)x;
@@ -497,6 +500,7 @@ float ceilf(float x)
     if ((float)i < x) i++;
     return (float)i;
 }
+#endif
 float truncf(float x) { return (float)(int)x; }
 double floor(double x) { return (double)floorf((float)x); }
 double ceil (double x) { return (double)ceilf ((float)x); }
@@ -520,26 +524,51 @@ double ldexp(double x, int e) { return (double)ldexpf((float)x, e); }
 float frexpf(float x, int *e) { *e = 0; return x; }
 double frexp(double x, int *e) { *e = 0; return x; }
 
+/* scalbn: same as ldexp under default rounding.  Only referenced from
+ * the vendored musl __rem_pio2_large path used by the spike-d carts;
+ * spike-b benchmarks do not call it.  Implementing as a thin alias is
+ * cheap and keeps the link error-free in both builds. */
+float scalbnf(float x, int e) { return ldexpf(x, e); }
+double scalbn(double x, int e) { return ldexp(x, e); }
+
 /* Transcendental stubs.  Unreachable in our benchmark suite — they exist
  * only so the linker can resolve lmathlib's references to sin/cos/etc.
- * If a benchmark hits one, it gets 0; we'll notice in output. */
-#define STUB1F(name) float name##f(float x) { (void)x; return 0.0f; } \
-                     double name(double x)  { (void)x; return 0.0; }
-#define STUB2F(name) float name##f(float a, float b) { (void)a; (void)b; return 0.0f; } \
-                     double name(double a, double b)  { (void)a; (void)b; return 0.0; }
-STUB1F(sin)
-STUB1F(cos)
-STUB1F(tan)
-STUB1F(asin)
-STUB1F(acos)
-STUB1F(atan)
-STUB1F(exp)
-STUB1F(log)
-STUB1F(log2)
-STUB1F(log10)
-STUB2F(atan2)
-STUB2F(pow)
-STUB2F(hypot)
+ * If a benchmark hits one, it gets 0; we'll notice in output.
+ *
+ * Spike D defines `-DHAVE_LIBM` and links a real libm built from vendored
+ * musl 1.2.5 sources; under that flag the float-precision stubs are
+ * suppressed so musl's strong symbols win.  The double-precision stubs
+ * remain in both builds (musl's float-only subset doesn't ship them). */
+#define STUB1FF(name) float name##f(float x) { (void)x; return 0.0f; }
+#define STUB1FD(name) double name(double x)  { (void)x; return 0.0; }
+#define STUB1F(name)  STUB1FF(name) STUB1FD(name)
+#define STUB2FF(name) float name##f(float a, float b) { (void)a; (void)b; return 0.0f; }
+#define STUB2FD(name) double name(double a, double b)  { (void)a; (void)b; return 0.0; }
+#define STUB2F(name)  STUB2FF(name) STUB2FD(name)
+
+#ifndef HAVE_LIBM
+STUB1FF(sin)
+STUB1FF(cos)
+STUB1FF(tan)
+STUB1FF(atan)
+STUB1FF(exp)
+STUB1FF(log)
+STUB1FF(log2)
+STUB2FF(atan2)
+STUB2FF(pow)
+#endif
+
+/* Float stubs for names not in spike-d's musl subset. */
+STUB1FF(asin)
+STUB1FF(acos)
+STUB1FF(log10)
+STUB2FF(hypot)
+
+/* Double-precision stubs (musl float subset doesn't cover these). */
+STUB1FD(sin) STUB1FD(cos) STUB1FD(tan)
+STUB1FD(asin) STUB1FD(acos) STUB1FD(atan)
+STUB1FD(exp) STUB1FD(log) STUB1FD(log2) STUB1FD(log10)
+STUB2FD(atan2) STUB2FD(pow) STUB2FD(hypot)
 
 /* ── snprintf / printf ───────────────────────────────────────────────────── */
 /*

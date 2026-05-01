@@ -29,6 +29,17 @@ COPY configs/rv32emu.config rv32emu/.config
 COPY patches/ patches/
 RUN cd rv32emu && python3 ../patches/apply-mips-cap.py
 
+# FC32_DISABLE_LTO=1 turns off CONFIG_LTO before building rv32emu.  This is
+# a workaround for GCC's LTO crashing under qemu-user emulation — used by
+# spike-d's linux/amd64 build path on Apple Silicon hosts.  Disabling LTO
+# does not affect interpreter semantics; it only changes optimisation
+# (and slightly increases binary size).
+ARG FC32_DISABLE_LTO=0
+RUN if [ "$FC32_DISABLE_LTO" = "1" ]; then \
+        sed -i 's/^CONFIG_LTO=y/CONFIG_LTO=n/' rv32emu/.config && \
+        echo "Disabled CONFIG_LTO in rv32emu/.config" ; \
+    fi
+
 # FC32_MIPS_CAP=0 → uncapped (identical to upstream behaviour).
 # Pass --build-arg FC32_MIPS_CAP=N to enable the throttle at N MIPS.
 ARG FC32_MIPS_CAP=0

@@ -43,3 +43,15 @@ FROM ${SPIKE_A_IMAGE}
 WORKDIR /spike-b
 COPY --from=builder /spike-b/ports/rv32emu/build/lua_cart_*.elf  ./elfs/
 COPY --from=builder /spike-b/ports/rv32emu/build/doom_tick_c.elf ./elfs/
+
+# Spike D layers on top of this image and recompiles spike-b's
+# lua_runtime.c with -DHAVE_LIBM (transcendental stubs disabled in
+# favour of vendored musl).  Ship the port sources + Lua source tree
+# in the runtime image so spike-d can re-invoke the build.  We deliberately
+# do not copy ports/rv32emu/build/ because that duplicates ./elfs/.
+COPY --from=builder /spike-b/ports/rv32emu/lua_runtime.c     ./ports/rv32emu/
+COPY --from=builder /spike-b/ports/rv32emu/lua_init_libs.c   ./ports/rv32emu/
+COPY --from=builder /spike-b/ports/rv32emu/softfloat-glue.c  ./ports/rv32emu/
+COPY --from=builder /spike-b/ports/rv32emu/crt0.S            ./ports/rv32emu/
+COPY --from=builder /spike-b/ports/rv32emu/include           ./ports/rv32emu/include
+COPY --from=builder /spike-b/lua                             ./lua

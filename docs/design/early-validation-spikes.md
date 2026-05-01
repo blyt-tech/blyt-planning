@@ -120,6 +120,16 @@ loader).
 
 ## Spike D — Cross-platform determinism
 
+**Status:** PASS. Implementation in [`spikes/spike-d/`](../../spikes/spike-d/);
+results in [`spike-d-results.md`](spike-d-results.md). Three carts
+(`lua_cart_det_doom_tick.elf`, `lua_cart_det_entity_update.elf`,
+`whetstone.elf`) produce byte-identical per-frame digest streams across
+`linux/arm64` and `linux/amd64` Docker builds on Apple Silicon (the
+amd64 side via qemu-user). The cart ELFs themselves are byte-identical
+across the two cross-toolchains. Float-precision musl 1.2.5
+transcendentals ported clean to freestanding RV32IMFC behind a small
+header shim.
+
 **The question:** Does the same cart workload, given the same inputs, produce
 bit-identical output on two materially different host platforms without
 heroic effort?
