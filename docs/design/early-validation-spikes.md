@@ -85,6 +85,11 @@ full runtime will be native-speed ECALLs, not Lua computation).
 
 ## Spike C — Lua as a host-provided shared library in the VM
 
+**Status:** implementation in [`spikes/spike-c/`](../../spikes/spike-c/);
+results in [`spike-c-results.md`](spike-c-results.md). Code complete;
+`make docker-build` not yet run. First build will confirm toolchain,
+readelf sanity checks, and end-to-end cart execution.
+
 **The question:** Can Lua 5.4 be built as a versioned RV32IMFC shared
 library, pre-loaded into a cart's VM address space, and called from cart code
 via direct in-VM function calls (not ECALLs)?
