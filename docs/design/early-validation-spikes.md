@@ -391,16 +391,87 @@ out of scope for this spike.
   `Atomics.waitAsync` watchdog replacing the step hook) becomes the
   candidate; evaluating that alternative would be the spike's follow-up.
   Tier 2 (the ~1 s hard timeout) stands regardless of the Tier 1 result.
-- Does not address the *development-feedback* asymmetry: cart authors
-  working in Chrome on an M-series Mac see Lua-direct's ~36× faster
-  throughput rather than Pi-class throughput. This is an authoring
-  tooling concern (a "Pi perf projection" indicator in the dev UI),
-  not a runtime mechanism, and is out of scope for this spike.
+- Does not resolve the *development-feedback* asymmetry — a critical deferred
+  risk. Native CLI builds run Lua under `rv32emu` with ADR-0082's MIPS cap,
+  so developers on that toolchain already see Pi-class throughput. But the
+  VS Code extension must use a web view, which runs the Lua-direct WASM
+  build. That build is ~36× faster than Pi hardware and has no throttle:
+  developers iterating in VS Code see systematically wrong frame times during
+  their primary edit-run loop. Code that "feels fine" in the extension will
+  miss the 16.67 ms per-frame budget on Pi. This gap is addressed by
+  Spike G.2 (see below).
 - Does not replace Spike A. The Pi target continues to use `rv32emu`
   with ADR-0082's instruction-cap throttle; this spike applies only to
   the WASM Lua-direct execution path.
 
 **Dependency:** Spike F (timing baseline and `host.c` shim codebase).
+
+---
+
+## Spike G.2 — WASM Lua-direct: dev-mode Pi-parity throttle
+
+**The question:** Can `lua_maskline` be used in the VS Code extension's dev
+WASM build to slow Lua-direct execution to approximately Pi-class throughput,
+giving developers accurate per-frame budget signals in their primary edit-run
+loop?
+
+**Why this is a risk:** Native CLI builds already provide Pi-parity
+performance via `rv32emu` + the ADR-0082 MIPS cap — no throttle spike is
+needed there. But the VS Code extension must use a web view, which runs the
+Lua-direct WASM build. That build is ~36× faster than Pi hardware. Without
+a credible in-WASM throttle, developers get systematically wrong performance
+signals in the tool they use most. Code that "feels fine" in VS Code will
+miss budget on Pi.
+
+**Why `lua_maskline`:** `LUA_MASKCOUNT` fires only on function calls and
+returns — too coarse for proportional time injection on a per-line basis.
+`LUA_MASKLINE` fires on every source line, which is the right granularity.
+Its overhead was judged "too expensive" for production in Spike G's Tier 2
+discussion, but that was an assumption — the actual cost has never been
+measured on WASM. If it turns out to be low, it could serve as the throttle
+mechanism in all builds, not just dev. The spike measures first and decides
+scope from the data.
+
+**Proposed approach:**
+
+- Build a dev-mode variant of the Spike G host shim with
+  `lua_sethook(L, hook_fn, LUA_MASKLINE, 0)` installed at startup.
+- The hook busy-waits for a calibrated `us_per_line` duration. The
+  calibration factor is derived by running a known workload (e.g.
+  `doom_tick`) without the hook to establish a WASM line-execution rate,
+  then comparing to Spike B's Pi-projected frame time to compute the
+  per-line delay required to equalise them.
+- Re-run the full Spike F benchmark suite with the dev hook active. Report
+  achieved frame times vs. Spike B's Pi-projected targets.
+
+**Success criterion:**
+
+- Throttled WASM frame times match Spike B's Pi-projected frame times within
+  ±25% on `doom_tick`, `entity_update`, `binarytrees`, and `mandelbrot`.
+- The hook is stable: no pathological GC pressure and frame-time variance
+  stays low enough to be a useful signal.
+
+**Possible outcomes (the spike decides between them):**
+
+1. *Overhead is low enough for production use* — `LUA_MASKLINE` becomes the
+   throttle mechanism in all WASM builds, replacing or supplementing Spike G's
+   `LUA_MASKCOUNT` Tier 1.
+2. *Overhead is acceptable only with artificial delay removed* — still usable
+   as a dev-only throttle; production uses Spike G's `LUA_MASKCOUNT` approach.
+3. *Overhead is too high and too jittery* — `LUA_MASKLINE` is ruled out
+   entirely; fallback is a `LUA_MASKCOUNT`-based throttle with N=1 and a
+   per-call delay derived from Spike B's call-frequency data.
+
+**What this spike does and does not decide:**
+
+- Decides whether `lua_maskline` is viable and, if so, in which builds
+  (all, dev-only).
+- Does not design the dev-UI around the result.
+- Does not affect native CLI builds, which already get Pi-parity via
+  `rv32emu` + ADR-0082.
+
+**Dependency:** Spike G (host.c shim shape, `LUA_MASKCOUNT` baseline);
+Spike B (Pi-projected frame-time targets for calibration).
 
 ---
 
