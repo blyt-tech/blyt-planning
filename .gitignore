@@ -53,3 +53,96 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# ============================================================
+# AI Agent Instructions & Configuration (ALL variants)
+# ============================================================
+
+# ---- Open Standard ----
+AGENTS.md
+AGENTS.override.md
+**/AGENTS.md
+**/AGENTS.override.md
+.agents.md
+
+# ---- Anthropic Claude Code ----
+CLAUDE.md
+CLAUDE.local.md
+**/CLAUDE.md
+**/CLAUDE.local.md
+.claude/
+memory/
+
+# ---- Google Gemini CLI ----
+GEMINI.md
+GEMINI.local.md
+**/GEMINI.md
+**/GEMINI.local.md
+.gemini/
+
+# ---- OpenAI Codex CLI ----
+CODEX.md
+codex.md
+.codex/
+
+# ---- GitHub Copilot ----
+.github/copilot-instructions.md
+.github/agents/
+.copilot/
+
+# ---- Cursor ----
+.cursor/
+.cursorrules
+.cursorignore
+.cursorindexingignore
+
+# ---- Windsurf (Codeium) ----
+.windsurf/
+.windsurfrules
+
+# ---- Aider ----
+.aider*
+!.aider.conf.yml.example
+
+# ---- Cline / RooCode ----
+.clinerules
+.roo/
+.roomodes
+
+# ---- Continue.dev ----
+.continue/
+
+# ---- Devin ----
+.devin/
+
+# ---- Amazon Q / CodeWhisperer ----
+.aws/amazonq/
+.amazonq/
+
+# ---- JetBrains Junie ----
+.junie/
+
+# ---- BetterTouchTool AI ----
+BTT.md
+AGENT.md
+
+# ---- Plandex ----
+.plandex/
+plandex.md
+
+# ---- Tabnine / Supermaven / Greptile ----
+.tabnine/
+.supermaven/
+.greptile/
+
+# ---- Generic catch-all ----
+.ai/
+ai-instructions*
+AI-INSTRUCTIONS*
+**/.agent/
+**/agent-instructions*
+
+# ============================================================
+# END AI Agent Instructions & Configuration (ALL variants)
+# ============================================================
+
