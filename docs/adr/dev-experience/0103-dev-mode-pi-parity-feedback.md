@@ -84,16 +84,19 @@ time.
 
 **Validations gated on this path:**
 
-1. Confirmatory measurement in the actual VS Code Electron shell. G.3
-   ran on HeadlessChrome 147; the real shell's cross-origin-isolation
-   state may differ, changing the timer floor and therefore the quantum.
-2. C-library drift recovery. G.3 used pure-Lua benches.
+1. C-library drift recovery. G.3 used pure-Lua benches.
    `LUA_MASKLINE` doesn't fire inside C functions, so long
    `string.gsub` / `table.sort` calls advance wall time without
    advancing `target_ns`. The accumulated-debt design *handles* this
    correctly (subsequent lines return instantly until debt catches up),
    but whether the resulting "brief unthrottled span after a C call"
    feels acceptable in real game code is untested.
+2. (*Sanity check, not gating.*) A short run in the actual VS Code
+   renderer to confirm jitter and scheduling behavior match
+   HeadlessChrome 147. The timer floor itself is no longer in question
+   — VS Code's default state matches the spike host's (see Open
+   Questions §5) — but JIT tier-up and worker scheduling could differ.
+   Low priority.
 
 ### Option B — Projection only
 
@@ -182,6 +185,25 @@ plus a per-cart `lines_per_frame` measurement.
 4. **Re-calibration cadence for projection.** Periodic timer? On
    frame-time anomaly? On suspend/resume? Cheap to implement; design
    call.
+5. **Renderer (web view) or extension host (Node) for the WASM Lua
+   engine?** Upstream of the throttle/projection question; affects
+   which mechanism is even needed.
+
+   - *Renderer.* Subject to VS Code's default 100 µs `performance.now()`
+     floor (no cross-origin isolation; `--enable-coi` reduces to 5 µs
+     but is not a distribution path — extensions can't force it).
+     G.3's accumulated-debt design is the portable answer, and the
+     spike's HeadlessChrome 147 measurement transfers directly.
+   - *Extension host.* `process.hrtime.bigint()` gives nanosecond
+     resolution with no browser security clamp. The G.2/G.3 saga
+     becomes irrelevant for the throttle: per-line busy-wait works,
+     accumulated-debt works, both at full configured precision. Cart
+     logic in a Node worker, IPC to renderer for graphics.
+
+   G.3's mechanism is still the right answer for portable
+   web-shell builds (itch.io, hosted dev demo), regardless of where
+   the VS Code extension chooses to run. The Node-side path is a
+   VS-Code-specific accuracy upgrade, not a replacement.
 
 ## References
 
@@ -195,3 +217,16 @@ plus a per-cart `lines_per_frame` measurement.
   rv32emu means and the 4–8× Pi projection band).
 - Early-validation spikes — `docs/design/early-validation-spikes.md` §G,
   §G.2, §G.3.
+
+### External — VS Code / Chromium timer resolution
+
+- VS Code does not enable cross-origin isolation by default;
+  `performance.now()` resolution is **100 µs** in the renderer
+  (matching HeadlessChrome 147 — the spike host). Launching with
+  `--enable-coi` reduces it to 5 µs, but extensions cannot force this.
+- `window.crossOriginIsolated` exposes the runtime state.
+- Node-side (`process.hrtime.bigint()`) gives nanosecond resolution with
+  no browser security clamp.
+- Sources: Chrome Developers — *Aligning timers with cross-origin
+  isolation*; W3C High Resolution Time spec; VS Code Discussion #156
+  (*Towards cross-origin isolation*).
