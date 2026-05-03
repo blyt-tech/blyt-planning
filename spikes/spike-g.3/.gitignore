@@ -1,0 +1,8 @@
+emsdk
+build/
+demo/
+node_modules/
+package-lock.json
+baselines/*.txt
+baselines/chrome-*/
+baselines/linecount/

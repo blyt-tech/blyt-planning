@@ -12,3 +12,4 @@ dev-mode instrumentation that compiles away to nothing in release builds.
 | [0074](0074-dev-mode-rewind-capture.md) | Dev-mode rewind capture for debugging |
 | [0080](0080-build-and-dev-platform-targets.md) | Build and development platform targets |
 | [0088](0088-asset-pipeline.md) | Asset pipeline — packer architecture, resource types, and constant naming |
+| [0103](0103-dev-mode-pi-parity-feedback.md) | Dev-mode Pi-parity feedback — throttle vs projection (Proposed) |
