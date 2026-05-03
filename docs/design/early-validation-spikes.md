@@ -417,6 +417,17 @@ out of scope for this spike.
 
 ## Spike G.2 — WASM Lua-direct: dev-mode Pi-parity throttle
 
+**Status:** FAIL (Outcome 3) — superseded by Spike G.3. Implementation in
+[`spikes/spike-g.2/`](../../spikes/spike-g.2/); results in
+[`spike-g.2-results.md`](spike-g.2-results.md). The per-line-busy-wait
+variant of `LUA_MASKLINE` cannot serve as the throttle: Chrome web-worker
+`performance.now()` clamps to ~100 µs, two orders of magnitude above every
+calibrated `ns_per_line` value (756–7,682 ns), so the busy-wait collapses
+to "wait until the next 100 µs tick" regardless of the configured delay.
+Throttled frame times overshoot Pi targets by 13–131× across the suite.
+The failure-mode analysis identified the accumulated-debt design that
+becomes Spike G.3.
+
 **The question:** Can `lua_maskline` be used in the VS Code extension's dev
 WASM build to slow Lua-direct execution to approximately Pi-class throughput,
 giving developers accurate per-frame budget signals in their primary edit-run
@@ -483,6 +494,19 @@ Spike B (Pi-projected frame-time targets for calibration).
 ---
 
 ## Spike G.3 — WASM Lua-direct: accumulated-debt Pi-parity throttle
+
+**Status:** PASS (Outcome 1). Implementation in
+[`spikes/spike-g.3/`](../../spikes/spike-g.3/); results in
+[`spike-g.3-results.md`](spike-g.3-results.md). The accumulated-debt hook
+clears Chrome's 100 µs timer floor and lands `doom_tick` at 0.4 % accuracy
+vs Pi @ 6× midpoint with jitter (p99/p50) of 1.002. Effective ns/line
+tracks configured `THROTTLE_DELAY_NS` within ±2.5 % across a 5-bench × 3-D
+matrix; cheap-path overhead is ~157 ns/line. Spike G.2's Outcome 3 is
+superseded. The mechanism's settled; the open follow-ups (throttle vs
+projection feature; renderer-side runtime architecture) are captured in
+[ADR-0103](../adr/dev-experience/0103-dev-mode-pi-parity-feedback.md) and
+[ADR-0104](../adr/dev-experience/0104-vscode-dev-shell-runtime-architecture.md),
+both Proposed.
 
 **The question:** Can `LUA_MASKLINE` be used as the dev-mode Pi-parity
 throttle if the hook body tracks an *accumulated debt* against an absolute
