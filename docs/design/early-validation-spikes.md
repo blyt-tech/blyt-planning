@@ -482,6 +482,101 @@ Spike B (Pi-projected frame-time targets for calibration).
 
 ---
 
+## Spike G.3 — WASM Lua-direct: accumulated-debt Pi-parity throttle
+
+**The question:** Can `LUA_MASKLINE` be used as the dev-mode Pi-parity
+throttle if the hook body tracks an *accumulated debt* against an absolute
+deadline, instead of attempting a per-line busy-wait?
+
+**Why this is a risk (now):** Spike G.2 ruled out the per-line-busy-wait
+variant of `LUA_MASKLINE` because Chrome web-worker `performance.now()`
+clamps to ~100 µs resolution, far above every calibrated `ns_per_line` value
+the spike needed (756–7,682 ns). The mechanism failure looked complete.
+
+But the failure mode was specifically "ask for 3 µs of busy-wait, get 100 µs
+because that is when the timer next ticks." If the hook instead accumulates
+the configured per-line debt (`target_ns += ns_per_line`) and only spins
+when the cumulative target already exceeds elapsed wall time, the floor
+stops being a noise floor and becomes a *quantum*. A frame that wants 327 ms
+of total throttle spends ~3,275 spins of one quantum each (~100 µs); the
+configured `ns_per_line` controls how often a quantum is spent, not how long
+each individual wait lasts.
+
+**Why this is plausible (and not measured by G.2):** the accumulated-debt
+design changes *what is being asked of the timer*. `clock_gettime` only
+needs to be accurate at a granularity ≥ the quantum it provides — which it
+is, by definition. Predicted Stage 4 accuracy under this design is within
+~1 % of Pi target across all five benches; G.2's actual error was 13–131×.
+The two-order-of-magnitude difference comes entirely from the hook body, not
+the underlying primitive.
+
+**Proposed approach:**
+
+- Adapt `spikes/spike-g.2/throttle_host.c` to use the absolute-deadline form:
+
+  ```c
+  static uint64_t target_ns = 0;
+  static uint64_t start_ns  = 0;
+
+  static void throttle_hook(lua_State *L, lua_Debug *ar) {
+      if (!start_ns) start_ns = now_ns();
+      target_ns += THROTTLE_DELAY_NS;
+      uint64_t deadline = start_ns + target_ns;
+      while (now_ns() < deadline) {}
+      (void)L; (void)ar;
+  }
+  ```
+
+- Reset `start_ns` and `target_ns` per outer frame (so timing inside a tic
+  is not contaminated by paused-between-tics wall time).
+
+- Reuse Spike G.2's calibration constants directly — `ns_per_line` is a
+  property of the workload and Pi target, not the hook body.
+
+- Re-run the same nine-bench Stage 4 sweep on Chrome at D=2,250 / 3,000 /
+  3,750 (the same 4× / 6× / 8× Pi-band points G.2 used).
+
+**Success criterion (the same as G.2's, restated):**
+
+- p50 of throttled `doom_tick` and `entity_update` lands within ±25 % of the
+  Pi midpoint at the D_MID variant.
+- p99 / p50 ≤ 3× on those same benches (jitter is usable as a dev signal).
+- The other three measured benches (`binarytrees`, `mandelbrot`,
+  `spectral-norm`) are reported but not gating; a single `ns_per_line`
+  calibrated to `doom_tick` is allowed to miss them by more than ±25 %.
+
+**Possible outcomes:**
+
+1. *Pi target met within ±25 %, jitter low* — `LUA_MASKLINE` with
+   accumulated-debt is the dev-mode throttle. Spike G.2's Outcome 3 is
+   superseded; the design-doc fallback to `LUA_MASKCOUNT` N=1 is not needed.
+2. *Pi target met but jitter > 3×* — usable only as a coarse "you're in the
+   right ballpark" signal, not for tight per-frame budget feedback. Document
+   and decide alongside the dev-UI design.
+3. *Pi target missed by > ±25 %* — implies hook overhead on the cheap path
+   (no-spin lines) eats the budget G.2's calibration assumes. Fall back to
+   the non-throttling alternatives in `docs/design/spike-g.2-results.md`
+   ("Other recommendations"): synthetic-cost projection or end-of-frame
+   projection.
+
+**What this spike does and does not decide:**
+
+- Decides whether the accumulated-debt design clears Chrome's timer floor
+  in practice and lands in the calibration band.
+- Does not redesign the dev UI or commit to a specific Pi-parity feature.
+- Does not affect production WASM builds (Spike G's `LUA_MASKCOUNT` Tier 1
+  is unchanged) or native CLI builds (rv32emu + ADR-0082 cap).
+- Does not retest the per-line-busy-wait variant — Spike G.2 already
+  measured that conclusively.
+
+**Dependency:** Spike G.2 (mechanism failure analysis, line-count data,
+calibration constants, Stage 4 chrome runner).
+- The vendored Lua sources, Emscripten toolchain, and bench `.lua` files
+  are reused via the same chain G.2 used (spike-f → spike-g → spike-g.2 →
+  spike-g.3); no re-vendoring.
+
+---
+
 ## Spike H — Native RISC-V cart execution and sandboxing
 
 **The question:** Can a RV32IMFC cart ELF run natively on the Milk-V Duo's
