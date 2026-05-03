@@ -1,0 +1,92 @@
+Spike H — Stage 4 CoreMark / cgroup quota worksheet
+====================================================
+
+PURPOSE
+  Record the calibration measurements derived from a QEMU full-system run.
+  The numbers in this file are NOT hardware-representative.  They validate
+  that:
+    1. CoreMark cross-compiles for riscv32-linux-musl
+    2. The CoreMark/MHz formula plugs into the cpu.max quota equation
+    3. The throttled run produces budget pressure roughly proportional to
+       the quota
+
+  Hardware-accurate numbers come from running the same procedure on real
+  Pi Zero 2 W (for Pi_MIPS) and Milk-V Duo (for the per-board quota
+  constant) and live in spike-a / spike-h's hardware-results docs.
+
+POPULATED BY
+  Run `make qemu-image && make qemu-run` (host).
+  Inside the guest:
+    cd /mnt/spike-h
+    sudo apt-get install -y build-essential bc
+    # CoreMark sources live in ../spike-a/coremark — bind-mount them
+    # via the same 9p share, or copy in.
+    riscv32-linux-musl-gcc -O2 -static -no-pie \
+        -I/mnt/spike-h/coremark -I/mnt/spike-h/coremark/ports/rv32emu \
+        -DITERATIONS=10000 \
+        coremark/core_*.c -o coremark_rv32
+    /mnt/spike-h/coremark_rv32           # records "CoreMark/MHz = X.XX"
+
+  Then fill the lines below.
+
+----- BEGIN MEASUREMENT -----
+
+QEMU host:                  <macOS arm64 / Apple Silicon M-series>
+Guest distro / kernel:      <ubuntu 24.04, kernel 6.8.x>
+Guest CPU model:            qemu-system-riscv64 -machine virt
+Guest -smp / -m:            <e.g. 4 / 4G>
+
+CoreMark version:           <git HEAD>
+ITERATIONS:                 <e.g. 10000>
+CoreMark wall time (s):     <X.XXX>
+CoreMark/MHz:               <X.XX>
+Implied measured_MIPS:      <X.XX × clock_MHz>      [ formula: CoreMark × 1e6 / 9.0 ]
+
+Pi Zero 2 W reference (placeholder until Spike A real number lands):
+    Pi_MIPS = 500
+
+Quota formula:
+    quota_us = floor( period_us × Pi_MIPS / measured_MIPS )
+             = floor( 5000      × 500     / measured_MIPS )
+
+Computed quota_us:          <floor(...)>
+Period (us):                5000
+cgroup directory:           /sys/fs/cgroup/spike-h-test
+cpu.max value written:      "<quota_us> 5000"
+
+----- END MEASUREMENT -----
+
+VALIDATION RUNS
+
+Run baseline busy_loop (no cgroup):
+    elapsed_us = <Z>
+Run busy_loop inside cgroup:
+    elapsed_us = <Z'>
+Ratio Z' / Z (expected ≈ 5000 / quota_us):
+    <ratio>
+
+Run lua_cart_doom_tick mean (no cgroup):
+    <us>
+Run lua_cart_doom_tick mean (in cgroup):
+    <us>
+Run lua_cart_entity_update mean (no cgroup):
+    <us>
+Run lua_cart_entity_update mean (in cgroup):
+    <us>
+
+Notes:
+  - QEMU emulation speed depends on the host's arm64 throughput and is
+    unrelated to RISC-V silicon.  This block exercises the mechanism only.
+  - On Milk-V Duo silicon the entire procedure repeats with the C906
+    CoreMark/MHz number replacing the QEMU value.
+
+CALIBRATION OPTIONS (per PLAN.md §17)
+  [ ] Per-boot — runtime measures CoreMark on first launch, caches result.
+  [ ] Per-install — installer measures once at install time.
+  [x] Baked-constant — distribution ships a per-board quota constant
+      (e.g. Milk-V Duo: <quota_us>); first-launch falls back to per-boot
+      measurement only on unknown hardware.
+
+  Recommendation: baked-constant for known boards (Pi Zero 2 W, Milk-V Duo
+  via /proc/cpuinfo) with per-boot fallback for unknown.  Avoids paying
+  the CoreMark cost on every launch and makes the quota deterministic.
