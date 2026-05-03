@@ -90,6 +90,54 @@ choose to implement (e.g., a gdb stub). In release builds the DAP component
 is compiled out of `libconsolelua.so`; `fc_debug_read`/`fc_debug_write` are
 no-ops.
 
+### C bindings in hybrid carts
+
+A cart can mix Lua scripting with compiled C code — for example,
+computationally intensive routines in C called from Lua via the Lua C API.
+The cart binary carries both:
+
+- Named `.text.mylib` sections (or equivalent) for C library code, statically
+  linked into the cart. Placing library code in named `.text.*` sections is a
+  convention for incremental builds: library sections are stable across
+  game-logic or Lua source changes and need not be relinked when only those
+  change. The loader treats all `.text.*` sections as executable; the naming
+  is the packer's and developer's concern.
+- Lua bytecode in `.cart.resources`, as in a pure Lua cart.
+- `DT_NEEDED: libconsole.so libconsolelua.so` — no additional dependencies.
+
+**The `cart_lua_modules` hook.** The cart exports the symbol:
+
+```c
+void cart_lua_modules(lua_State *L);
+```
+
+`libconsolelua.so` declares a weak reference to this symbol. After creating
+and sandboxing the Lua state (step 2 above) and before loading Lua bytecode
+(step 3), `libconsolelua.so` calls `cart_lua_modules(L)` if the symbol is
+non-NULL. The function registers C modules with the Lua state — typically
+via `package.preload` for lazy loading:
+
+```c
+void cart_lua_modules(lua_State *L) {
+    luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_PRELOAD_TABLE);
+    lua_pushcfunction(L, luaopen_mylib);
+    lua_setfield(L, -2, "mylib");
+    lua_pop(L, 1);
+}
+```
+
+Lua code then does `local mylib = require("mylib")`. A pure Lua data cart
+does not export `cart_lua_modules`; `libconsolelua.so` skips the hook and
+proceeds directly to bytecode loading.
+
+**Lua C API availability.** Cart C binding code uses the Lua C API
+(`luaL_newlib`, `lua_push*`, `luaL_check*`, etc.). These symbols are provided
+by `libconsolelua.so` as re-exports of its internal Lua dependency. The cart's
+`DT_NEEDED` list therefore remains `{libconsole.so, libconsolelua.so}` only —
+no separate `DT_NEEDED: liblua54.so` is required or permitted (ADR-0024's
+packer check rejects unexpected entries). `libconsolelua.so` controls exactly
+which Lua API surface is visible to cart C code.
+
 ## Consequences
 
 - Lua carts and native carts share the same execution model, the same
@@ -100,6 +148,9 @@ no-ops.
 - A Lua cart binary is a pure data container — no RISC-V code, only ELF
   data sections. The packer never needs to compile or link RISC-V code for
   Lua carts; it only assembles the data sections.
+- Hybrid carts (C library + Lua) are supported via the `cart_lua_modules`
+  hook; `libconsolelua.so` re-exports the Lua C API symbols that cart C
+  binding code requires, so the cart's `DT_NEEDED` list is unchanged.
 - The Lua environment sandbox (stripping `os`, `io`, etc.) is enforced by
   `libconsolelua.so` before Lua code runs. The host runtime has no
   Lua-specific security logic.

@@ -754,6 +754,104 @@ a representative way).
 
 ---
 
+## Spike I — Cart format end-to-end validation
+
+**The question:** Do all four cart configurations — C-only, C with a user
+library, Lua-only, and Lua calling a C library — build, load, and execute
+correctly across the emulator, WASM, and native RISC-V (QEMU) targets?
+
+**Why this is a risk:** Every prior spike used a bespoke benchmark harness,
+not the cart format specified in ADR-0024 and ADR-0025. The first
+production-shape load of a cart ELF — with `libconsole.so`/`libconsolelua.so`
+pre-mapped, PLT/GOT resolved in guest space, and `.cart.*` sections parsed —
+has never run. Four qualitatively different cart configurations exercise
+different parts of the format and loader, and running them across three
+targets gives the first complete matrix test of the cart format as designed.
+
+**The four cases:**
+
+**Case a — C-only cart.** A minimal native cart: RV32IMFC ELF, one
+`DT_NEEDED: libconsole.so`, direct C implementations of `init`, `update`,
+`draw`. The simplest possible cart. Validates the core ELF + dynamic-link
+round-trip on all three targets.
+
+**Case b — C cart with a user library.** The same as case a, but game logic
+is split: a supporting library is compiled with `-ffunction-sections` into
+named `.text.mylib` sections and statically linked into the cart binary.
+Cart C code calls into the library directly. Validates that the loader
+handles named `.text.*` sections correctly and that the section-level
+incremental-build convention works in practice.
+
+**Case c — Lua-only cart.** A pure-data ELF: no `.text`, `DT_NEEDED:
+libconsole.so libconsolelua.so`, Lua bytecode in `.cart.resources`.
+`libconsolelua.so` exports `init`/`update`/`draw`; the cart binary contains
+no executable code. Validates the data-container model end-to-end, including
+VM init, resource loading, and Lua callback dispatch.
+
+**Case d — Lua cart with a C user library.** A hybrid cart: `.text.mylib`
+sections with C binding code (same convention as case b), `cart_lua_modules`
+exported, and Lua bytecode in `.cart.resources`. `libconsolelua.so` detects
+and calls `cart_lua_modules` before loading Lua bytecode; the binding code
+registers a `mylib` module via `package.preload`. Lua code does
+`local mylib = require("mylib")`. The binding code uses the Lua C API symbols
+re-exported by `libconsolelua.so` (see ADR-0025). Validates the full hybrid
+path and the `cart_lua_modules` hook.
+
+**The three targets:**
+
+1. **Emulator.** `rv32emu` pre-maps `libconsole.so` and `libconsolelua.so` as
+   RV32IMFC shared libraries into guest memory and resolves PLT/GOT before the
+   cart entry point. This is the path established by Spike C; this spike
+   validates all four cases through a proper cart container for the first time.
+
+2. **WASM.** Cases a and b (native C carts) run through `rv32emu` compiled to
+   WASM — the interpreter and the cart ELF together form the WASM module. Cases
+   c and d (Lua carts) use the Lua-direct path: `libconsolelua.so` compiled to
+   WASM owns the Lua VM and loads Lua bytecode from the cart data sections. For
+   case d specifically, the `cart_lua_modules` symbol is present in the RV32IMFC
+   ELF but the WASM Lua-direct path does not run rv32emu; the spike determines
+   whether `cart_lua_modules` is called via Emscripten's exported symbol table
+   or whether an alternative registration mechanism is required for this path.
+
+3. **Native RISC-V (QEMU).** QEMU user-mode with an RV64 Linux kernel and
+   `CONFIG_COMPAT` for RV32 userspace. `libconsole.so` and `libconsolelua.so`
+   are real shared libraries mapped into the cart process. Validates the
+   dynamic-link model on the native path. QEMU is sufficient for cart-format
+   correctness; sandbox isolation (seccomp, namespaces) and cgroups CPU quota
+   are Spike H concerns that require real hardware.
+
+**What to build:**
+- Four cart ELF binaries (cases a–d), each with a minimal but end-to-end
+  workload: a frame counter incremented each `update` and printed via the
+  console API in `draw`. Case d additionally calls a C library function from
+  Lua and asserts the return value.
+- Stub `libconsole.so` and `libconsolelua.so` for each target: just enough API
+  surface to support the workload (counter, print).
+- A loader per target: the emulator's pre-map path; an Emscripten HTML harness
+  for WASM; a minimal Linux process launcher for QEMU.
+- For case d on WASM: resolve and document the `cart_lua_modules` registration
+  path on the Lua-direct WASM build.
+
+**Success criterion:** All four cases build, load, and produce correct output
+on all three targets. Any case/target combination that does not reach a clean
+pass is recorded as a design finding — the spike documents what must change.
+
+**What this spike does and does not decide:**
+- Decides whether the cart format (ADR-0024, ADR-0025) is end-to-end viable
+  across all three deployment targets.
+- Decides the WASM execution model for C carts (rv32emu) vs Lua carts
+  (Lua-direct) in the actual cart container, and resolves the case d
+  `cart_lua_modules` hook on the WASM Lua-direct path.
+- Does not implement the full console API surface — stubs are sufficient.
+- Does not address sandbox depth (seccomp, namespaces, cgroups) — those are
+  Spike H concerns requiring real hardware.
+
+**Dependency:** ADR-0024 (cart format), ADR-0025 (Lua execution model and C
+bindings hook). Spike C (pre-map/PLT mechanism). Spikes F and G (Lua-direct
+WASM path). Can run in parallel with Spike H.
+
+---
+
 ## Ordering
 
 A → B → C and D and E and F (B is the dependency for C, D, and E; F
@@ -773,6 +871,11 @@ A (interpreter)
                                                and timing baseline
 
 H (native RISC-V sandbox) ← independent; requires Milk-V Duo hardware
+
+I (cart format end-to-end) ← depends on ADR-0024/ADR-0025 and Spikes
+                              C, F, G; can run in parallel with H; QEMU
+                              makes the native-RISC-V dimension accessible
+                              without physical hardware
 ```
 
 Spike C can begin as soon as A produces a working interpreter, since it
@@ -782,4 +885,8 @@ Spike E missing the desktop-WASM budget — if E had passed, F would not
 need to run. Spike G is contingent on Spike F's adoption recommendation
 — if F had not recommended Lua-direct for WASM, G would not be needed.
 Spike H is independent of the rest of the series; it requires Milk-V
-Duo hardware and can run in parallel with any other spike.
+Duo hardware and can run in parallel with any other spike. Spike I
+depends on the settled cart format (ADR-0024 Accepted, ADR-0025
+Accepted) and on the Lua-direct WASM path established by Spikes F and G;
+it can run in parallel with H and is the first end-to-end test of the
+cart format as a container rather than as individual harness components.
