@@ -1,15 +1,20 @@
 # ADR-0085: ECALL calling convention and number space
 
 ## Status
-Accepted
+Accepted (scope revised — ECALL is now the internal mechanism of the
+emulator-side `libconsole.so`, not the cart-facing ABI; see ADR-0024)
 
 ## Context
 
 Every cart — regardless of implementation language — communicates with the
-runtime exclusively through the RISC-V `ecall` instruction (ADR-0038). This
-is the complete security boundary: the only way a cart can cause any
-host-side effect. The calling convention and number assignment for ECALLs
-must be specified before the runtime can be implemented.
+runtime through `libconsole.so` (ADR-0024). On emulated platforms,
+`libconsole.so`'s function bodies issue `ecall` instructions to the
+emulator's dispatch table; on native RISC-V hardware they are direct
+implementations. This ADR specifies the ECALL convention used internally
+by the emulator-side `libconsole.so`. It is not the cart-facing ABI.
+
+The calling convention and number assignment for ECALLs must be specified
+before the emulator-side `libconsole.so` can be implemented.
 
 Lua is the first and primary scripting language for carts, and
 `libconsolelua` is the first shim library to consume this surface. It is not
@@ -19,14 +24,14 @@ language-neutral; the shim layers above it are language-specific.
 
 The interface for all callers — native carts, Lua shims, and any future
 language shim — is the SDK's C wrapper functions in `fc_cart.h`. These are
-thin inline stubs that compile directly to ECALL instructions; calling
-`fc_image_blit(...)` and manually loading `a7` then executing `ecall` produce
-identical machine code. Shim authors include `fc_cart.h` and call the named
-functions; they do not work with ECALL numbers directly. ECALL numbers are an
-implementation detail of the SDK headers, not part of the shim authoring
-contract. This means versioning is automatic: a shim compiled against the v1
-SDK header gets v1 ECALL numbers; recompiled against v2, it gets v2 numbers,
-with no changes to the shim's own source.
+thin function declarations resolved at link time against `libconsole.so`;
+shim authors include `fc_cart.h` and call the named functions. On emulated
+platforms, `libconsole.so`'s function bodies issue ECALLs to the emulator's
+dispatch table, so the ECALL numbers below are the emulator-internal contract.
+On native hardware they are direct implementations. Neither cart code nor shim
+code ever handles ECALL numbers directly; ECALL numbers are an implementation
+detail of the emulator-side `libconsole.so`, not of the shim authoring
+contract.
 
 ## Decision
 

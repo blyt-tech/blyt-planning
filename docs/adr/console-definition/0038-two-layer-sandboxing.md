@@ -19,15 +19,17 @@ Two layers of sandboxing. The host enforces one; the VM enforces the other.
 **Layer 1: RISC-V ABI sandbox (applies to all carts, enforced by the host).**
 
 Every cart is a RISC-V ELF running in a controlled execution environment.
-The cart can only affect the outside world via ECALL (invoking the console
-API). On emulated platforms, the RISC-V interpreter bounds-checks memory
-accesses. On real RISC-V hardware, the runtime relies on Linux userspace
-isolation for the cart process.
+The cart can only affect the outside world through the console API. On
+emulated platforms, the RISC-V interpreter bounds-checks memory accesses and
+the console API is reached via ECALL; the ECALL dispatch table is the
+complete host-level audit boundary. On native RISC-V hardware, the console
+API is reached via direct function calls into `libconsole.so` (see ADR-0024);
+seccomp and namespace isolation enforce that no other host effects are
+reachable from the cart process.
 
 Carts cannot: access the host filesystem, open network sockets, read memory
 outside allocated regions, execute privileged instructions, or escape via
-side channels. Any API call with external effects goes through the ECALL
-surface, which is the complete host-level audit boundary.
+side channels.
 
 **Layer 2: Lua environment sandbox (applies to Lua carts, enforced inside
 the VM by the Lua interpreter itself).**
@@ -56,8 +58,10 @@ security perimeter for all carts.
 ## Consequences
 
 - Carts can be distributed and run without trust in the author.
-- The ECALL surface is the complete host security boundary; auditing what
-  carts can do means auditing the ECALL list.
+- On emulated platforms, the ECALL dispatch table is the complete host
+  security boundary; auditing what carts can do means auditing the ECALL
+  list. On native hardware, the equivalent boundary is `libconsole.so`'s
+  exported symbol set plus the seccomp allowlist.
 - Lua sandboxing is now the VM's own responsibility. The host runtime has no
   Lua-specific security logic; it does not need to know whether a cart is
   implemented in Lua or native code.

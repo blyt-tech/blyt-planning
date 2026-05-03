@@ -1,4 +1,4 @@
-# ADR-0025: Lua carts use a runtime-provided Lua interpreter compiled to RISC-V
+# ADR-0025: Lua carts use a runtime-provided console Lua library
 
 ## Status
 Accepted — performance assumption unvalidated (see Consequences)
@@ -19,45 +19,65 @@ it treats Lua as a special privileged implementation language with a different
 execution and security model from native carts, and requires the host process
 to embed and maintain a C library dependency.
 
-**Provide the Lua interpreter as a RISC-V library.** The runtime ships Lua
-5.4 (compiled with `LUA_32BITS`) as a versioned RV32IMFC shared library,
-pre-loaded in every Lua cart's VM address space. Lua code executes inside
-the RISC-V sandbox, identically to native carts. Debugging uses an in-VM
-DAP server with host passthrough.
+**Provide a runtime library that owns Lua entirely.** The runtime ships
+`libconsolelua.so`, a versioned RV32IMFC shared library that exports the
+standard cart entry points (`init`, `update`, `draw`, etc.) and internally
+owns the full Lua lifecycle — VM creation, environment configuration, bytecode
+loading, and callback dispatch. The Lua interpreter itself (`liblua54.so`)
+is a private dependency of `libconsolelua.so`, not exposed to the cart.
+A Lua cart binary contains no RISC-V code; it is a pure data container.
+
+An earlier variant of this approach had the cart binary contain a small
+generated boilerplate ELF (the "Lua shim") that called the Lua C API
+directly, with the cart linking against the Lua library as `liblua.rv32.so`.
+This was superseded: the boilerplate belongs in `libconsolelua.so`, not in
+the cart, because the cart has no reason to know about the Lua C API.
 
 ## Decision
 
-**Lua is just another implementation language.** The runtime provides the
-Lua interpreter as a versioned RISC-V library; everything runs inside the
-VM sandbox.
+**Lua is just another implementation language.** The runtime provides
+`libconsolelua.so` as a versioned RV32IMFC shared library; everything runs
+inside the VM sandbox.
 
 ### Execution model
 
-The runtime pre-loads `liblua.rv32.so` (Lua 5.4, `LUA_32BITS`) into the
-cart's VM address space before execution begins. The Lua cart's RISC-V
-entrypoint is small generated boilerplate (provided by the SDK):
+A Lua cart declares `DT_NEEDED: libconsolelua.so` (in addition to
+`libconsole.so`; see ADR-0024). `libconsolelua.so` exports the cart entry
+point symbols (`init`, `update`, `draw`, and optionally `on_save`,
+`on_load`, `cleanup`, `on_credits`, `on_quit`; see ADR-0087). The cart
+binary itself contains no RISC-V code — it is an ELF carrying only the
+console-format data sections (`.cart.info`, `.cart.config`, `.cart.lua`,
+`.cart.resources`).
 
-1. Call `lua_newstate()` — a direct in-VM function call to the Lua library.
-2. Configure the environment sandbox (strip `os`, `io`, etc.).
-3. Load and execute cart bytecode from the resource section.
-4. Forward `init`/`update`/`draw` callbacks into Lua via `lua_pcall`.
+When the runtime calls `init()` on a Lua cart, `libconsolelua.so`:
 
-All Lua C API calls (`lua_*`) are direct function calls within the VM — no
-ECALL boundary. Console API calls from Lua go through the normal ECALL
-mechanism, identical to native carts.
+1. Creates a `lua_State` via `lua_newstate()` — an internal call to its own
+   embedded Lua dependency.
+2. Configures the environment sandbox (strips `os`, `io`, etc.; see ADR-0079).
+3. Loads cart bytecode from the `.cart.resources` section via the console
+   resource API.
+4. Calls the Lua `init()` function via `lua_pcall`.
+
+Subsequent `update()` and `draw()` calls are forwarded to the corresponding
+Lua functions. The `lua_State` is owned by `libconsolelua.so` for the
+lifetime of the cart session.
+
+All Lua C API calls are internal to `libconsolelua.so` — no ECALL boundary.
+Console API calls from Lua go through the normal `libconsole.so` path,
+identical to native carts.
 
 ### Debugging
 
-The Lua cart links against a small SDK-provided debug framework library
-(`libcartdebug.rv32`) that, in dev builds, runs a DAP server inside the VM:
+`libconsolelua.so` includes an optional DAP server component, active in dev
+builds, that runs inside the VM with direct access to `lua_State`:
 
 ```
-VS Code (DAP client) ←→ Runtime (TCP passthrough) ←→ [VM: Lua + DAP server]
+VS Code (DAP client) ←→ Runtime (TCP passthrough) ←→ [VM: libconsolelua DAP server]
 ```
 
-The in-VM DAP server has direct access to `lua_State` and calls
-`lua_sethook`/`lua_getinfo`/`lua_getlocal` natively. The runtime exposes
-two dev-mode ECALLs as the passthrough channel:
+The DAP server calls `lua_sethook`/`lua_getinfo`/`lua_getlocal` directly.
+The runtime exposes two dev-mode console API functions as the passthrough
+channel:
 
 ```c
 fc_result_t fc_debug_read(uint8_t *buf, int32_t n, int32_t *out_read);
@@ -65,28 +85,31 @@ fc_result_t fc_debug_write(const uint8_t *buf, int32_t n);
 ```
 
 The runtime is entirely agnostic to the DAP protocol — it forwards bytes.
-The same ECALLs are available to native carts for any debug protocol they
-choose to implement (e.g., a gdb stub).
-
-In release builds, `libcartdebug.rv32` is omitted from the cart entirely;
-`fc_debug_read`/`fc_debug_write` are no-ops.
+The same functions are available to native carts for any debug protocol they
+choose to implement (e.g., a gdb stub). In release builds the DAP component
+is compiled out of `libconsolelua.so`; `fc_debug_read`/`fc_debug_write` are
+no-ops.
 
 ## Consequences
 
 - Lua carts and native carts share the same execution model, the same
-  security boundary, and the same ECALL surface. There is no special Lua
+  security boundary, and the same console API path. There is no special Lua
   path in the runtime.
 - The runtime has no embedded Lua dependency. Lua is a versioned toolchain
-  artifact (like the C standard library), not a host C library.
+  artifact inside `libconsolelua.so`, not a host C library.
+- A Lua cart binary is a pure data container — no RISC-V code, only ELF
+  data sections. The packer never needs to compile or link RISC-V code for
+  Lua carts; it only assembles the data sections.
 - The Lua environment sandbox (stripping `os`, `io`, etc.) is enforced by
-  the in-VM Lua interpreter, not by the host runtime.
-- The debug framework (`libcartdebug.rv32`) is an implementation of the
-  DAP protocol in Lua/C running inside the VM. The host provides two
-  generic byte-pipe ECALLs; the protocol is the cart's concern.
-- The same passthrough ECALLs serve any implementation language that wants
-  a debugger — this is a general mechanism, not Lua-specific.
+  `libconsolelua.so` before Lua code runs. The host runtime has no
+  Lua-specific security logic.
+- The debug framework is entirely inside `libconsolelua.so`. The host
+  provides two generic byte-pipe functions; the protocol is the library's
+  concern.
+- The same passthrough functions serve any implementation language that
+  wants a debugger — this is a general mechanism, not Lua-specific.
 - **Open performance question:** running Lua inside the RISC-V emulator
-  incurs interpretation overhead on desktop and WASM targets (on real
+  incurs double-interpretation overhead on desktop and WASM targets (on real
   RISC-V hardware there is no penalty). The target game complexity is
   retro-era; modern desktop and WASM hosts likely have sufficient headroom,
   but this assumption must be validated with a benchmark spike before v1
