@@ -331,6 +331,13 @@ follow-up if and when D produces reference digests.
 
 ## Spike G — WASM Lua-direct: per-frame CPU budget enforcement
 
+**Status:** PASS. Implementation in [`spikes/spike-g/`](../../spikes/spike-g/);
+results in [`spike-g-results.md`](spike-g-results.md). `lua_sethook` with
+`LUA_MASKCOUNT` at N=100 adds < 3% overhead to `doom_tick` p99 on Chrome
+desktop (observed +0.1 ms vs threshold of 0.34 ms). All N values in the sweep
+pass on Chrome; the Node overhead is 50–80% (Node/Chrome diverge ~27× due to
+JIT tier-up — Chrome is authoritative). Production values: N=100, budget=16.67 ms.
+
 **The question:** Can per-frame CPU exhaustion be enforced in the
 Lua-direct WASM execution model — recommended by Spike F — with
 overhead low enough to preserve Spike F's timing numbers?
