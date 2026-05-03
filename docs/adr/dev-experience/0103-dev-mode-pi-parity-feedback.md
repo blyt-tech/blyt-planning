@@ -185,25 +185,19 @@ plus a per-cart `lines_per_frame` measurement.
 4. **Re-calibration cadence for projection.** Periodic timer? On
    frame-time anomaly? On suspend/resume? Cheap to implement; design
    call.
-5. **Renderer (web view) or extension host (Node) for the WASM Lua
-   engine?** Upstream of the throttle/projection question; affects
-   which mechanism is even needed.
+5. **Where does the cart and runtime execute in the dev shell?**
+   Resolved by ADR-0104 (Proposed): cart and runtime run renderer-side;
+   a library-shaped IPC bridge routes a small set of dev-only
+   operations (asset hot reload, save state, optional native rv32emu
+   passthrough, profiling) to the Node extension host. The hot path
+   stays renderer-local — no per-frame IPC, no `SharedArrayBuffer`,
+   subject to the 100 µs `performance.now()` floor.
 
-   - *Renderer.* Subject to VS Code's default 100 µs `performance.now()`
-     floor (no cross-origin isolation; `--enable-coi` reduces to 5 µs
-     but is not a distribution path — extensions can't force it).
-     G.3's accumulated-debt design is the portable answer, and the
-     spike's HeadlessChrome 147 measurement transfers directly.
-   - *Extension host.* `process.hrtime.bigint()` gives nanosecond
-     resolution with no browser security clamp. The G.2/G.3 saga
-     becomes irrelevant for the throttle: per-line busy-wait works,
-     accumulated-debt works, both at full configured precision. Cart
-     logic in a Node worker, IPC to renderer for graphics.
-
-   G.3's mechanism is still the right answer for portable
-   web-shell builds (itch.io, hosted dev demo), regardless of where
-   the VS Code extension chooses to run. The Node-side path is a
-   VS-Code-specific accuracy upgrade, not a replacement.
+   This makes G.3's accumulated-debt throttle **the primary
+   mechanism**, not a fallback for portable web shells only. Per-line
+   IPC to a Node-side ns-resolution timer is impractical (round-trip
+   latency dwarfs the per-line budget), so the renderer-side hook is
+   load-bearing wherever the throttle ships.
 
 ## References
 
