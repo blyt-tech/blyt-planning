@@ -1,14 +1,6 @@
 #cloud-config
-# Spike H — QEMU guest test credentials.
-# Sets ubuntu password so `make qemu-test` can SSH in to run run-guest-tests.sh.
-# The launcher and cart ELFs are pre-built by docker-build-launcher /
-# docker-build-carts and shared via virtfs at /mnt/spike-h/.
-
-chpasswd:
-  expire: false
-  users:
-    - name: ubuntu
-      password: ubuntu
-      type: text
-
-ssh_pwauth: true
+users:
+  - name: fedora
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ0DqolKGsVcgbxau4BljoR55/8Tl8kDp3/rlWexsyFd tom@G939J7VX33

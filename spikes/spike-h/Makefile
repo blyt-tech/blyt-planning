@@ -132,12 +132,23 @@ docker-smoke-lua: docker-build-carts
 	        echo "=== lua_cart_entity_update under qemu-user ==="; \
 	        qemu-riscv32-static build/lua/lua_cart_entity_update.elf | tail -5'
 
-# ── QEMU full-system image (Ubuntu 24.04 RISC-V) ─────────────────────────────
-# The image is downloaded on demand into ./qemu/.  ~600 MB compressed.
+# ── QEMU full-system images ───────────────────────────────────────────────────
+# Two image options:
+#
+#   Ubuntu 24.04.4 RISC-V (default)
+#     Kernel 6.17.0-14-generic — CONFIG_COMPAT explicitly disabled.
+#     Validates cgroups v2 and seccomp mechanism.  RV32 cart exec FAILS.
+#
+#   Fedora 42 RISC-V Cloud (recommended for CONFIG_COMPAT)
+#     Kernel 6.12+ with CONFIG_COMPAT=y since F37.
+#     qcow2 format, ~532 MB.  Use: make QEMU_IMG=$(FEDORA_IMG) qemu-test
+#     Or: make fedora-image && make QEMU_IMG=$(FEDORA_IMG) QEMU_UBOOT="" qemu-test
+#
+# Select with: make QEMU_IMG=<path> qemu-test
 
 QEMU_DIR    := qemu
 QEMU_IMG    := $(QEMU_DIR)/ubuntu-24.04.4-preinstalled-server-riscv64.img
-QEMU_TEST_IMG := $(QEMU_DIR)/ubuntu-test.qcow2
+QEMU_TEST_IMG := $(QEMU_DIR)/ubuntu-test.img
 QEMU_FW     := /opt/homebrew/share/qemu/opensbi-riscv64-generic-fw_dynamic.bin
 QEMU_UBOOT  := $(QEMU_DIR)/uboot-riscv64.elf
 QEMU_URL    := https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.4-preinstalled-server-riscv64.img.xz
@@ -145,16 +156,34 @@ QEMU_URL    := https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.4-
 # download from the Ubuntu 24.04 u-boot-qemu package instead.
 UBOOT_DEB_URL := http://ports.ubuntu.com/pool/main/u/u-boot/u-boot-qemu_2025.10-0ubuntu0.24.04.2_all.deb
 
+# Fedora 42 RISC-V Cloud image (qcow2, ~532 MB).  CONFIG_COMPAT=y since F37.
+FEDORA_IMG  := $(QEMU_DIR)/Fedora-Cloud-Base-Generic-42.riscv64.qcow2
+FEDORA_URL  := https://dl.fedoraproject.org/pub/alt/risc-v/release/42/Cloud/riscv64/images/Fedora-Cloud-Base-Generic-42.20250911-2251ba41cdd3.riscv64.qcow2
+
 .PHONY: qemu-image
 qemu-image: $(QEMU_IMG)
 
 $(QEMU_IMG):
 	mkdir -p $(QEMU_DIR)
-	@echo "Downloading Ubuntu 24.04 RISC-V preinstalled-server image (~600 MB)..."
+	@echo "Downloading Ubuntu 24.04 RISC-V preinstalled-server image (~1 GB)..."
 	curl -L -o $@.xz $(QEMU_URL)
 	xz -dk $@.xz -c > $@
 	@echo "Resizing to 8G to give room for builds..."
 	qemu-img resize -f raw $@ 8G
+
+# Fedora 42 RISC-V Cloud image — CONFIG_COMPAT=y, ~532 MB qcow2.
+# Boot without U-Boot: OpenSBI jumps directly into the kernel via the
+# Fedora cloud image's built-in GRUB EFI loader.
+# Usage: make fedora-image && make QEMU_IMG=$(FEDORA_IMG) QEMU_UBOOT="" qemu-test
+.PHONY: fedora-image
+fedora-image: $(FEDORA_IMG)
+
+$(FEDORA_IMG):
+	mkdir -p $(QEMU_DIR)
+	@echo "Downloading Fedora 42 RISC-V Cloud image (~532 MB qcow2)..."
+	curl -L -o $@ $(FEDORA_URL)
+	@echo "Resizing to 10G..."
+	qemu-img resize $@ 10G
 
 # ── U-Boot firmware (QEMU 11 dropped it from its bundle) ─────────────────────
 # Extracts uboot.elf for qemu-riscv64_smode from the Ubuntu u-boot-qemu .deb.
@@ -207,13 +236,14 @@ QEMU_SEED := $(QEMU_DIR)/seed.iso
 qemu-seed: $(QEMU_SEED)
 
 $(QEMU_SEED): qemu/cloud-init/user-data qemu/cloud-init/meta-data
-	mkdir -p $(QEMU_DIR)/seed-tmp
-	cp qemu/cloud-init/user-data $(QEMU_DIR)/seed-tmp/
-	cp qemu/cloud-init/meta-data $(QEMU_DIR)/seed-tmp/
-	# hdiutil makehybrid always appends .iso; pass stem only.
-	hdiutil makehybrid -quiet -o $(QEMU_DIR)/seed -hfs -joliet -iso \
-	    -default-volume-name cidata $(QEMU_DIR)/seed-tmp/
-	rm -rf $(QEMU_DIR)/seed-tmp
+	# Build a FAT-formatted cidata seed disk using mtools (brew install mtools).
+	# FAT format is reliably detected by cloud-init on both Ubuntu and Fedora;
+	# the hdiutil hybrid ISO approach only works on Ubuntu's internal CIDATA
+	# partition injection path.
+	dd if=/dev/zero of=$@ bs=1k count=1024 2>/dev/null
+	mformat -i $@ -v CIDATA -F ::
+	mcopy -i $@ qemu/cloud-init/user-data ::user-data
+	mcopy -i $@ qemu/cloud-init/meta-data ::meta-data
 
 .PHONY: qemu-test
 qemu-test: docker-build-carts docker-build-launcher $(QEMU_UBOOT)
@@ -260,6 +290,79 @@ qemu-test: docker-build-carts docker-build-launcher $(QEMU_UBOOT)
 	    grep -E "(PASS|FAIL|SUMMARY|===|Spike H)" build/results/guest-run.log || true; \
 	else \
 	    echo "(build/results/guest-run.log not found — check $(QEMU_DIR)/console.log)"; \
+	fi
+
+# ── Fedora 42 RISC-V test (CONFIG_COMPAT-enabled kernel) ─────────────────────
+# Fedora's cloud-init reads the cidata seed.iso via the standard nocloud
+# datasource (no CIDATA partition hackery needed).  Boot uses U-Boot
+# chainloading Fedora's GRUB EFI.  Default user: fedora / fedora.
+#
+# Prerequisites:
+#   make fedora-image  (one-time: download Fedora 42 RISC-V qcow2 ~532 MB)
+#   make qemu-uboot    (one-time: U-Boot ELF)
+#   make qemu-seed     (rebuild if user-data changed)
+#   sshpass            (brew install sshpass)
+#
+# Usage: make qemu-test-fedora
+
+# FEDORA_KEY: ephemeral ed25519 key generated fresh each run
+FEDORA_KEY := $(QEMU_DIR)/fedora-test-key
+
+.PHONY: qemu-test-fedora
+qemu-test-fedora: docker-build-carts docker-build-launcher $(QEMU_UBOOT)
+	@if [ ! -f $(FEDORA_IMG) ]; then \
+	    echo "Fedora image not found — run: make fedora-image"; exit 1; \
+	fi
+	@mkdir -p build/results $(QEMU_DIR)
+	@echo "Generating ephemeral SSH key..."
+	ssh-keygen -t ed25519 -f $(FEDORA_KEY) -N "" -q -C spike-h-test
+	@echo "Building FAT cidata seed with SSH public key..."
+	@{ echo '#cloud-config'; \
+	   echo 'users:'; \
+	   echo '  - name: fedora'; \
+	   echo '    sudo: ALL=(ALL) NOPASSWD:ALL'; \
+	   echo '    ssh_authorized_keys:'; \
+	   printf '      - %s\n' "$$(cat $(FEDORA_KEY).pub)"; \
+	} > $(QEMU_DIR)/fedora-userdata
+	dd if=/dev/zero of=$(QEMU_DIR)/fedora-seed.img bs=1k count=1024 2>/dev/null
+	mformat -i $(QEMU_DIR)/fedora-seed.img -v CIDATA -F ::
+	mcopy -i $(QEMU_DIR)/fedora-seed.img $(QEMU_DIR)/fedora-userdata ::user-data
+	mcopy -i $(QEMU_DIR)/fedora-seed.img qemu/cloud-init/meta-data ::meta-data
+	@echo "Creating fresh qcow2 overlay (base image unchanged)..."
+	qemu-img create -f qcow2 -b $(abspath $(FEDORA_IMG)) -F qcow2 \
+	    $(QEMU_DIR)/fedora-test.qcow2 2>/dev/null
+	@echo "Booting Fedora RISC-V (SSH on host:2222)..."
+	qemu-system-riscv64 \
+	    -machine virt -display none -m 4G -smp 4 \
+	    -bios $(QEMU_FW) \
+	    -kernel $(QEMU_UBOOT) \
+	    -serial file:$(QEMU_DIR)/fedora-console.log \
+	    -drive file=$(QEMU_DIR)/fedora-test.qcow2,format=qcow2,if=virtio \
+	    -drive file=$(QEMU_DIR)/fedora-seed.img,format=raw,if=virtio,readonly=on \
+	    -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+	    -device virtio-net-device,netdev=net0 \
+	    -virtfs local,path=$(CURDIR),mount_tag=spike_h,security_model=mapped-xattr,id=spike_h \
+	    -daemonize -pidfile $(QEMU_DIR)/fedora-test.pid 2>/dev/null
+	@echo "Waiting for SSH (up to 3 min)..."
+	@for i in $$(seq 1 90); do nc -z localhost 2222 2>/dev/null && break; sleep 2; done
+	@echo "Running tests via SSH..."
+	ssh -i $(FEDORA_KEY) \
+	    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+	    -p 2222 fedora@localhost \
+	    'sudo mkdir -p /mnt/spike-h && \
+	     sudo mount -t 9p -o trans=virtio,version=9p2000.L spike_h /mnt/spike-h 2>/dev/null; \
+	     sudo bash /mnt/spike-h/run-guest-tests.sh' || true
+	@echo "Stopping QEMU..."
+	@kill $$(cat $(QEMU_DIR)/fedora-test.pid) 2>/dev/null || true
+	@rm -f $(QEMU_DIR)/fedora-test.qcow2 $(QEMU_DIR)/fedora-test.pid \
+	       $(QEMU_DIR)/fedora-seed.img $(QEMU_DIR)/fedora-userdata \
+	       $(FEDORA_KEY) $(FEDORA_KEY).pub
+	@echo ""
+	@echo "=== Test results ==="
+	@if [ -f build/results/guest-run.log ]; then \
+	    grep -E "(PASS|FAIL|SUMMARY|===|Spike H)" build/results/guest-run.log || true; \
+	else \
+	    echo "(build/results/guest-run.log not found — check $(QEMU_DIR)/fedora-console.log)"; \
 	fi
 
 # ── clean ────────────────────────────────────────────────────────────────────

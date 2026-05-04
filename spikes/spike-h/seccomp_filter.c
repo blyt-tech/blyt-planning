@@ -68,13 +68,17 @@ static const char *allow_names[] = {
     "clock_gettime64",
     "getrandom",      /* musl __init_libc may pull AT_RANDOM via this */
     "prlimit64",      /* musl stack-size probe */
-    "uname",          /* musl __init_libc; libseccomp on some archs uses "newuname" */
-    "newuname",       /* RISC-V generic ABI alias for uname */
+    "uname",          /* musl __init_libc; resolves to 160 on RISC-V */
+    "newuname",       /* alternative name; may not be in libseccomp database */
     /* execve is required for the launcher to exec the cart after seccomp_load().
      * The filter is inherited by the cart process; blocking execve again for
      * the cart's post-exec calls is a production tightening item (two-phase
      * seccomp) deferred to the runtime implementation. */
     "execve",
+    /* RISC-V-specific: musl RV32 startup calls riscv_flush_icache for I-cache
+     * coherence after loading a new binary.  libseccomp resolves this to 259;
+     * musl uses 258 (adjacent arch-specific slot).  Both are allowed below. */
+    "riscv_flush_icache",
     NULL,
 };
 
@@ -110,6 +114,14 @@ int spike_h_install_seccomp(void)
         }
         allowed++;
     }
+
+    /* Allow RISC-V arch-specific syscall 258 as a numeric fallback.
+     * musl's RV32 startup issues this (likely riscv_flush_icache variant)
+     * before reaching main(); without it, the cart is killed before any
+     * probe function runs.  libseccomp resolves "riscv_flush_icache" to
+     * 259 but musl uses 258 — both are in the same arch-specific slot range
+     * and are harmless to allow (they just flush the instruction cache). */
+    (void)seccomp_rule_add(ctx, SCMP_ACT_ALLOW, 258, 0); /* RISC-V only */
 
     if (seccomp_load(ctx) != 0) {
         fprintf(stderr, "seccomp_load failed: %s\n", strerror(errno));

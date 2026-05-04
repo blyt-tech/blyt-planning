@@ -1,7 +1,12 @@
 build/
 qemu/*.img
 qemu/*.img.xz
+qemu/*.raw
 qemu/*.elf
 qemu/*.iso
+qemu/*.qcow2
 qemu/console.log
+qemu/console*.log
+qemu/fedora-*.log
+qemu/fedora-userdata
 qemu/uboot-extract/
