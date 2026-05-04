@@ -27,6 +27,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <seccomp.h>
 
 #include "spike_h.h"
@@ -67,7 +68,13 @@ static const char *allow_names[] = {
     "clock_gettime64",
     "getrandom",      /* musl __init_libc may pull AT_RANDOM via this */
     "prlimit64",      /* musl stack-size probe */
-    "uname",          /* musl __init_libc */
+    "uname",          /* musl __init_libc; libseccomp on some archs uses "newuname" */
+    "newuname",       /* RISC-V generic ABI alias for uname */
+    /* execve is required for the launcher to exec the cart after seccomp_load().
+     * The filter is inherited by the cart process; blocking execve again for
+     * the cart's post-exec calls is a production tightening item (two-phase
+     * seccomp) deferred to the runtime implementation. */
+    "execve",
     NULL,
 };
 

@@ -64,6 +64,30 @@ make docker-smoke-busy      # run busy_loop.elf under qemu-user
 make docker-smoke-lua       # run Lua workloads under qemu-user (Stage 4)
 ```
 
+## Quick start — automated QEMU full-system test
+
+Exercises all three kernel mechanisms (CONFIG_COMPAT, seccomp, cgroups v2).
+Uses SSH for test execution (cloud-init sets ubuntu/ubuntu credentials).
+
+```sh
+make qemu-image   # one-time: download Ubuntu 24.04.4 RISC-V (~1 GB)
+make qemu-uboot   # one-time: extract U-Boot ELF from Ubuntu package
+brew install sshpass   # required for automated password SSH
+make qemu-test    # boot guest, SSH in, run tests, kill guest; results in build/results/
+```
+
+`qemu-test` creates a fresh copy of the base image, injects SSH credentials
+into the CIDATA partition (using `mtools`), boots QEMU with SSH forwarded to
+host port 2222, waits for cloud-init, then SSHes in to run
+`run-guest-tests.sh`.  Results land in `build/results/guest-run.log`.
+The test image copy is deleted after each run; the base image is unchanged.
+
+> **CONFIG_COMPAT note:** Ubuntu 24.04.4 RISC-V kernel 6.17 has
+> `CONFIG_COMPAT` explicitly disabled.  Stage 0 (cgroups v2) and the
+> seccomp mechanism pass.  Stages 1, 3, 4 require CONFIG_COMPAT; use
+> Fedora RISC-V or Milk-V Duo hardware for those stages.
+> See `docs/design/spike-h-results.md` for the full analysis.
+
 The `build/` directory holds:
 
 | Path | Purpose | ELF flags |
@@ -91,7 +115,7 @@ or running on the Milk-V Duo's native distro. That's out of spike scope.
 make qemu-image
 ```
 
-This downloads `ubuntu-24.04.2-preinstalled-server-riscv64.img.xz` (~600 MB
+This downloads `ubuntu-24.04.4-preinstalled-server-riscv64.img.xz` (~600 MB
 compressed → ~3 GB extracted) and resizes the disk to 8 GB. The image
 ships with `CONFIG_COMPAT=y` and cgroups v2 mounted under systemd.
 
@@ -222,19 +246,27 @@ spike-h/
 ├── README.md             # you are here
 ├── TASKS.md              # per-step pass/fail checklist
 ├── Dockerfile            # Ubuntu 24.04 + riscv32-linux-musl + qemu-user-static
-├── Makefile              # docker-build / docker-build-carts / qemu-run
+├── Makefile              # docker-build / docker-build-carts / qemu-run / qemu-test
 ├── hello.S               # Stage 1: minimal RV32 ELF, raw ECALLs
 ├── busy_loop.c           # Stage 4: cgroup throttle smoke-test
 ├── adversary.c           # Stage 3: forbidden-syscall probe
 ├── launcher.c            # Stage 3/4: fork/unshare/seccomp/exec harness
 ├── seccomp_filter.c      # Stage 3: libseccomp filter construction
 ├── spike_h.h             # shared decls
+├── run-guest-tests.sh    # automated in-guest test script (Stages 0–4)
 ├── lua-workloads/
 │   ├── Makefile          # cross-compile Lua + benchmark carts
 │   ├── lua_cart_linux.c  # native-Linux variant of spike-b's lua_cart.c
 │   └── lua_init_libs.c   # linit replacement (omits io/os/package)
+├── qemu/
+│   ├── cloud-init/
+│   │   ├── user-data     # cloud-config: mount virtfs, run tests, poweroff
+│   │   └── meta-data     # cloud-init instance-id
+│   ├── seed.iso          # cloud-init seed image (built by make qemu-seed)
+│   └── ubuntu-24.04.4-preinstalled-server-riscv64.img  (gitignored, ~3 GB)
 ├── baselines/            # CoreMark / quota numbers (populated as runs land)
 └── build/                # output (gitignored)
+    └── results/          # guest-run.log written by run-guest-tests.sh
 ```
 
 Lua benchmark scripts (`*.lua`) are not duplicated; the lua-workloads/Makefile

@@ -1,2 +1,7 @@
 build/
-qemu/
+qemu/*.img
+qemu/*.img.xz
+qemu/*.elf
+qemu/*.iso
+qemu/console.log
+qemu/uboot-extract/

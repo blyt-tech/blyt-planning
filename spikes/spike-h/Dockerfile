@@ -37,6 +37,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
+# ── riscv64-linux-gnu cross-toolchain + libseccomp for cross-building launcher
+# The launcher is a native RV64 Linux process (not a cart); it must run inside
+# the QEMU guest as an RV64 binary.  We cross-compile it here so the QEMU guest
+# doesn't need a build environment (avoiding slow apt-get over SLIRP networking).
+RUN dpkg --add-architecture riscv64 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc-riscv64-linux-gnu \
+        libc6-dev:riscv64 \
+        libseccomp-dev:riscv64 \
+    && rm -rf /var/lib/apt/lists/*
+
 # ── riscv32-linux-musl prebuilt toolchain ──────────────────────────────────
 # musl.cc ships separate aarch64 and x86_64 build-host packages.  We pick
 # based on the build platform.  Pinning to a specific release URL would be
