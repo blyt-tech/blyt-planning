@@ -1,0 +1,14 @@
+build/
+qemu/*.qcow2
+qemu/*.img
+qemu/*.iso
+qemu/*.elf
+qemu/console.log
+qemu/console*.log
+qemu/fedora-*.log
+qemu/fedora-userdata
+qemu/fedora-test-key
+qemu/fedora-test-key.pub
+qemu/fedora-test.pid
+wasm/rv32emu/
+wasm/lua-direct/build/
