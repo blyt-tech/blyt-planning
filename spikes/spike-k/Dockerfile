@@ -33,6 +33,7 @@ RUN cp /spike-d/elfs/libm-rv32.a /spike-k/lib/musl-libm/build/libm-rv32.a
 COPY cart_runtime/ /spike-k/cart_runtime/
 COPY ports/        /spike-k/ports/
 COPY workloads/    /spike-k/workloads/
+COPY lib/          /spike-k/lib/
 
 # ── spike-D source files that spike-K reuses verbatim (single source of
 #    truth lives in ../spike-d/; brought in here at Docker build time) ──────

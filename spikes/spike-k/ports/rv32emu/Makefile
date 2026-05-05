@@ -86,6 +86,19 @@ $(OUTDIR)/runtime_tracked.o: $(CART_RUNTIME_K)/runtime_tracked.c $(CART_RUNTIME_
 $(OUTDIR)/region_frame_state.o: $(CART_RUNTIME_K)/region_frame_state.c $(CART_RUNTIME_K)/region_frame_state.h | $(OUTDIR)
 	$(CROSS) $(CFLAGS_RT) -I$(CART_RUNTIME_K) -c -o $@ $<
 
+$(OUTDIR)/region_screen_shake.o: $(CART_RUNTIME_K)/region_screen_shake.c $(CART_RUNTIME_K)/region_screen_shake.h | $(OUTDIR)
+	$(CROSS) $(CFLAGS_RT) -I$(CART_RUNTIME_K) -c -o $@ $<
+
+$(OUTDIR)/region_voice_end_queue.o: $(CART_RUNTIME_K)/region_voice_end_queue.c $(CART_RUNTIME_K)/region_voice_end_queue.h | $(OUTDIR)
+	$(CROSS) $(CFLAGS_RT) -I$(CART_RUNTIME_K) -c -o $@ $<
+
+$(OUTDIR)/region_coroutine_save_blob.o: $(CART_RUNTIME_K)/region_coroutine_save_blob.c $(CART_RUNTIME_K)/region_coroutine_save_blob.h | $(OUTDIR)
+	$(CROSS) $(CFLAGS_RT) -I$(CART_RUNTIME_K) -c -o $@ $<
+
+# Synthetic mixer lives under spike-K/lib (not cart_runtime).
+$(OUTDIR)/synthetic_mixer.o: $(SPIKE_K_DIR)/lib/synthetic_mixer.c $(SPIKE_K_DIR)/lib/synthetic_mixer.h | $(OUTDIR)
+	$(CROSS) $(CFLAGS_RT) -I$(CART_RUNTIME_K) -c -o $@ $<
+
 $(OUTDIR)/cart_state_whetstone.o: $(CART_RUNTIME_K)/cart_state_whetstone.c $(CART_RUNTIME_K)/cart_state_whetstone.h | $(OUTDIR)
 	$(CROSS) $(CFLAGS_RT) -I$(CART_RUNTIME_K) -c -o $@ $<
 
@@ -187,7 +200,164 @@ $(CORRUPTION_TESTS_ELF): \
 	    $(LIBM_RV32_A) \
 	    $(SOFTFLOAT_A)
 
-ALL_ELFS := $(WHETSTONE_SAVE_ELF) $(WHETSTONE_LOAD_ELF) $(CORRUPTION_TESTS_ELF)
+# ── det_shake variants (Stage 5) ─────────────────────────────────────────────
+
+$(OUTDIR)/det_shake_save.o: det_shake_save.c | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -c -o $@ $<
+
+$(OUTDIR)/det_shake_load.o: det_shake_load.c | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -c -o $@ $<
+
+$(OUTDIR)/det_shake_full.o: det_shake_full.c | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -c -o $@ $<
+
+$(OUTDIR)/regions_det_shake.o: regions_det_shake.c | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -c -o $@ $<
+
+DET_SHAKE_RT_OBJS := \
+    $(OUTDIR)/digest.o \
+    $(OUTDIR)/pcg32.o \
+    $(OUTDIR)/save_state.o \
+    $(OUTDIR)/runtime_tracked.o \
+    $(OUTDIR)/region_frame_state.o \
+    $(OUTDIR)/region_screen_shake.o \
+    $(OUTDIR)/save_io.o
+
+DET_SHAKE_SAVE_ELF := $(OUTDIR)/det_shake_save.elf
+DET_SHAKE_LOAD_ELF := $(OUTDIR)/det_shake_load.elf
+DET_SHAKE_FULL_ELF := $(OUTDIR)/det_shake_full.elf
+
+define LINK_DET_SHAKE
+$(1): \
+		$(2) \
+		$(OUTDIR)/regions_det_shake.o \
+		$(DET_SHAKE_RT_OBJS) \
+		$(OUTDIR)/lua_runtime.o \
+		$(OUTDIR)/softfloat-glue.o \
+		$(OUTDIR)/crt0.o \
+		$(LIBM_RV32_A) \
+		$(SOFTFLOAT_A)
+	$$(CROSS) $$(CFLAGS_RT) $$(LDFLAGS) -o $$@ \
+	    $(2) \
+	    $(OUTDIR)/regions_det_shake.o \
+	    $(DET_SHAKE_RT_OBJS) \
+	    $(OUTDIR)/lua_runtime.o \
+	    $(OUTDIR)/softfloat-glue.o \
+	    $(OUTDIR)/crt0.o \
+	    $(LIBM_RV32_A) \
+	    $(SOFTFLOAT_A)
+endef
+$(eval $(call LINK_DET_SHAKE,$(DET_SHAKE_SAVE_ELF),$(OUTDIR)/det_shake_save.o))
+$(eval $(call LINK_DET_SHAKE,$(DET_SHAKE_LOAD_ELF),$(OUTDIR)/det_shake_load.o))
+$(eval $(call LINK_DET_SHAKE,$(DET_SHAKE_FULL_ELF),$(OUTDIR)/det_shake_full.o))
+
+# ── det_audio_branch variants (Stage 3) ──────────────────────────────────────
+
+$(OUTDIR)/det_audio_branch_save.o: det_audio_branch_save.c | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -I$(SPIKE_K_DIR) -c -o $@ $<
+
+$(OUTDIR)/det_audio_branch_load.o: det_audio_branch_load.c | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -I$(SPIKE_K_DIR) -c -o $@ $<
+
+$(OUTDIR)/det_audio_branch_full.o: det_audio_branch_full.c | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -I$(SPIKE_K_DIR) -c -o $@ $<
+
+$(OUTDIR)/regions_det_audio_branch.o: regions_det_audio_branch.c | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -c -o $@ $<
+
+DET_AUDIO_BRANCH_RT_OBJS := \
+    $(OUTDIR)/digest.o \
+    $(OUTDIR)/pcg32.o \
+    $(OUTDIR)/save_state.o \
+    $(OUTDIR)/runtime_tracked.o \
+    $(OUTDIR)/region_frame_state.o \
+    $(OUTDIR)/region_voice_end_queue.o \
+    $(OUTDIR)/synthetic_mixer.o \
+    $(OUTDIR)/save_io.o
+
+DET_AUDIO_BRANCH_SAVE_ELF := $(OUTDIR)/det_audio_branch_save.elf
+DET_AUDIO_BRANCH_LOAD_ELF := $(OUTDIR)/det_audio_branch_load.elf
+DET_AUDIO_BRANCH_FULL_ELF := $(OUTDIR)/det_audio_branch_full.elf
+
+define LINK_DET_AUDIO_BRANCH
+$(1): \
+		$(2) \
+		$(OUTDIR)/regions_det_audio_branch.o \
+		$(DET_AUDIO_BRANCH_RT_OBJS) \
+		$(OUTDIR)/lua_runtime.o \
+		$(OUTDIR)/softfloat-glue.o \
+		$(OUTDIR)/crt0.o \
+		$(LIBM_RV32_A) \
+		$(SOFTFLOAT_A)
+	$$(CROSS) $$(CFLAGS_RT) $$(LDFLAGS) -o $$@ \
+	    $(2) \
+	    $(OUTDIR)/regions_det_audio_branch.o \
+	    $(DET_AUDIO_BRANCH_RT_OBJS) \
+	    $(OUTDIR)/lua_runtime.o \
+	    $(OUTDIR)/softfloat-glue.o \
+	    $(OUTDIR)/crt0.o \
+	    $(LIBM_RV32_A) \
+	    $(SOFTFLOAT_A)
+endef
+$(eval $(call LINK_DET_AUDIO_BRANCH,$(DET_AUDIO_BRANCH_SAVE_ELF),$(OUTDIR)/det_audio_branch_save.o))
+$(eval $(call LINK_DET_AUDIO_BRANCH,$(DET_AUDIO_BRANCH_LOAD_ELF),$(OUTDIR)/det_audio_branch_load.o))
+$(eval $(call LINK_DET_AUDIO_BRANCH,$(DET_AUDIO_BRANCH_FULL_ELF),$(OUTDIR)/det_audio_branch_full.o))
+
+# ── det_cutscene variants (Stage 4) ──────────────────────────────────────────
+
+$(OUTDIR)/det_cutscene_save.o: det_cutscene_save.c | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -c -o $@ $<
+
+$(OUTDIR)/det_cutscene_load.o: det_cutscene_load.c | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -c -o $@ $<
+
+$(OUTDIR)/det_cutscene_full.o: det_cutscene_full.c | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -c -o $@ $<
+
+$(OUTDIR)/regions_det_cutscene.o: regions_det_cutscene.c | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -c -o $@ $<
+
+DET_CUTSCENE_RT_OBJS := \
+    $(OUTDIR)/digest.o \
+    $(OUTDIR)/pcg32.o \
+    $(OUTDIR)/save_state.o \
+    $(OUTDIR)/runtime_tracked.o \
+    $(OUTDIR)/region_frame_state.o \
+    $(OUTDIR)/region_coroutine_save_blob.o \
+    $(OUTDIR)/save_io.o
+
+DET_CUTSCENE_SAVE_ELF := $(OUTDIR)/det_cutscene_save.elf
+DET_CUTSCENE_LOAD_ELF := $(OUTDIR)/det_cutscene_load.elf
+DET_CUTSCENE_FULL_ELF := $(OUTDIR)/det_cutscene_full.elf
+
+define LINK_DET_CUTSCENE
+$(1): \
+		$(2) \
+		$(OUTDIR)/regions_det_cutscene.o \
+		$(DET_CUTSCENE_RT_OBJS) \
+		$(OUTDIR)/lua_runtime.o \
+		$(OUTDIR)/softfloat-glue.o \
+		$(OUTDIR)/crt0.o \
+		$(LIBM_RV32_A) \
+		$(SOFTFLOAT_A)
+	$$(CROSS) $$(CFLAGS_RT) $$(LDFLAGS) -o $$@ \
+	    $(2) \
+	    $(OUTDIR)/regions_det_cutscene.o \
+	    $(DET_CUTSCENE_RT_OBJS) \
+	    $(OUTDIR)/lua_runtime.o \
+	    $(OUTDIR)/softfloat-glue.o \
+	    $(OUTDIR)/crt0.o \
+	    $(LIBM_RV32_A) \
+	    $(SOFTFLOAT_A)
+endef
+$(eval $(call LINK_DET_CUTSCENE,$(DET_CUTSCENE_SAVE_ELF),$(OUTDIR)/det_cutscene_save.o))
+$(eval $(call LINK_DET_CUTSCENE,$(DET_CUTSCENE_LOAD_ELF),$(OUTDIR)/det_cutscene_load.o))
+$(eval $(call LINK_DET_CUTSCENE,$(DET_CUTSCENE_FULL_ELF),$(OUTDIR)/det_cutscene_full.o))
+
+ALL_ELFS := $(WHETSTONE_SAVE_ELF) $(WHETSTONE_LOAD_ELF) $(CORRUPTION_TESTS_ELF) \
+            $(DET_SHAKE_SAVE_ELF) $(DET_SHAKE_LOAD_ELF) $(DET_SHAKE_FULL_ELF) \
+            $(DET_AUDIO_BRANCH_SAVE_ELF) $(DET_AUDIO_BRANCH_LOAD_ELF) $(DET_AUDIO_BRANCH_FULL_ELF) \
+            $(DET_CUTSCENE_SAVE_ELF) $(DET_CUTSCENE_LOAD_ELF) $(DET_CUTSCENE_FULL_ELF)
 
 .PHONY: all clean
 all: $(OUTDIR) $(ALL_ELFS)
