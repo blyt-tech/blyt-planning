@@ -14,10 +14,15 @@ the in-console editor incompatible with the design goals.
 ## Decision
 
 **CLI packer:** `blytbuild pack ./myproject` produces `myproject.blyt`. The
-packer always stages its output to `myproject/.build/` first (see ADR-0024
+packer always stages its output to `myproject/build/` first (see ADR-0024
 for the directory layout), then bundles that directory into the ELF cart file.
 `blytbuild run myproject.blyt` for local testing; `blytbuild run ./myproject`
 runs directly from the staging directory without packing.
+
+The staging directory is `build/` rather than `.build/` so authors can
+inspect packer output and other intermediate artifacts without fighting
+their file managers and shells. `blytbuild new` writes a project-level
+`.gitignore` that excludes it (see below).
 
 **Watch mode:** `blytbuild watch ./myproject` runs the incremental build loop:
 on any source or asset change, the packer reprocesses only the affected files
@@ -45,6 +50,10 @@ a custom DAP command.
 - Starter Lua or native-cart code with inline comments explaining the API.
 - Example sprite sheet, tilemap, tracker module in correct formats — a
   runnable "hello world" game the author modifies.
+- A `.gitignore` excluding the staging directory (`build/`) and any
+  packer-generated header directory (e.g. `generated/`) so the working
+  tree stays clean by default. Authors who want to commit cached
+  artifacts edit it.
 - Readme linking to recommended tools and quick-start guides.
 
 **Asset pipeline:** the packer accepts common formats without conversion:

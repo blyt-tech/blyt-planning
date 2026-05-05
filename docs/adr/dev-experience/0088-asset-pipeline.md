@@ -43,7 +43,7 @@ up-to-date checks:
   transform is still skipped (handles VCS checkouts, `touch`, etc.). If the
   hash differs, the transform runs.
 
-The tracking state is stored in `.build/packer-state.json`, which maps each
+The tracking state is stored in `build/packer-state.json`, which maps each
 input path to its last-known size, mtime, hash, and the list of output paths
 it produced.
 

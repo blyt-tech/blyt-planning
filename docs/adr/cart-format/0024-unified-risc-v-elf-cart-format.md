@@ -143,10 +143,11 @@ internal pipeline always stages its output to this directory; releasing a cart
 is the final bundling step that packs the directory into the ELF file. Watch
 mode simply omits that step.
 
-Directory layout (default: `<project>/.build/`, gitignored):
+Directory layout (default: `<project>/build/`, gitignored by the
+`.gitignore` that `blytbuild new` writes — see ADR-0044):
 
 ```
-.build/
+build/
   cart.info          FlatBuffers binary — content of the .cart.info ELF section
   cart.config        FlatBuffers binary — content of the .cart.config ELF section
                      Contains the resource registry: for each resource, its
