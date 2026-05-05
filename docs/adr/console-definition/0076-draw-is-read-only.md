@@ -60,7 +60,7 @@ simulation state.** Cases that matter in practice:
 
 - **Audio triggering**: calling `blyt32.audio.play()` in `draw()` is
   an instruction that lands in simulation state — the frame on which a
-  sound fires is how `is_playing()` queries are answered (ADR-0006).
+  sound fires is how `is_playing()` queries are answered (ADR-0106).
   Triggering in `draw()` also risks double-firing if the frontend ever
   calls `draw()` more than once per tick (e.g., when rendering a save
   state thumbnail). Audio triggers belong in `update()`.

@@ -44,9 +44,13 @@ Sources of variation and their controls:
   wall-clock API. `dt` in update is always 1/60.
 - **Input:** snapshotted once per logical update; frozen within update.
   Events recorded as `(frame_n, button_state)` tuples, not timestamps.
-- **Audio:** one-way data flow (cart → mixer) for determinism purposes.
-  Exception: `blyt_voice_is_playing()` queries actual mixer state (see ADR-0006).
-  The exception is bounded and acceptable; see ADR-0006 for rationale.
+- **Audio:** one-way data flow (cart → mixer) for triggering. Voice-end
+  and music-end events are recorded as per-frame inputs alongside player
+  input tuples (ADR-0106); `blyt_voice_is_playing` and
+  `blyt_music_is_playing` read from a logical mixer view derived from
+  those events, not from the live audible mixer. The audible mixer is
+  free to steal voices and drift on resume, but the cart cannot observe
+  those differences.
 - **Resource loading:** synchronous. Observable behavior ("I called load, got
   a result") is identical regardless of decompression latency.
 - **Coroutines:** cooperative only; runtime never preempts.

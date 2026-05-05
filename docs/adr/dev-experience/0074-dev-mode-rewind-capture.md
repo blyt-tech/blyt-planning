@@ -40,8 +40,9 @@ players.
   intervals. These serve as seek points; replaying from an anchor forward
   through the input log reaches any desired frame.
 - **Input log**: every player input event for the last 5 minutes, recorded
-  as `(frame_number, player_index, button_state)` tuples. Identical in
-  format to the speedrun replay input log (ADR-0015).
+  as `(frame_number, player_index, button_state)` tuples, plus the audio
+  voice-end and music-end events recorded per frame under ADR-0106.
+  Identical in format to the speedrun replay input log (ADR-0015).
 
 The anchor interval trades memory against seek granularity. A 1-second
 anchor interval for a typical cart with a few hundred KB of state costs

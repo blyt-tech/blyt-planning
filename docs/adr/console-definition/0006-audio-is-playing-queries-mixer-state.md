@@ -1,7 +1,9 @@
 # ADR-0006: Audio is_playing queries actual mixer state
 
 ## Status
-Accepted
+Superseded by ADR-0106 — voice-end events are now recorded per frame
+and `is_playing` reads from a deterministic logical mixer view. The
+"bounded determinism exception" this ADR introduced no longer applies.
 
 ## Context
 

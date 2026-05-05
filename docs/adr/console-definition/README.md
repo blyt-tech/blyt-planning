@@ -12,7 +12,7 @@ work as structural properties of the system rather than bolt-ons.
 | [0003](0003-display-320x240-paletted-256-colors.md) | Display — 320×240 paletted, 256 colors, double-buffered |
 | [0004](0004-audio-format-tiers.md) | Audio — format tiers by cart class |
 | [0005](0005-32-bit-numeric-model.md) | Numeric model — i32 and f32 everywhere |
-| [0006](0006-audio-is-playing-queries-mixer-state.md) | Audio is_playing queries actual mixer state (bounded determinism exception) |
+| [0006](0006-audio-is-playing-queries-mixer-state.md) | Audio is_playing queries actual mixer state (superseded by ADR-0106) |
 | [0007](0007-structural-determinism.md) | Full structural determinism |
 | [0008](0008-api-based-memory-model.md) | Memory model — API-based, not memory-mapped |
 | [0017](0017-input-spec-dpad-4face-2shoulders-4players.md) | Input spec — D-pad + 4 face + 2 shoulders + Start/Select, up to 4 players |
@@ -31,3 +31,4 @@ work as structural properties of the system rather than bolt-ons.
 | [0082](0082-emulator-mips-cap.md) | Emulator MIPS cap fixed to minimum emulation host throughput |
 | [0083](0083-lua-cart-crash-diagnostics.md) | Lua cart crash diagnostics — runtime-owned dump |
 | [0105](0105-project-naming-and-variants.md) | Project naming (Blyt) and console variants (Blyt32 / BlyTTY / Blyt3D) |
+| [0106](0106-audio-voice-end-events-as-frame-inputs.md) | Audio voice-end events recorded as frame inputs (supersedes ADR-0006) |
