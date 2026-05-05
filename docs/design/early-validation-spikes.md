@@ -1253,6 +1253,34 @@ manifest entries.
   ships.
 - Decides whether the < 500 ms Lua-only latency target is reachable
   with the packer architecture from ADR-0088 in place.
+- **Inherits two follow-ups from Spike K** (see
+  `docs/design/spike-k-results.md` § "Open follow-ups"):
+  - **Cross-host bit-identity of recursive Lua-table flattening.**
+    ADR-0012's `save = function(ctx) return {...}` returns an
+    arbitrary Lua table that the runtime serializes.  Spike K
+    simplified this to fixed-size POD save structs; M's Lua suite
+    cases (iii)–(v) require the real flatten path to exist.  Run
+    M's coroutine cases through Spike K's two-Docker-image setup
+    (linux/arm64 + linux/amd64) as well as the same-host edit-save
+    loop, and confirm the flattened bytes are byte-equal across
+    hosts.  If they are not, the question is whether ADR-0012 needs
+    to constrain `save` return shape (ordered list / flat record
+    instead of free-form table) before v1 ships — a spec-level
+    revision, not just engineering.  Lua table iteration order,
+    string interning, and hash slot assignment are all known to be
+    non-deterministic in stock Lua; bring this risk in front of M's
+    gate, not after.
+  - **Transient-coroutine boundary detection.**  ADR-0012 mandates a
+    runtime error when a non-persistent `coroutine.create()` (as
+    opposed to `blyt32.coroutine.create{}`) survives a save/load.
+    Add a case to M's suite that creates a transient coroutine,
+    yields, takes a save, restores, attempts to resume, and confirm
+    the runtime throws `RuntimeError: coroutine crossed a save/
+    restore boundary` (string-equality on stderr; same on both
+    hosts).  The open question this answers: does the Lua VM expose
+    enough hooks to distinguish the two creation paths at save
+    time, or does ADR-0012 need to specify the discrimination
+    mechanism explicitly?
 - Does not address asset-only hot reloads (sprite, palette, audio).
   Those are simpler than code reload; if code reload works, asset-
   only reload is a strict subset.
