@@ -33,16 +33,43 @@ all state runtime-tracked; per-session entropy by default.**
 
 Defined in `blyt32.h`, always available without manifest declaration:
 
-| Constant | Purpose |
-|----------|---------|
-| `BLYT_RNG_DEFAULT` | The standard stream. Gameplay and anything that feeds back into simulation reads from here. |
-| `BLYT_RNG_COSMETIC` | Randomness whose result is consumed and thrown away the same frame — particle jitter, screen-shake offset, sound pitch variation. Nothing in the simulation reads back from this stream. |
+| Constant | Purpose | Phase |
+|----------|---------|-------|
+| `BLYT_RNG_DEFAULT` | The standard stream. Gameplay and anything that feeds back into simulation reads from here. | `update()` |
+| `BLYT_RNG_COSMETIC` | Draw-time-only randomness — particle jitter, sparkle positions, screen-flicker, ambient noise. Nothing in the simulation reads from this stream. | `draw()` |
 
-The split exists so authors have a documented home for output-only
-randomness. Routing cosmetic `rng.next()` calls through `BLYT_RNG_COSMETIC`
-keeps `BLYT_RNG_DEFAULT`'s sequence undisturbed by polish work, which makes
-fixed-seed worldgen and any future input-only replay system viable
-without further plumbing.
+The split exists so authors have a documented home for draw-time
+randomness. Routing cosmetic `rng.next()` calls through
+`BLYT_RNG_COSMETIC` keeps `BLYT_RNG_DEFAULT`'s sequence undisturbed
+by polish work, which makes fixed-seed worldgen and replay across
+code edits viable without further plumbing.
+
+### Draw-only contract for BLYT_RNG_COSMETIC
+
+`next(RNG.COSMETIC)` is **only** valid in `draw()`, and conversely
+`next(RNG.<anything else>)` is only valid in `update()` (ADR-0076).
+The split is enforced by dev-mode detection.
+
+The runtime captures the cosmetic stream's state at the end of each
+canonical `draw()` and records it as a per-frame input alongside
+player input tuples (the same shape as ADR-0106's voice-end
+events). At the start of the next frame's `update()`, the cosmetic
+stream is restored to that captured value. Save state captures the
+post-draw value; non-canonical draws (save-state thumbnails,
+dev-mode redraws) save and restore the cosmetic stream around
+themselves so the recorded post-draw state always reflects the
+canonical render.
+
+This makes "cosmetic" a **physical invariant** rather than a
+convention: nothing the cart computes from cosmetic RNG can feed
+back into simulation, because `update()` cannot read it. Carts that
+want update-time randomness which doesn't perturb gameplay use a
+cart-declared stream (e.g. `rng_streams: [particles, screen_shake]`).
+
+`blyt32.rng.seed(RNG.COSMETIC, …)` and `blyt32.rng.reseed_all(…)`
+are valid from either phase — seeding is a write that snapshots
+cleanly with the rest of cart state. Only `next(RNG.COSMETIC)` is
+phase-restricted.
 
 ### Cart-declared streams
 
@@ -124,6 +151,13 @@ identical per-stream seeds locally. Lockstep simulation needs nothing
 further from the RNG layer — same root + same code + same inputs = bit-
 identical state.
 
+`BLYT_RNG_COSMETIC`'s post-draw state is locally derivable: each
+peer runs `draw()` deterministically from identical state and
+arrives at the same post-draw cosmetic state independently — no
+wire traffic. ADR-0106 covers the general rule for per-frame
+recorded inputs (locally derivable values cost nothing on the wire;
+divergent values would require authoritative broadcast).
+
 ### Implementation
 
 xoshiro128** (or equivalent 32-bit-output PRNG with well-characterised
@@ -137,7 +171,12 @@ versions so save/replay compatibility is preserved.
   only declare extras when they have a reason — most carts won't.
 - Adding or removing a cosmetic `rng.next()` call cannot perturb gameplay,
   worldgen, or any other simulation-affecting stream, because they live
-  on different streams seeded independently from the session root.
+  on different streams seeded independently from the session root, and
+  the cosmetic stream is unreadable from `update()` by design.
+- Cosmetic randomness is naturally draw-local: carts can read it where
+  they actually need it (sparkle position, particle jitter) without
+  pre-computing values in `update()` and parking them in state buffers
+  that exist only to bridge phases.
 - Default-entropy seeding means each player's first run differs naturally;
   the determinism contract is preserved because the seed is just another
   input captured from frame zero. Authors who want fixed-seed reproducibility

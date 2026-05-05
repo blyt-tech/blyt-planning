@@ -44,13 +44,18 @@ Sources of variation and their controls:
   wall-clock API. `dt` in update is always 1/60.
 - **Input:** snapshotted once per logical update; frozen within update.
   Events recorded as `(frame_n, button_state)` tuples, not timestamps.
-- **Audio:** one-way data flow (cart → mixer) for triggering. Voice-end
-  and music-end events are recorded as per-frame inputs alongside player
-  input tuples (ADR-0106); `blyt_voice_is_playing` and
-  `blyt_music_is_playing` read from a logical mixer view derived from
-  those events, not from the live audible mixer. The audible mixer is
-  free to steal voices and drift on resume, but the cart cannot observe
-  those differences.
+- **Audio:** one-way data flow (cart → mixer) for triggering. The
+  audible mixer is off-the-shelf (SDL_mixer or equivalent) and not
+  bit-identical across hosts. Voices in tracked groups
+  (ADR-0054 — music, dialogue, opted-in custom groups) achieve
+  determinism via recorded events: voice-end and music-end events
+  are captured as per-frame inputs (ADR-0106) and `is_playing` reads
+  from a logical mixer view, not the audible mixer. Netplay parity
+  comes from host-authoritative broadcast of those events with
+  cut-on-receipt on receiving peers. Untracked groups (SFX, default
+  cart-declared) are pure cart→mixer with no return path — their
+  state is invisible to the cart and they are never recorded or
+  broadcast.
 - **Resource loading:** synchronous. Observable behavior ("I called load, got
   a result") is identical regardless of decompression latency.
 - **Coroutines:** cooperative only; runtime never preempts.

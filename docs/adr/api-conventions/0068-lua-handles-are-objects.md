@@ -38,6 +38,13 @@ handle whose voice has finished) is a silent no-op on all method calls except
 handles — this is intentional: carts that fire-and-forget sounds do not need
 to guard every method call with a validity check.
 
+**Untracked voice handles:** `is_playing()` also returns `false` for
+voices in untracked groups (ADR-0054) — SFX and any cart-declared
+group not opted into tracking. The cart never sees a `true`
+`is_playing` for these voices, so branching on them is not
+meaningful. Dev mode warns on such calls so the author either moves
+the voice to a tracked group or removes the check.
+
 **State buffer handles** (`blyt_buffer_h`) are not Lua objects — they are
 accessed via the SOA metatable sugar (ADR-0011) which provides `buffer.field[i]`
 syntax at the aggregate level rather than per-slot object wrappers.

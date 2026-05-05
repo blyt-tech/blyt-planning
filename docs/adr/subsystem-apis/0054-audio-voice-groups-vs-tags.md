@@ -28,12 +28,16 @@ Carts that need additional groups declare them in `cart.config.yaml`:
 
 ```yaml
 # cart.config.yaml
-voice_groups: [ambient, ui]  # extends the three runtime defaults
+voice_groups:
+  - ambient                              # untracked (shorthand for { name: ambient, tracked: false })
+  - ui
+  - { name: long_loops, tracked: true }  # tracked — is_playing valid, end events recorded
 ```
 
-The packer generates constants for declared groups (`VG_AMBIENT`, `VG_UI`).
-All groups — runtime-provided and cart-declared — are assigned at
-`blyt_voice_play()` time and persist for the voice's lifetime. Groups support:
+The packer generates constants for declared groups (`VG_AMBIENT`,
+`VG_UI`, `VG_LONG_LOOPS`). All groups — runtime-provided and
+cart-declared — are assigned at `blyt_voice_play()` time and persist
+for the voice's lifetime. Groups support:
 
 - Per-group volume control (scales with the three-layer volume model, ADR-0055).
 - Per-group mute/unmute.
@@ -41,6 +45,35 @@ All groups — runtime-provided and cart-declared — are assigned at
 
 Groups are intended for persistent, meaningful mixer categories that span
 many frames (music layer, sfx layer, dialogue layer, etc.).
+
+### Tracked vs untracked groups
+
+A group's **tracked** flag determines whether voices in that group
+expose playback state to the cart and participate in deterministic
+audio bookkeeping (ADR-0106):
+
+- **Tracked groups**: `blyt_voice_is_playing(handle)` reads the
+  logical mixer view; voice-end events are recorded per frame for
+  replay determinism, and the netplay path broadcasts those events
+  from the host with cut-on-receipt on receiving peers (ADR-0106).
+- **Untracked groups**: `is_playing` is undefined for these handles
+  (returns false; dev-mode warns). No recording, no broadcast.
+  Voices play locally to mixer completion on each peer; minor
+  cross-peer mixer drift on a footstep is inaudible and never
+  triggers a cut.
+
+Defaults:
+
+| Group | Tracked? | Why |
+|-------|----------|-----|
+| `BLYT_VG_MUSIC` | yes (fixed) | Carts commonly branch on music end (advance scene). |
+| `BLYT_VG_VOICE` | yes (fixed) | Dialogue advancement, lip sync, talking-animation gating. |
+| `BLYT_VG_SFX` | no (fixed) | High-volume fire-and-forget; cutting on broadcast would sound bad. |
+| Cart-declared | no by default; opt in via `tracked: true` | Most cart-declared groups are SFX-shaped. |
+
+Carts that need `is_playing` for non-dialogue sounds (long ambient
+loops, charge-up cues, alarms) declare a tracked custom group with
+the right semantic name rather than co-opting `VG_VOICE`.
 
 ### Voice tags — per-voice runtime labels for scene-local batch stopping
 
@@ -66,3 +99,11 @@ batch-stop mechanism for scene-local sound sets.
 - Manifest-declared groups are type-safe via packer-generated constants;
   tags are cart-defined integers (no manifest declaration needed, reducing
   friction for ephemeral use).
+- The tracked flag scopes ADR-0106's voice-end recording to the voices
+  the cart actually branches on. SFX and untracked custom groups stay
+  off the recording path entirely, keeping replay-buffer cost bounded
+  by the small number of tracked voices a cart typically holds.
+- Carts that need playback state for a non-dialogue sound declare a
+  tracked custom group rather than misusing `VG_VOICE` for it; the
+  group's name documents the semantic and the volume mixer treats it
+  independently of dialogue volume preferences.
