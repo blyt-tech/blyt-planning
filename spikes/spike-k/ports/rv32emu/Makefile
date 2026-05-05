@@ -118,6 +118,9 @@ CART_RT_OBJS := \
 # stages add det_doom_tick, det_entity_update, ...).
 WHETSTONE_CART_STATE_OBJ := $(OUTDIR)/cart_state_whetstone.o
 
+$(OUTDIR)/cart_state_lua_simple.o: $(CART_RUNTIME_K)/cart_state_lua_simple.c $(CART_RUNTIME_K)/cart_state_lua_simple.h | $(OUTDIR)
+	$(CROSS) $(CFLAGS_RT) -I$(CART_RUNTIME_K) -c -o $@ $<
+
 # ── whetstone variants ───────────────────────────────────────────────────────
 
 $(OUTDIR)/whetstone_save.o: whetstone_save.c | $(OUTDIR)
@@ -354,10 +357,115 @@ $(eval $(call LINK_DET_CUTSCENE,$(DET_CUTSCENE_SAVE_ELF),$(OUTDIR)/det_cutscene_
 $(eval $(call LINK_DET_CUTSCENE,$(DET_CUTSCENE_LOAD_ELF),$(OUTDIR)/det_cutscene_load.o))
 $(eval $(call LINK_DET_CUTSCENE,$(DET_CUTSCENE_FULL_ELF),$(OUTDIR)/det_cutscene_full.o))
 
+# ── Lua infrastructure (Stage 2) ─────────────────────────────────────────────
+# Mirrors spike-d's pattern: vendored Lua 5.4 sources live under spike-b/lua;
+# we build a libsmall liblua54.a and link it into Lua-driven cart ELFs.
+
+LUA_DIR := $(SPIKE_B_DIR)/lua
+LUA_SRC := $(LUA_DIR)/src
+
+CFLAGS_LUA := $(CFLAGS_BASE) \
+              -I$(SPIKE_K_INC) \
+              -I$(SPIKE_B_INC) \
+              -I$(LUA_SRC) \
+              -I$(SOFTFLOAT_INC) \
+              -Wno-implicit-fallthrough \
+              -Wno-stringop-overflow \
+              -Wno-deprecated-declarations \
+              -Wno-array-bounds
+
+LUA_OMIT := lua.c luac.c linit.c \
+            liolib.c loslib.c loadlib.c \
+            lcorolib.c ldblib.c lutf8lib.c
+LUA_ALL_SRCS := $(notdir $(wildcard $(LUA_SRC)/*.c))
+LUA_SRCS     := $(filter-out $(LUA_OMIT), $(LUA_ALL_SRCS))
+LUA_OBJS     := $(patsubst %.c, $(OUTDIR)/lua/%.o, $(LUA_SRCS))
+
+$(OUTDIR)/lua:
+	mkdir -p $@
+
+$(OUTDIR)/lua/%.o: $(LUA_SRC)/%.c | $(OUTDIR)/lua
+	$(CROSS) $(CFLAGS_LUA) -c -o $@ $<
+
+$(OUTDIR)/lua/lua_init_libs.o: $(SPIKE_B_PORT)/lua_init_libs.c | $(OUTDIR)/lua
+	$(CROSS) $(CFLAGS_LUA) -c -o $@ $<
+
+LUA_LIB_OBJS := $(LUA_OBJS) $(OUTDIR)/lua/lua_init_libs.o
+
+$(OUTDIR)/liblua54.a: $(LUA_LIB_OBJS)
+	$(AR) crs $@ $(LUA_LIB_OBJS)
+
+# Cart-side Lua bindings (spike-K specific — reuses the cart_runtime regions).
+$(OUTDIR)/lua_det_bindings_k.o: lua_det_bindings_k.c | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -I$(LUA_SRC) -c -o $@ $<
+
+# Embed the workload as a C array (xxd -i).
+$(OUTDIR)/embed:
+	mkdir -p $@
+
+$(OUTDIR)/embed/det_lua_simple.h: $(SPIKE_K_DIR)/workloads/det_lua_simple.lua | $(OUTDIR)/embed
+	cd $(SPIKE_K_DIR)/workloads && xxd -i det_lua_simple.lua > $(abspath $@)
+
+# ── lua_simple variants (Stage 2) ────────────────────────────────────────────
+
+$(OUTDIR)/lua_simple_save.o: lua_simple_save.c $(OUTDIR)/embed/det_lua_simple.h | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -I$(LUA_SRC) -I$(OUTDIR) -c -o $@ $<
+
+$(OUTDIR)/lua_simple_load.o: lua_simple_load.c $(OUTDIR)/embed/det_lua_simple.h | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -I$(LUA_SRC) -I$(OUTDIR) -c -o $@ $<
+
+$(OUTDIR)/lua_simple_full.o: lua_simple_full.c $(OUTDIR)/embed/det_lua_simple.h | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -I$(LUA_SRC) -I$(OUTDIR) -c -o $@ $<
+
+$(OUTDIR)/regions_lua_simple.o: regions_lua_simple.c | $(OUTDIR)
+	$(CROSS) $(CFLAGS_CART) -c -o $@ $<
+
+LUA_SIMPLE_RT_OBJS := \
+    $(OUTDIR)/digest.o \
+    $(OUTDIR)/pcg32.o \
+    $(OUTDIR)/save_state.o \
+    $(OUTDIR)/runtime_tracked.o \
+    $(OUTDIR)/region_frame_state.o \
+    $(OUTDIR)/cart_state_lua_simple.o \
+    $(OUTDIR)/save_io.o
+
+LUA_SIMPLE_SAVE_ELF := $(OUTDIR)/lua_simple_save.elf
+LUA_SIMPLE_LOAD_ELF := $(OUTDIR)/lua_simple_load.elf
+LUA_SIMPLE_FULL_ELF := $(OUTDIR)/lua_simple_full.elf
+
+define LINK_LUA_SIMPLE
+$(1): \
+		$(2) \
+		$(OUTDIR)/regions_lua_simple.o \
+		$(OUTDIR)/lua_det_bindings_k.o \
+		$(LUA_SIMPLE_RT_OBJS) \
+		$(OUTDIR)/lua_runtime.o \
+		$(OUTDIR)/softfloat-glue.o \
+		$(OUTDIR)/crt0.o \
+		$(OUTDIR)/liblua54.a \
+		$(LIBM_RV32_A) \
+		$(SOFTFLOAT_A)
+	$$(CROSS) $$(CFLAGS_CART) $$(LDFLAGS) -o $$@ \
+	    $(2) \
+	    $(OUTDIR)/regions_lua_simple.o \
+	    $(OUTDIR)/lua_det_bindings_k.o \
+	    $(LUA_SIMPLE_RT_OBJS) \
+	    $(OUTDIR)/lua_runtime.o \
+	    $(OUTDIR)/softfloat-glue.o \
+	    $(OUTDIR)/crt0.o \
+	    $(OUTDIR)/liblua54.a \
+	    $(LIBM_RV32_A) \
+	    $(SOFTFLOAT_A)
+endef
+$(eval $(call LINK_LUA_SIMPLE,$(LUA_SIMPLE_SAVE_ELF),$(OUTDIR)/lua_simple_save.o))
+$(eval $(call LINK_LUA_SIMPLE,$(LUA_SIMPLE_LOAD_ELF),$(OUTDIR)/lua_simple_load.o))
+$(eval $(call LINK_LUA_SIMPLE,$(LUA_SIMPLE_FULL_ELF),$(OUTDIR)/lua_simple_full.o))
+
 ALL_ELFS := $(WHETSTONE_SAVE_ELF) $(WHETSTONE_LOAD_ELF) $(CORRUPTION_TESTS_ELF) \
             $(DET_SHAKE_SAVE_ELF) $(DET_SHAKE_LOAD_ELF) $(DET_SHAKE_FULL_ELF) \
             $(DET_AUDIO_BRANCH_SAVE_ELF) $(DET_AUDIO_BRANCH_LOAD_ELF) $(DET_AUDIO_BRANCH_FULL_ELF) \
-            $(DET_CUTSCENE_SAVE_ELF) $(DET_CUTSCENE_LOAD_ELF) $(DET_CUTSCENE_FULL_ELF)
+            $(DET_CUTSCENE_SAVE_ELF) $(DET_CUTSCENE_LOAD_ELF) $(DET_CUTSCENE_FULL_ELF) \
+            $(LUA_SIMPLE_SAVE_ELF) $(LUA_SIMPLE_LOAD_ELF) $(LUA_SIMPLE_FULL_ELF)
 
 .PHONY: all clean
 all: $(OUTDIR) $(ALL_ELFS)

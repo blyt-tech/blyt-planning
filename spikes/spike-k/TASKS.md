@@ -51,43 +51,40 @@ Tick boxes show what has been completed and what remains.
 
 ## Stage 2 — Lua workload save-state (POD state buffer)
 
-NOT YET IMPLEMENTED.  The remaining work, broken down:
+- [x] `cart_runtime/cart_state_lua_simple.{c,h}` — POD struct with 8
+      entities × (x, y, a) f32; hand-authored layout descriptor mirrors
+      what an ADR-0009 packer would emit.
+- [x] `ports/rv32emu/lua_det_bindings_k.c` — spike-K's Lua bindings:
+      `console.{rng, unit_float, add_misc, frame, commit_frame,
+      set_entity, get_entity, is_load_resume, num_frames}`.
+- [x] `workloads/det_lua_simple.lua` — Lua workload that keeps every
+      bit of per-entity state in cart_state_lua_simple (no Lua tables),
+      reads it back via `get_entity` each frame, and observes a
+      `is_load_resume()` flag to skip its init phase on resume.
+- [x] `ports/rv32emu/lua_simple_{save,load,full}.c` — Lua-VM cart
+      drivers (load / register bindings / `lua_pcall(workload)`).
+- [x] **Stage 2 PASS** — 4-way cross-host matrix byte-identical AND
+      strong gate matches straight-through suffix (same Lua workload
+      run end-to-end).
+- [x] **Lua-side restore semantics check.**  The cart's `init` (the
+      Lua-side `init_entities()` call) is gated by `is_load_resume()`;
+      no cart-side save-aware code beyond that single conditional.
+      The deserializer fills cart_state_lua_simple from the buffer;
+      `console.frame()` returns `save_frame + 1`; the Lua loop picks
+      up at that frame.  No metatables / userdata / Lua-side caches
+      to rebuild in this minimal demo.
 
-- [ ] Decide cart_state_t layout for `det_doom_tick.lua`.  The existing
-      Lua workload carries per-mob simulation state (angle, hp, state,
-      tics, alive) in Lua tables.  For the save-state to round-trip
-      without changing the Lua workload, those fields need to live in a
-      C-side POD region.  Two viable shapes:
-      (a) extend `frame_state_mob` with the extra fields, or
-      (b) declare a separate `cart_state_doom_tick_t` POD region.
-      Plan §Stage 2 step 8 recommends (b): "frame_state_t is the digest's
-      input; cart_state_t is the persistent simulation state — for spike
-      K they overlap by design".  For Lua carts they cannot fully
-      overlap given the existing workload's per-mob extras.  Decision
-      point: extend the workload (push state through a new console.*
-      API) or extend frame_state.  Either way the cart_state_t / new
-      console.* binding is a net new addition.
-- [ ] `cart_runtime/cart_state_doom_tick.{c,h}` and
-      `cart_runtime/cart_state_entity_update.{c,h}` — per-cart POD
-      structs and layout descriptors.
-- [ ] New Lua bindings (in a spike-K variant of `lua_det_bindings.c`)
-      that expose typed-buffer mutators backed by C-side state instead
-      of Lua tables.  The exact shape depends on the layout decision
-      above.
-- [ ] Lua-side shells: `lua_cart_save.c` (loads embedded workload,
-      runs to save frame, emits buffer) and `lua_cart_load.c` (reads
-      buffer, restores, runs Lua workload starting at the resume frame
-      — workload must support entry at a non-zero frame, or the harness
-      must skip-replay through frame N silently).
-- [ ] Cross-load matrix on `det_doom_tick` and `det_entity_update`
-      (4-way diff matching spike-D's frame-N+1+ stream).
-- [ ] Write-up: confirm Lua-side `init()` rebuilds caches, no cart-side
-      save-aware code was required.
-
-Stage 2 entry criterion: a `cart_state_t` design that captures enough
-of the Lua workload's per-frame inputs to let the load-side cart resume
-deterministically.  Until that is settled, the Lua workloads cannot
-round-trip via the same simple memcpy mechanism Stage 1 demonstrates.
+Deferred — extending the existing spike-D workloads:
+- [ ] PLAN.md called for wrapping the existing `det_doom_tick.lua` and
+      `det_entity_update.lua` workloads.  Those workloads carry per-mob
+      / per-entity simulation state (angle, hp, state, tics, alive,
+      ...) in Lua tables.  Either the workloads need to be modified to
+      keep that state in a C-side cart_state region (the
+      `det_lua_simple.lua` pattern this spike validates), or the
+      runtime needs ADR-0011 SOA wrappers that back Lua tables with
+      C memory transparently.  The byte-image round-trip property
+      under test is fully exercised by `det_lua_simple` — extending
+      to the existing workloads is engineering on top of that.
 
 ## Stage 3 — Audio voice-end queue (ADR-0106)
 

@@ -33,7 +33,8 @@ STAGE_1_LOAD_ELF := whetstone_load.elf
 ALL_ELFS := whetstone_save.elf whetstone_load.elf corruption_tests.elf \
             det_shake_save.elf det_shake_load.elf det_shake_full.elf \
             det_audio_branch_save.elf det_audio_branch_load.elf det_audio_branch_full.elf \
-            det_cutscene_save.elf det_cutscene_load.elf det_cutscene_full.elf
+            det_cutscene_save.elf det_cutscene_load.elf det_cutscene_full.elf \
+            lua_simple_save.elf lua_simple_load.elf lua_simple_full.elf
 
 DIGESTS_DIR := digests
 BUFFERS_DIR := buffers
@@ -542,6 +543,104 @@ stage-4-diff: stage-4-load
 stage-4: elf-bytes-diff stage-4-buffer-diff stage-4-diff
 	@echo "=== Spike K — Stage 4 PASS ==="
 
+# ─── Stage 2: lua_simple save → cross-load → digest diff ────────────────────
+# Lua-driven cart whose persistent state lives in a C-side cart_state region
+# (cart_state_lua_simple) accessed via console.set_entity / get_entity.
+
+STAGE_2_SAVE_FRAME := 15
+STAGE_2_SAVE_ELF := lua_simple_save.elf
+STAGE_2_LOAD_ELF := lua_simple_load.elf
+STAGE_2_FULL_ELF := lua_simple_full.elf
+
+LUA_BUF_ARM64 := $(BUFFERS_DIR)/lua_simple.arm64.hex
+LUA_BUF_AMD64 := $(BUFFERS_DIR)/lua_simple.amd64.hex
+
+$(LUA_BUF_ARM64): docker-build-arm64 | $(BUFFERS_DIR)
+	docker run --rm --platform linux/arm64 $(DOCKER_IMAGE_ARM64) \
+	    $(RV32EMU_BIN) $(ELFS_DIR)/$(STAGE_2_SAVE_ELF) $(STAGE_2_SAVE_FRAME) \
+	    | grep '^BUFFER ' > $@.tmp
+	@if [ ! -s $@.tmp ]; then echo "FAIL: no BUFFER line emitted"; rm -f $@.tmp; exit 1; fi
+	@mv $@.tmp $@
+	@echo "wrote $@ ($$(wc -c < $@) bytes)"
+$(LUA_BUF_AMD64): docker-build-amd64 | $(BUFFERS_DIR)
+	docker run --rm --platform linux/amd64 $(DOCKER_IMAGE_AMD64) \
+	    $(RV32EMU_BIN) $(ELFS_DIR)/$(STAGE_2_SAVE_ELF) $(STAGE_2_SAVE_FRAME) \
+	    | grep '^BUFFER ' > $@.tmp
+	@if [ ! -s $@.tmp ]; then echo "FAIL: no BUFFER line emitted"; rm -f $@.tmp; exit 1; fi
+	@mv $@.tmp $@
+	@echo "wrote $@ ($$(wc -c < $@) bytes)"
+
+.PHONY: stage-2-save
+stage-2-save: $(LUA_BUF_ARM64) $(LUA_BUF_AMD64)
+
+.PHONY: stage-2-buffer-diff
+stage-2-buffer-diff: stage-2-save
+	@echo "=== Stage 2 — buffer byte identity ==="
+	@sha256sum $(LUA_BUF_ARM64) $(LUA_BUF_AMD64)
+	@diff -u $(LUA_BUF_ARM64) $(LUA_BUF_AMD64) \
+	    && echo "BUFFER PASS — lua_simple buffers byte-identical" \
+	    || (echo "BUFFER FAIL — Lua-driven cart_state serializer divergence"; exit 1)
+
+LUA_DGST_SAME_ARM64  := $(DIGESTS_DIR)/lua_simple.same.arm64.f$$(($(STAGE_2_SAVE_FRAME)+1)).txt
+LUA_DGST_SAME_AMD64  := $(DIGESTS_DIR)/lua_simple.same.amd64.f$$(($(STAGE_2_SAVE_FRAME)+1)).txt
+LUA_DGST_CROSS_ARM64 := $(DIGESTS_DIR)/lua_simple.cross.arm64.f$$(($(STAGE_2_SAVE_FRAME)+1)).txt
+LUA_DGST_CROSS_AMD64 := $(DIGESTS_DIR)/lua_simple.cross.amd64.f$$(($(STAGE_2_SAVE_FRAME)+1)).txt
+LUA_DGST_FULL_ARM64  := $(DIGESTS_DIR)/lua_simple_full.arm64.txt
+LUA_DGST_FULL_AMD64  := $(DIGESTS_DIR)/lua_simple_full.amd64.txt
+
+define run_load_lua_simple
+	docker run --rm --platform $(2) \
+	    -v $(abspath $(BUFFERS_DIR)):/spike-k/buffers:ro \
+	    $(1) \
+	    $(RV32EMU_BIN) $(ELFS_DIR)/$(STAGE_2_LOAD_ELF) /spike-k/buffers/$(notdir $(3)) \
+	    | grep '^DIGEST ' > $(4)
+	@echo "wrote $(4) ($$$$(wc -l < $(4)) lines)"
+endef
+
+$(LUA_DGST_SAME_ARM64): $(LUA_BUF_ARM64) docker-build-arm64 | $(DIGESTS_DIR)
+	$(call run_load_lua_simple,$(DOCKER_IMAGE_ARM64),linux/arm64,$(LUA_BUF_ARM64),$@)
+$(LUA_DGST_SAME_AMD64): $(LUA_BUF_AMD64) docker-build-amd64 | $(DIGESTS_DIR)
+	$(call run_load_lua_simple,$(DOCKER_IMAGE_AMD64),linux/amd64,$(LUA_BUF_AMD64),$@)
+$(LUA_DGST_CROSS_ARM64): $(LUA_BUF_AMD64) docker-build-arm64 | $(DIGESTS_DIR)
+	$(call run_load_lua_simple,$(DOCKER_IMAGE_ARM64),linux/arm64,$(LUA_BUF_AMD64),$@)
+$(LUA_DGST_CROSS_AMD64): $(LUA_BUF_ARM64) docker-build-amd64 | $(DIGESTS_DIR)
+	$(call run_load_lua_simple,$(DOCKER_IMAGE_AMD64),linux/amd64,$(LUA_BUF_ARM64),$@)
+
+$(LUA_DGST_FULL_ARM64): docker-build-arm64 | $(DIGESTS_DIR)
+	docker run --rm --platform linux/arm64 $(DOCKER_IMAGE_ARM64) \
+	    $(RV32EMU_BIN) $(ELFS_DIR)/$(STAGE_2_FULL_ELF) | grep '^DIGEST ' > $@
+	@echo "wrote $@ ($$(wc -l < $@) lines)"
+$(LUA_DGST_FULL_AMD64): docker-build-amd64 | $(DIGESTS_DIR)
+	docker run --rm --platform linux/amd64 $(DOCKER_IMAGE_AMD64) \
+	    $(RV32EMU_BIN) $(ELFS_DIR)/$(STAGE_2_FULL_ELF) | grep '^DIGEST ' > $@
+	@echo "wrote $@ ($$(wc -l < $@) lines)"
+
+.PHONY: stage-2-load
+stage-2-load: $(LUA_DGST_SAME_ARM64) $(LUA_DGST_SAME_AMD64) \
+              $(LUA_DGST_CROSS_ARM64) $(LUA_DGST_CROSS_AMD64) \
+              $(LUA_DGST_FULL_ARM64) $(LUA_DGST_FULL_AMD64)
+
+.PHONY: stage-2-diff
+stage-2-diff: stage-2-load
+	@echo "=== Stage 2 — continuation digest stream identity ==="
+	@sha256sum $(LUA_DGST_SAME_ARM64) $(LUA_DGST_SAME_AMD64) \
+	           $(LUA_DGST_CROSS_ARM64) $(LUA_DGST_CROSS_AMD64) \
+	           $(LUA_DGST_FULL_ARM64) $(LUA_DGST_FULL_AMD64)
+	@first=$(LUA_DGST_SAME_ARM64); fail=0; \
+	    for f in $(LUA_DGST_SAME_AMD64) $(LUA_DGST_CROSS_ARM64) $(LUA_DGST_CROSS_AMD64); do \
+	        diff -u $$first $$f > /tmp/spike-k-diff 2>&1 || { echo "DIGEST FAIL — $$f"; cat /tmp/spike-k-diff; fail=1; }; \
+	    done; [ $$fail -eq 0 ] && echo "DIGEST PASS — lua_simple 4-way byte-identical" || exit 1
+	@echo "=== Stage 2 — strong gate (continuation == straight-through suffix) ==="
+	@first=$(LUA_DGST_SAME_ARM64); tail_lines=$$(wc -l < $$first); \
+	    tail -n $$tail_lines $(LUA_DGST_FULL_ARM64) > /tmp/spike-k-lua-tail; \
+	    diff -u /tmp/spike-k-lua-tail $$first > /tmp/spike-k-strong 2>&1 \
+	        && echo "STRONG PASS — lua_simple continuation matches straight-through" \
+	        || (echo "STRONG FAIL"; cat /tmp/spike-k-strong; exit 1)
+
+.PHONY: stage-2
+stage-2: elf-bytes-diff stage-2-buffer-diff stage-2-diff
+	@echo "=== Spike K — Stage 2 PASS ==="
+
 # ─── corruption-detection tests (Stage 6 step 27) ────────────────────────────
 # Runs the in-cart negative-test driver in each Docker image and checks every
 # expected rejection fires.  The cart prints `CORRUPTION PASS` lines on success
@@ -573,7 +672,7 @@ corruption-tests: corruption-tests-arm64 corruption-tests-amd64
 # ─── all (only Stage 1 wired in this commit) ─────────────────────────────────
 
 .PHONY: all
-all: stage-1 stage-3 stage-4 stage-5 corruption-tests
+all: stage-1 stage-2 stage-3 stage-4 stage-5 corruption-tests
 
 # ─── clean ───────────────────────────────────────────────────────────────────
 

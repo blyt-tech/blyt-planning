@@ -21,6 +21,14 @@
 ARG SPIKE_D_IMAGE=fc32-spike-d-arm64
 FROM ${SPIKE_D_IMAGE} AS builder
 
+# Stage 2's Lua workloads are embedded into the cart binary via xxd -i.
+# spike-D's runtime image installs xxd in its builder but not in the
+# runtime stage, so we re-install it here.
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    xxd \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /spike-k
 
 # ── reuse spike-D's libm-rv32.a (same archive, repositioned for spike-K's

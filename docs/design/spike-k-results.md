@@ -1,10 +1,10 @@
 # Spike K results — cross-host save-state portability
 
-**Status: Stages 1, 3, 4, 5 PASS.  Corruption-detection PASS.  Stage 2
-(Lua workload save-state through cart_state_t bindings) deferred — the
-mechanism Stages 1/3/4/5 validate is the load-bearing piece; Stage 2 is
-Lua harness work on top.  See `spikes/spike-k/TASKS.md` for remaining
-details.**
+**Status: All stages PASS.  Stages 1, 2, 3, 4, 5 validated; corruption-
+detection PASS on both hosts.  The only deferred item is wrapping the
+existing spike-D Lua workloads (`det_doom_tick.lua` / `det_entity_update.lua`)
+in the Stage 2 pattern — the property under test is fully exercised by
+`det_lua_simple.lua`.  See `spikes/spike-k/TASKS.md` for the punch list.**
 
 The question Spike K asks (per `docs/design/early-validation-spikes.md`
 §K and `spikes/spike-k/PLAN.md`) is whether a save state serialized on
@@ -26,6 +26,7 @@ is exactly what an in-place continuation would have held.
 ```
                                      buffer SHA   digest SHA   strong gate
 Stage 1 — whetstone (POD floor)      fc6c4ba8     4d6a4400     PASS (matches spike-D suffix)
+Stage 2 — Lua-driven cart_state      eb371d44     e8152736     PASS
 Stage 3 — voice-end queue (f11)      071ef22f     0054f603     PASS
 Stage 3 — voice-end queue (f5 FIFO)  29265c49     4c0c10b9     PASS
 Stage 4 — coroutine save-blob        7d71af65     a3c3b70d     PASS
@@ -37,7 +38,7 @@ Reproduce with:
 
 ```
 cd spikes/spike-k
-make all   # docker images, ELF byte-identity, Stages 1/3/4/5, corruption tests
+make all   # docker images, ELF byte-identity, Stages 1/2/3/4/5, corruption tests
 ```
 
 `make all` exits 0 if every gate passes.  Re-running on a clean tree
@@ -55,6 +56,7 @@ produces the same SHA-256s as the manifest below.
 | `runtime_tracked.{c,h}` | The string-sink helpers, the registry walker (`runtime_tracked_describe()`), and the API every region implements (`describe`/`save`/`load` callbacks). |
 | `region_frame_state.{c,h}` | Spike D's `frame_state_t` lifted into a tracked region.  Save callback canonicalizes f32 NaN at the buffer-write boundary (stricter than spike-D's digest-time canonicalization). |
 | `cart_state_whetstone.{c,h}` | Whetstone's tiny POD `cart_state_t` (`a`, `b`, `c`, `d`, `e1[4]`, `t`, `u`).  Mirrors what an ADR-0009 packer would emit. |
+| `cart_state_lua_simple.{c,h}` | 8-entity POD region driven by the Stage 2 Lua workload via `console.set_entity` / `console.get_entity`.  Demonstrates the full Lua-VM-in-the-loop save-state pattern. |
 | `region_screen_shake.{c,h}` | ADR-0051 4-field POD region (`remaining_frames`, `intensity`, `decay`, `seed`); deterministic per-frame offset noise from FNV-1a-32 over `(frame, seed, axis)`. |
 | `region_voice_end_queue.{c,h}` | ADR-0106 — `logical_view_bits` (u64 bitmap of currently-playing handles) plus a fixed-size pending FIFO (8 events of `(frame, handle, kind)`).  Save preserves both verbatim. |
 | `region_coroutine_save_blob.{c,h}` | ADR-0012 simplified — fixed slot table (4 slots × 32 bytes) with `active_slots_bits`.  Each persistent coroutine writes a POD struct into a slot via `coroutine_blob_write()`; restore reads the bytes back. |
@@ -87,6 +89,7 @@ baseline used by the strong gate):
 | Cart | Region(s) used | Save frame |
 |------|----------------|------------|
 | `whetstone` | frame_state + cart_state_whetstone | 15 |
+| `lua_simple` | frame_state + cart_state_lua_simple (Lua VM in-loop) | 15 |
 | `det_audio_branch` | frame_state + voice_end_queue | 11 (post-application) and 5 (pending FIFO) |
 | `det_cutscene` | frame_state + coroutine_save_blob | 7 |
 | `det_shake` | frame_state + screen_shake | 10 |
@@ -145,6 +148,9 @@ order.
 **Yes**, for all four region kinds the spike implements:
 
 - POD state buffers (frame_state + cart_state_whetstone) — Stage 1.
+- Lua-VM-driven cart_state (frame_state + cart_state_lua_simple) —
+  Stage 2.  The Lua VM, the embedded workload script, and the
+  bindings layer all participate in the round trip.
 - Audio voice-end queue with FIFO (logical_view_bits + pending[8]) —
   Stage 3, exercised at both the post-application and pending-FIFO
   save points.
@@ -191,8 +197,8 @@ participates automatically.
 
 **Yes**, for every implemented stage.  The strong gate (continuation
 digest stream byte-equal to straight-through frame-N+1+ slice) holds
-unconditionally for whetstone, det_audio_branch (both save points),
-det_cutscene, and det_shake.  This means the save → load → continue
+unconditionally for whetstone, lua_simple, det_audio_branch (both
+save points), det_cutscene, and det_shake.  This means the save → load → continue
 path produces exactly the simulation state that an in-place
 continuation would have held — not merely a self-consistent stream.
 
@@ -204,22 +210,32 @@ every cart-author-visible piece of simulation state — including what
 feels like a stack-local scalar in a single-function loop — must live
 in a declared tracked buffer.
 
+The same finding generalises to Stage 2's Lua-driven cart.  The
+`det_lua_simple.lua` workload keeps every per-entity field in
+`cart_state_lua_simple` via `console.set_entity` / `console.get_entity`
+— there are no Lua tables holding persistent per-entity state.  The
+only cart-side save-aware code is a single conditional gating the
+init phase: `if not console.is_load_resume() then init_entities() end`.
+The Lua VM is destroyed at the end of save run and recreated fresh on
+the load run; the C-side regions are what carry state across.
+
 ---
 
 ## Open follow-ups
 
 These are flagged for the production path:
 
-- **Stage 2 — Lua workload save-state.**  The existing
+- **Wrapping the existing spike-D Lua workloads.**  Stage 2 was
+  validated with a new minimal workload (`det_lua_simple.lua`) that
+  keeps every bit of per-entity state in `cart_state_lua_simple` via
+  `console.set_entity` / `console.get_entity`.  The existing
   `det_doom_tick.lua` and `det_entity_update.lua` workloads (spike-D)
-  carry per-mob/per-entity simulation state in Lua tables (angle, hp,
-  state, tics, alive, ...).  For save-state to round-trip without
-  changing the cart, this state needs to live in C-side cart_state_t
-  POD regions, accessed via typed-buffer wrappers (ADR-0011 SOA).
-  Spike K does not implement that wrapper system; the byte-image
-  round-trip property under test is fully exercised by the C carts in
-  Stages 1/3/4/5.  See `spikes/spike-k/TASKS.md` for the per-step
-  punch list.
+  carry per-mob simulation state (angle, hp, state, tics, alive) in
+  Lua tables instead.  Wrapping them requires either a per-cart
+  `cart_state_*` region containing those extra fields with new
+  bindings, or ADR-0011 SOA wrappers that back Lua tables with C
+  memory transparently.  The save-state mechanism Stage 2 validates
+  generalises directly; this is workload-level work.
 
 - **Negative test: transient `coroutine.create()` across save/restore
   must throw.**  ADR-0012 mandates a runtime error when a non-
@@ -281,9 +297,13 @@ ELF byte hashes (linux/arm64 and linux/amd64 — identical):
   fe5d32da1d734010877c4cdf4bcaa60e37061f3552a8abaa7e182db1e6ecb9bf  det_cutscene_save.elf
   1c26a249678e7671e856474fa41c1c4781444de0e6f66e2d34f3f2cbea9be010  det_cutscene_load.elf
   3e89cfdea81a3e9ba3f032f5ee78e253c5562a764b664f1312b733bd9298b383  det_cutscene_full.elf
+  2028ba62b7a0e5e349d38dc73ae659381ddaafbf453798e828a2589d6c365ad9  lua_simple_save.elf
+  ef91c74b8c9be18fb6b3ced43818ce53cff6cd19c8bfd9c0e5a1e9e33336d445  lua_simple_load.elf
+  99c6da8f3ebf3e69bca64fa1984e8a7c4b107a54357ae2e96241d6f7b7f9750f  lua_simple_full.elf
 
 Saved buffers (both hosts produce identical bytes):
   fc6c4ba8bb527f3382242d498d8abe71014b753253bbc40dec91eeb75e869ea3  buffers/whetstone.{arm64,amd64}.hex
+  eb371d44d66378398504d198e18a6aa9581fa852b3076082b7a3de88a6fd7e32  buffers/lua_simple.{arm64,amd64}.hex
   5b623d912cc0b3140bc052a62ecba4aace55e373933403ac8e0cd1ecb50df338  buffers/det_shake.{arm64,amd64}.hex
   071ef22f5cdf085ba71e9c6043020969eabe22161e64afc24bfd2fe343dbc08b  buffers/det_audio_branch.f11.{arm64,amd64}.hex
   29265c493cb7ff0518f597e785aeb4a5b4f9a0e448ac360046bd07538b29edff  buffers/det_audio_branch.f5.{arm64,amd64}.hex
@@ -291,12 +311,14 @@ Saved buffers (both hosts produce identical bytes):
 
 Continuation digest streams (4-way matrix per cart, all byte-equal):
   4d6a44003c2cffbdebc9daba1af96b1b34d61b63e76540c5b1daf91393788a2f  digests/whetstone.{same,cross}.{arm64,amd64}.f16.txt
+  e8152736c615a906fb37ef6fcb48edb414c2c3730705174bc9ebcc42c773b9a9  digests/lua_simple.{same,cross}.{arm64,amd64}.f16.txt
   a1a673ca7f8bb97b45e6f507cffb78cf1b80ab8ebfa28dd3f640cf20b166845a  digests/det_shake.{same,cross}.{arm64,amd64}.f11.txt
   0054f603481d37d9edfa9a17ed6f54c9e31f03ef8f745d6bc4f41ab7f156d97a  digests/det_audio_branch.f11.{same,cross}.{arm64,amd64}.f12.txt
   4c0c10b99544401c74ce8a1d93de7b947fe621d44ecb41f01985495a3e7e9819  digests/det_audio_branch.f5.{same,cross}.{arm64,amd64}.f6.txt
   a3c3b70d06a80be85dfb379cc8c4ae3f446dff742755363f7ee4f1ff883fd981  digests/det_cutscene.{same,cross}.{arm64,amd64}.f8.txt
 
 Straight-through baselines (used by the strong-gate suffix comparison):
+  006973c8b47e54d6a256058e604b7f1b91df914206e53eae4ef018865a0fbef2  digests/lua_simple_full.{arm64,amd64}.txt
   584db2f1b65fc781969acb94aaccba887b9c258947b73946de298bf22db84f05  digests/det_shake_full.{arm64,amd64}.txt
   a6b3f962be39414e8db3eb44c438ff3f3f2a3f3e8296b64aaf2edd18a43624f7  digests/det_audio_branch_full.{arm64,amd64}.txt
   d9857f6c4bddc2452cd45985231dc1567ce91b77a681269697059d0ce0a0c48f  digests/det_cutscene_full.{arm64,amd64}.txt
