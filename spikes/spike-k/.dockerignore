@@ -1,0 +1,19 @@
+# Symlinks pointing into ../spike-d/ break the BuildKit build context (target
+# escapes context root and resolves to a broken link).  We exclude them here
+# and bring the real file content in via the named build context "spike-d"
+# (see Dockerfile: `COPY --from=spike-d ...`).
+cart_runtime/digest.c
+cart_runtime/digest.h
+cart_runtime/pcg32.c
+cart_runtime/pcg32.h
+cart_runtime/nan_canon.h
+cart_runtime/frame_state.h
+ports/rv32emu/include/math.h
+workloads/det_doom_tick.lua
+workloads/det_entity_update.lua
+
+# Host-side artefacts (built by the Makefile; not Dockerfile inputs).
+buffers/
+digests/
+elfs/
+build/
