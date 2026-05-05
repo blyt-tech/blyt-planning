@@ -77,6 +77,30 @@ reset — the runtime zeroes all cart-visible tracked state memory. This
 ensures deterministic initial conditions regardless of any previous session
 and removes any obligation on `init` to explicitly zero fields before use.
 
+### Framebuffer state on entry to `blyt_cart_draw`
+
+Before every call to `blyt_cart_draw`, the runtime unconditionally clears
+the framebuffer to palette index 0. The cart receives a fresh, deterministic
+canvas every frame; entering `draw` it never sees pixels from a prior frame.
+
+The clear is not configurable and not opt-out. Carts that want a non-zero
+background colour call `blyt_gfx_clear(color)` as the first operation in
+`draw` — the cost is one extra 75 KB memset, negligible at 60 fps. Stage's
+declarative draw pipeline (ADR-0102) does this automatically using the
+scene's manifest-declared `clear:` colour; imperative `on_draw` handlers do
+it themselves if they need a non-zero base.
+
+Carts that want frame-to-frame pixel persistence (trail effects, accumulating
+canvases) draw onto a persistent image surface they own and blit it each
+frame. This is explicit, save-state-clean, and integrates with the dev-mode
+draw inspector (ADR-0107) — backward stepping replays primitives from a
+known-cleared starting state.
+
+The runtime's auto-clear establishes the entry contract for every dev-mode
+facility that re-renders a frame: save-state thumbnails, replay-driven
+thumbnails, and the inspector's backward step all start from a deterministic
+cleared buffer and produce bit-identical output to the live render.
+
 ### Lifecycle sequences
 
 ```
@@ -345,6 +369,11 @@ practical concern.
 - Lua cart authors define only what they need; the preamble handles the rest.
 - Zeroing state before every `init` eliminates a class of subtle bugs where
   leftover state from a previous session affects a fresh start.
+- Clearing the framebuffer to palette index 0 before every `draw` gives
+  every dev-mode rendering facility (save-state thumbnails, replay-driven
+  thumbnails, ADR-0107's backward step) a deterministic starting point and
+  removes the "what's in the back buffer from frame N-2" surprise that
+  unguarded double-buffering creates.
 - Reset is always available to players without any cart work. Autosave is
   opt-in and entirely runtime-managed once the slot is designated.
 - The minimum autosave interval protects storage hardware in release builds

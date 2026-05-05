@@ -14,3 +14,4 @@ dev-mode instrumentation that compiles away to nothing in release builds.
 | [0088](0088-asset-pipeline.md) | Asset pipeline — packer architecture, resource types, and constant naming |
 | [0103](0103-dev-mode-pi-parity-feedback.md) | Dev-mode Pi-parity feedback — throttle vs projection (Proposed) |
 | [0104](0104-vscode-dev-shell-runtime-architecture.md) | VS Code dev shell — renderer-side runtime with Node bridge (Proposed) |
+| [0107](0107-dev-mode-draw-step-inspector.md) | Dev-mode draw step inspector — pause and inspect the framebuffer mid-frame |
