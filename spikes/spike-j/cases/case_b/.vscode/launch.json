@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "gdb",
+      "request": "attach",
+      "name": "Spike J — C cart (case b)",
+      "executable": "${workspaceFolder}/cart_b",
+      "target": "localhost:1234",
+      "remote": true,
+      "cwd": "${workspaceFolder}",
+      "valuesFormatting": "parseText",
+      "gdbpath": "gdb-multiarch"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+## Stage 1 step 4 — master-hook variant smoke test on rv32emu
+
+Each variant's libconsolelua.so loaded into /spike-j/lib and case_c (Spike I's
+"frame N" Lua cart) run through rv32emu. All variants reach OK (cart loop
+completes ten frames). The "FATAL Unknown syscall: 113" message is rv32emu
+logging an unsupported clock_gettime ecall — execution continues and the
+master_hook degrades gracefully (now_ns() returns 0, budget never trips,
+throttle deadline = 0 so the spin loop is a no-op).
+
+=== variant master-off (no hook installed) ===
+frame 0, frame 1, ..., frame 9
+OK
+
+=== variant master-budget (Spike G parity) ===
+FATAL src/syscall.c:527: Unknown syscall: 113     <— rv32emu, non-fatal
+frame 0, frame 1, ..., frame 9
+OK
+
+=== variant master-budget-dap-idle (headline production config) ===
+FATAL src/syscall.c:527: Unknown syscall: 113
+frame 0, frame 1, ..., frame 9
+OK
+
+=== variant master-throttle (Spike G.3 parity) ===
+2x FATAL src/syscall.c:527: Unknown syscall: 113
+frame 0, frame 1, ..., frame 9
+OK
+
+=== variant default (all three flags on — production dev-mode) ===
+2x FATAL src/syscall.c:527: Unknown syscall: 113
+frame 0, frame 1, ..., frame 9
+OK
+
+## Outcome
+
+The master_hook DISPATCHER composes correctly under all five variants.
+Carts run to completion. No crashes. No spurious budget trips.
+
+Real overhead measurement requires rv32emu's syscall 113 (clock_gettime)
+support — currently a ~2-3 line patch to rv32emu's syscall.c. This is the
+single follow-up gating Stage 1 step 4's quantitative comparison against
+Spike G's 3.74 ms p99 ceiling on `doom_tick`. The dispatch composition
+itself is validated.

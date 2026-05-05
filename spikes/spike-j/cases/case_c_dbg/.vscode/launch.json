@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "fc32-lua",
+      "request": "launch",
+      "name": "Spike J — Lua cart (case c_dbg)",
+      "program": "${workspaceFolder}/cart_c_dbg",
+      "stopOnEntry": false,
+      "debugServer": 5678
+    }
+  ]
+}

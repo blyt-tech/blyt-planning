@@ -1,0 +1,19 @@
+$ 'gdb-multiarch' '--batch' '-q' '-ex' 'set architecture riscv:rv32' '-ex' 'target remote :1234' '-ex' 'info sharedlibrary'
+--- gdb output ---
+The target architecture is set to "riscv:rv32".
+Reading symbols from /spike-j/cases/case_b/cart_b...
+(No debugging symbols found in /spike-j/cases/case_b/cart_b)
+[Thread 1 exited]
+From        To          Syms Read   Shared Object Library
+0x08001960  0x08003afc  Yes (*)     /spike-j/lib/libconsole.so
+0x08015100  0x08031dda  Yes (*)     /spike-j/lib/libconsolelua.so
+(*): Shared library is missing debugging information.
+warning: remote target does not support file transfer, attempting to access files from local filesystem.
+Remote doesn't know how to detach
+
+--- end output ---
+PASS: libconsole.so present in shared library list
+PASS: libconsolelua.so present in shared library list
+PASS: libconsole.so mapped into 0x080xxxxx region (load base 0x08000000 honored)
+PASS: libconsolelua.so mapped into 0x080xxxxx region
+OK

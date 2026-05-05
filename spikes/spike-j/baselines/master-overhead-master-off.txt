@@ -1,0 +1,7 @@
+=== master-off ===
+Lua-direct host wall-clock for case_c (10-frame loop) — 5 runs:
+run 1: 5ms
+run 2: 4ms
+run 3: 5ms
+run 4: 4ms
+run 5: 4ms

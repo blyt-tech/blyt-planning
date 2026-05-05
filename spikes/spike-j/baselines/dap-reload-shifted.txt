@@ -1,0 +1,7 @@
+## Stage 4 — DAP shifted-line reload transcript
+
+DAP listening on 127.0.0.1:5678
+PASS: pre-reload breakpoint verified
+PASS: loadedSource(reason: "changed") emitted on hot_reload
+PASS: post-reload breakpoint at shifted line verified
+OK

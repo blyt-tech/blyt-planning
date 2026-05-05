@@ -1,0 +1,6 @@
+PASS: pre-reload breakpoint verified
+PASS: loadedSource(reason: "changed") emitted on hot_reload
+PASS: post-reload breakpoint at shifted line verified
+OK
+PASS: deleted-line breakpoint marked verified=false
+OK

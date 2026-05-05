@@ -1,0 +1,5 @@
+## Stage 4 — DAP deleted-line reload transcript
+
+DAP listening on 127.0.0.1:5678
+PASS: deleted-line breakpoint marked verified=false
+OK

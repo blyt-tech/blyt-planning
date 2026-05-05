@@ -1,0 +1,11 @@
+PASS: initialize advertises configurationDone
+PASS: setBreakpoints returns one breakpoint
+PASS: breakpoint at line 4 is verified
+PASS: stopped event reason is breakpoint
+PASS: threads response has at least one thread
+PASS: stackTrace returns at least one frame
+PASS: top frame or any frame is at line 4
+PASS: scopes returns at least one scope
+PASS: variables returns an array
+frame 0 tick=0
+OK

@@ -1,0 +1,3 @@
+$ 'gdb-multiarch' '--batch' '-q' '-ex' 'set architecture riscv:rv32' '-ex' 'target remote :1234' '-ex' 'maintenance packet qFc32:reload:/spike-j/cases/case_b/cart_b' '-ex' 'info sharedlibrary'
+PASS: post-reload library list still contains libconsole.so
+OK
