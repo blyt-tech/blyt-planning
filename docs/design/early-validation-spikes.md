@@ -852,6 +852,421 @@ WASM path). Can run in parallel with Spike H.
 
 ---
 
+## Spike J — Debugger composition (DAP + GDB stub) under the existing hook load
+
+**The question:** Can the runtime expose DAP for source-level Lua
+debugging and a GDB remote serial protocol for source-level native
+debugging — concurrently with the per-frame CPU budget (`LUA_MASKCOUNT`,
+Spike G) and the dev-mode Pi-parity throttle (`LUA_MASKLINE`,
+Spike G.3) — without those hook consumers interfering with each other,
+with DWARF unwinding that walks correctly through PLT/GOT into the
+pre-mapped `libconsole.so` / `libconsolelua.so` (Spike I's loader
+layout), and with the DAP session surviving an ADR-0045 hot reload
+without manual user intervention?
+
+**Why this is a risk:** §21 of the design document treats debugger
+support as engineering rather than research, but three assumptions in
+that framing have not been tested.
+
+First, `lua_sethook` is now load-bearing for two production features
+already (Spikes G and G.3) and the DAP server wants it for stepping and
+breakpoints. Lua exposes one hook slot per `lua_State`. Whether DAP can
+multiplex with the budget hook and the throttle hook — by chaining,
+masking, or some other discipline — and still preserve Spike G's
+< 3 % overhead and Spike G.3's ±0.4 % calibration accuracy, is unproven.
+A naive "DAP just installs its own hook" implementation breaks both.
+
+Second, the GDB stub side relies on DWARF in the cart ELF unwinding
+across the PLT into pre-mapped shared libraries that live at runtime-
+chosen guest addresses (`0x08000000` and the next 4 KiB-aligned slot
+above libconsole's PT_LOAD extent — see Spike I). GDB needs to know
+those addresses to map symbols to source. Whether the standard
+`qOffsets` / `vFile:setfs` machinery handles a non-conventional layout
+where libraries sit *below* the cart in guest memory is unverified.
+Failure mode is silent: stepping appears to work but stack traces stop
+at the PLT.
+
+Third, ADR-0045 promises that the DAP session is uninterrupted across
+a hot reload — VS Code's stock breakpoint-resync flow is supposed to
+just work because the runtime emits `loadedSource(reason: "changed")`
+and VS Code re-sends `setBreakpoints` with the editor's current
+(post-edit, line-shift-tracked) positions. This is the standard
+DAP-with-hot-reload pattern (Flutter, .NET Hot Reload, JVM HotSwap all
+use it), but the runtime side has to actually emit the right events at
+the right time. Failure modes include: the server forgets to emit
+`loadedSource`, so VS Code never re-syncs and breakpoints stay bound
+to deleted code; the server emits but at the wrong time (before the
+new cart is mapped, so `setBreakpoints` re-binds against the old code
+that's still in memory); or the GDB-stub equivalent (`library-loaded`
+notification on cart-ELF replacement) is missing so VS Code's GDB
+extension never re-applies breakpoints. Any of these silently degrade
+the headline "edit-and-debug" workflow.
+
+**What to build:**
+
+- A minimal DAP server inside the runtime, exposing breakpoints, step,
+  call-stack, and local-variable inspection against a Lua cart from
+  Spike I's case c. Implement hook composition: a single
+  `master_hook(L, ar)` dispatches to whichever combination of
+  budget / throttle / debugger handlers is active for the current
+  build. Verify Spike G's `doom_tick` p99 overhead remains < 0.34 ms
+  with the master hook installed at `LUA_MASKCOUNT` N=100 *and* a DAP
+  client attached but idle (no breakpoints).
+- A minimal GDB remote serial stub inside rv32emu, exposing register
+  read/write, memory read, single-step, and breakpoint set/clear
+  against a Spike I case b cart (C cart with `.text.mylib`) built with
+  `-g -gdwarf-4`. Verify a `bt` from inside `mylib_value()` walks the
+  cart's PLT into `libconsole.so`'s `fc_console_print` and reports the
+  correct source location on the libconsole side. Document the
+  `qOffsets` / shared-library reporting protocol used.
+- A reload-while-debugging test for the DAP path. The spike does not
+  need full Spike M / K machinery — a *synthetic* reload (tear down
+  the cart's `lua_State`, rebuild it from a modified Lua source, do
+  not bother preserving game state) is sufficient to exercise the
+  protocol. Procedure:
+  1. Attach VS Code to the DAP server. Open `case_c.lua`. Set a
+     breakpoint at line 47. Run; confirm it hits.
+  2. Edit the source: insert five lines above the breakpoint so the
+     editor's marker tracks to line 52. Save.
+  3. Trigger a synthetic reload via a custom `hot_reload` DAP request.
+     The runtime rebuilds the cart and emits
+     `loadedSource(reason: "changed")` for `case_c.lua`.
+  4. Without any user interaction in VS Code, confirm: VS Code
+     re-sends `setBreakpoints` with `lines: [52]`; the server
+     responds `verified: true`; running the cart hits the new line.
+  5. Repeat with an edit that makes the breakpoint line no longer
+     executable (e.g. delete that line entirely). Confirm the server
+     responds `verified: false` and VS Code shows the breakpoint
+     hollow in the gutter, with no spurious hit.
+- A reload-while-debugging test for the GDB stub. The synthetic
+  reload here is replacing the cart ELF in rv32emu's address space
+  with a rebuilt one (different DWARF, possibly shifted line tables).
+  Verify VS Code's GDB extension re-applies breakpoints automatically
+  via the standard `library-loaded` / process-replacement notification.
+- VS Code launch configurations for both paths (one Lua cart, one
+  C cart). The success criterion is "F5 hits a breakpoint and shows the
+  right frame in the variables panel" for each.
+
+**Success criterion:**
+
+- DAP: breakpoint hit, step-over, call-stack, locals, and upvalues all
+  work on a Spike I case c cart; the master-hook composition adds
+  ≤ 10 % to Spike G's `doom_tick` p99 with the debugger attached and
+  idle.
+- GDB stub: breakpoint hit at a `mylib_value()` source line on a
+  Spike I case b cart; `bt` walks across the PLT into `libconsole.so`
+  with correct source mapping; memory read returns the cart's
+  `.cart.resources` bytes at the right guest addresses.
+- DAP reload-while-debugging: after the synthetic reload, VS Code
+  re-binds the shifted breakpoint at the correct new line *with no
+  manual UI action*; the deleted-line case shows a hollow gutter
+  marker; no spurious breakpoint hits at stale line numbers.
+- GDB reload-while-debugging: after cart-ELF replacement, VS Code's
+  GDB extension re-applies breakpoints automatically; line shifts
+  in the new ELF are honoured; stale breakpoints in deleted code
+  fail to bind cleanly.
+- VS Code: both launch configurations connect on F5, hit breakpoints,
+  and surface variables in the standard panel.
+
+**What this spike does and does not decide:**
+
+- Decides whether the three-way hook composition is workable as
+  designed, whether GDB's shared-library protocol handles
+  rv32emu's pre-mapped layout, and whether the standard
+  DAP-hot-reload signalling pattern works against the runtime's
+  DAP server without an out-of-protocol custom extension on the
+  client side.
+- Does not implement the production debugger UI (watchpoints,
+  conditional breakpoints with full expression evaluation, reverse
+  step). Those are engineering once the composition story is settled.
+- Does not address debugger access on the native RISC-V hardware
+  path. §21 calls for the GDB stub to run there too, exposed over
+  TCP from the dev-mode device image; that's a Spike H follow-up
+  on real hardware, not this spike.
+- Does not validate the *full* hot-reload mechanics (snapshot,
+  state migration, native-cart restart). Those are Spike M's
+  scope. J validates only the debugger-side protocol seam — the
+  events, the re-binding, the no-UI-action contract — using a
+  synthetic reload that throws away game state.
+
+**Dependency:** Spike G (`LUA_MASKCOUNT` budget hook), Spike G.3
+(`LUA_MASKLINE` throttle hook), Spike I (cart format, library load
+addresses, the case b/c/d binaries). Can run in parallel with
+Spikes K, L, M; intersects with M at the hot-reload-while-debugging
+seam — J validates the debugger side with a synthetic reload, M
+validates the snapshot/restore side without a debugger attached, and
+the production combination of "real reload + real debugger" composes
+their results.
+
+---
+
+## Spike K — Cross-platform save-state portability end-to-end
+
+**The question:** Does a save state serialized on one host platform
+deserialize on a materially different host platform, restore the
+same simulation state byte-for-byte, and continue producing the same
+per-frame digests as a same-host continuation would have produced?
+
+**Why this is a risk:** Spike D proved that the same cart, replayed
+from frame 0 on two host platforms, produces bit-identical per-frame
+digests. Save state is structurally different: it captures the
+simulation state mid-run, writes it to a portable byte buffer, and
+restores it elsewhere. The portability guarantee depends on every
+tracked region (POD state buffers, RNG streams, the audio mixer's
+voice-end queue per ADR-0106, screen-shake state per ADR-0051,
+coroutine save-hook output per ADR-0012) round-tripping correctly,
+and on the deserialized state being *exactly* what an in-place
+continuation would have held in memory at that frame.
+
+ADR-0007 calls determinism structural; ADRs 0009, 0010, 0011, 0013
+specify the by-memcpy-with-typed-layouts mechanism. None of that has
+been exercised end-to-end. Padding bytes inside POD layouts, struct
+alignment differences across compilers, endianness assumptions in
+serialized RNG state, and the audio voice-end-event log are all
+candidate failure points that don't surface until a real round-trip
+runs.
+
+**What to build:**
+
+- Extend Spike D's harness: continue running a Spike B-style cart
+  workload, but at frame N, serialize all tracked state regions to a
+  byte buffer (the same bytes a save-state file would contain). Emit
+  the buffer as a hex dump alongside the per-frame digest stream.
+- A minimal restore path: read the buffer, deserialize into a
+  freshly-initialised runtime, advance from frame N+1, emit the same
+  per-frame digest stream from there.
+- Run the full save-then-continue sequence on linux/arm64 and
+  linux/amd64. Cross-load: take the serialized buffer from arm64,
+  deserialize on amd64, continue, and compare the resulting digest
+  stream against arm64's same-host continuation.
+- Include at least one cart that exercises the audio voice-end queue
+  (ADR-0106) and one that uses a coroutine with explicit save hooks
+  (ADR-0012). Pure-CPU `whetstone` is the floor case.
+
+**Success criterion:**
+
+- The serialized buffer is byte-identical between the two host
+  platforms at frame N (same-host save → same bytes).
+- The cross-loaded continuation produces a digest stream byte-
+  identical to the same-host continuation from frame N+1 onward, on
+  both platforms in both directions.
+- The audio-voice and coroutine carts round-trip without divergence
+  for at least 60 frames after restore.
+
+**What this spike does and does not decide:**
+
+- Decides whether the save-by-memcpy + typed-layouts model is sound
+  in practice across host platforms, and whether the audio voice-end
+  queue and coroutine save-hook designs are complete enough to round-
+  trip without ADR-level changes.
+- Does not address libretro's `retro_serialize` / `retro_unserialize`
+  wrapping (that's Spike L scope, building on this spike's buffer
+  format), and does not test save-state on the WASM target (a follow-
+  up if K passes on native). The Spike D result already covers WASM
+  for the *replay-from-frame-0* path.
+- Does not address rewind. Rewind is N consecutive save states; if
+  one round-trip works, rewind is engineering on top of it.
+
+**Dependency:** Spike D (digest harness, the cart workloads, the
+two-host build infrastructure). Can run in parallel with Spikes J, L,
+M.
+
+---
+
+## Spike L — Libretro core adapter feasibility
+
+**The question:** Can the runtime, built as a library, be wrapped in a
+~400-line libretro core such that a Spike I case d cart runs in
+RetroArch on desktop with correct video, audio, input, save state,
+and rewind — given that libretro's callback-pull model is structurally
+inverted from the runtime's frontend-pulls model (ADR-0036)?
+
+**Why this is a risk:** The §18 plan and ADR-0033 both treat the
+libretro adapter as thin engineering. Two structural mismatches make
+that claim worth checking before the runtime API freezes.
+
+First, ADR-0036 has the *frontend* pull from the runtime: the frontend
+calls `runtime_run_frame()` and reads back framebuffer / audio /
+state. Libretro inverts this: the frontend calls `retro_run()`, and
+the core pushes video/audio out via callbacks (`video_refresh_t`,
+`audio_sample_batch_t`) that the frontend installed earlier. Whether
+a thin shim can bridge these without forcing API changes — particularly
+around audio buffer sizing, where libretro expects a per-frame batch
+matched to the host's audio configuration rather than the runtime's
+internal mixer cadence — is the question this spike answers.
+
+Second, libretro's `retro_serialize_size` requires a *fixed* upper
+bound for save state size, returned before any save happens. The
+runtime's tracked-region layout is cart-dependent (manifest-declared
+state buffers, ADR-0009). Whether the runtime can compute a tight
+upper bound at cart-load time, and whether that bound is small enough
+that RetroArch's rewind buffer (default ~10 MB at 60 fps) is usable
+for a non-trivial cart, is unverified.
+
+**What to build:**
+
+- A libretro core (`runtime_libretro.so`) wrapping the runtime as it
+  exists at the time of the spike. Implements the standard libretro
+  entry points: `retro_init`, `retro_load_game`, `retro_run`,
+  `retro_get_system_av_info`, `retro_serialize_size`,
+  `retro_serialize`, `retro_unserialize`, plus the input/video/audio
+  callback plumbing.
+- A Spike I case d cart loaded as the test workload (Lua + C user
+  library — exercises both Lua VM and native cart paths).
+- Run in RetroArch on desktop (linux/amd64). Verify:
+  - Video at 60 fps with no tearing, correct palette, no extra
+    indirection latency.
+  - Audio at the host's sample rate without underruns; voice-end
+    events from ADR-0106 still fire in input-frame order.
+  - All inputs from ADR-0017's button set route correctly through
+    libretro's input descriptors.
+  - Save state via RetroArch's UI round-trips correctly (consumes
+    Spike K's buffer format).
+  - Rewind enabled in RetroArch produces visually-correct backwards
+    playback for at least 5 seconds of history.
+
+**Success criterion:**
+
+- All five behaviours above work without runtime API changes. Audio
+  buffer cadence is reconciled inside the adapter, not via runtime
+  callbacks redesign. `retro_serialize_size` returns a bound that
+  RetroArch's default rewind buffer can sustain ≥ 5 s for the case d
+  cart.
+- Adapter LOC is in the same order of magnitude as the §18 estimate
+  (≤ ~1000 lines including comments). A blow-up well beyond that is
+  evidence the inversion is harder than ADR-0033 assumes.
+
+**What this spike does and does not decide:**
+
+- Decides whether the runtime's frontend-pulls model and libretro's
+  callback model can be reconciled with a thin shim, or whether the
+  runtime API needs adjustment for libretro to be a first-class
+  target. The latter is structural and has to happen before the API
+  freezes.
+- Decides whether `retro_serialize_size` is computable cheaply
+  enough at load time for the manifest-declared state-buffer model.
+- Does not address libretro on retro handhelds, mobile, or browser
+  (RetroArch web) — those are platform-deployment validations after
+  the core is known to work on desktop.
+- Does not address the standalone custom libretro frontend
+  (ADR-0034). Both consume the same core; this spike validates the
+  core, not the frontends.
+
+**Dependency:** Spike I (cart format, the case d binary used as test
+workload), Spike K (save-state buffer format consumed by
+`retro_serialize` / `retro_unserialize`). Can run in parallel with
+Spikes J, M.
+
+---
+
+## Spike M — Hot-reload via save/restore (Lua and native paths)
+
+**The question:** Can a cart — Lua or native — be edited and reloaded
+mid-run such that POD state persists across the reload, the cart's
+new code resumes from the prior state without observable break, and
+the path covers the kinds of edits authors actually make in their
+edit-run loop?
+
+For native carts the mechanism collapses to a clean composition over
+Spike K: rebuild the cart ELF, restart the cart process, run `init`,
+deserialise the saved state, advance from the next frame. There are
+no closures-over-old-source and no live coroutines that depend on
+deleted functions, because every cart-side allocation is rebuilt from
+scratch — only the POD tracked regions cross the reload boundary.
+That makes the native case a *direct* test of Spike K plus the
+packer-to-runtime signal protocol of ADR-0045, with no additional
+mechanism. It is worth running explicitly because it is the simplest
+path the spike can validate end-to-end and it establishes the
+floor case.
+
+For Lua carts the same outline applies, but the cart's pre-reload
+state can include closures and yielded coroutines whose
+representations don't survive a code change. ADR-0045 specifies the
+default migration (copy matching fields, zero new ones) and
+ADR-0012 specifies the coroutine save-hook contract; whether those
+policies together cover the realistic edit distribution — or whether
+the "long tail" of edge cases dominates — is the question this spike
+exists to answer.
+
+**Why this is a risk:** The save half is Spike K. The restore-into-
+modified-code half is where the design's edge cases live, and they
+have not been measured against a realistic edit set. The named
+failure modes are: a closure that captures an upvalue the new code
+no longer declares; a coroutine yielded inside a function that no
+longer exists; a state buffer whose typed layout changed shape
+(field added, removed, renamed, or retyped); a cart that allocated a
+runtime resource (a tilemap, a font) whose declaration moved between
+manifest entries.
+
+**What to build:**
+
+- A minimal VS Code-style edit-save loop: runtime hosts a Spike I
+  case binary, the packer rebuilds on file save, the runtime applies
+  the rebuilt cart via the Spike K save-state buffer.
+- A native cart suite (Spike I case a or b): edits that change a C
+  function body, add a new function, change a tracked-state struct
+  field (matching field, added field, removed field, retyped field),
+  and rebuild the ELF. Verify that `init` runs against the new code,
+  the saved tracked-state regions deserialise into the new layout
+  per ADR-0045's migration rules, and the cart continues from the
+  next frame with the matching fields intact.
+- A Lua cart suite (Spike I case c or d): in addition to the
+  pure-data edits above, (i) a function body changed (no signature
+  change); (ii) a function renamed (one call site updated, one not);
+  (iii) a closure's captured upvalue removed in the new code; (iv) a
+  coroutine yielded in a function whose body changed; (v) a coroutine
+  yielded in a function that was deleted.
+- For each edit in both suites, record: did the reload succeed, did
+  POD state survive correctly, did the cart continue running, did
+  any observable glitch occur (a frame of wrong rendering, an audio
+  pop, a dropped input). For Lua (iii)–(v), the expected outcome is
+  a clean migration error surfaced through the cart's
+  `on_hot_reload_failed` hook (or an equivalent ADR-0083 crash
+  diagnostic if the design forces a hard restart for that case);
+  the spike's job is to confirm which.
+
+**Success criterion:**
+
+- *Native suite:* every edit reloads cleanly. POD state matches what
+  the cart had pre-edit on every matching field; new fields are
+  zeroed; removed fields are dropped. The packer-to-reload latency
+  for a native rebuild meets the §19 risk-table target (< 3 s).
+- *Lua pure-data and body-change edits* (matching the native suite
+  plus (i)–(ii)): reload in-place with no observable glitch.
+- *Lua closure / coroutine edits* (iii)–(v): either migrate cleanly
+  via the coroutine save-hook contract, or fail with a diagnostic
+  that points at the specific closure / coroutine / function that
+  could not migrate (no silent corruption, no segfault, no half-
+  restored state).
+- The packer-to-reload latency for a Lua-only edit meets the §19
+  target (< 500 ms).
+
+**What this spike does and does not decide:**
+
+- Decides whether the native reload path is, as expected, a clean
+  composition over Spike K with no additional mechanism, and whether
+  the < 3 s latency target is reachable with ADR-0088's packer.
+- Decides whether ADR-0045's default migration policy plus
+  ADR-0012's coroutine hook contract cover the realistic Lua edit
+  distribution, or whether additional migration affordances (named
+  author hooks, schema migration DSL, etc.) are required before v1
+  ships.
+- Decides whether the < 500 ms Lua-only latency target is reachable
+  with the packer architecture from ADR-0088 in place.
+- Does not address asset-only hot reloads (sprite, palette, audio).
+  Those are simpler than code reload; if code reload works, asset-
+  only reload is a strict subset.
+
+**Dependency:** Spike K (save-state buffer is the migration vehicle —
+non-negotiable for both suites), Spike I (cart format and the case
+a/b/c/d binaries that supply the content under edit), ADR-0088
+(packer two-phase incremental build, to make the edit-save loop fast
+enough to be measurable). Can run in parallel with Spikes J, L; the
+native suite can run before the Lua suite, since the native path is
+a strict subset of the Lua path's mechanism.
+
+---
+
 ## Ordering
 
 A → B → C and D and E and F (B is the dependency for C, D, and E; F
@@ -864,11 +1279,23 @@ A (interpreter)
 └── B (Lua-in-interpreter)
     ├── C (shared lib architecture)
     ├── D (determinism)
+    │   └── K (save-state cross-platform portability) ← extends D's
+    │       │                                           harness to a
+    │       │                                           save-restore
+    │       │                                           round-trip
+    │       └── L (libretro core adapter) ← consumes K's save-state
+    │       │                               buffer for retro_serialize
+    │       └── M (hot-reload via save/restore) ← uses K's buffer as
+    │                                              the migration vehicle
     └── E (WASM, rv32emu+Lua) ← also uses D for comparison
         └── F (WASM, Lua-direct) ← contingent on E's miss; uses E's
             │                       harness and cross-stack baseline
             └── G (WASM Lua-direct CPU cap) ← depends on F's host.c
-                                               and timing baseline
+                │                              and timing baseline
+                └── G.3 (dev-mode Pi-parity throttle)
+                    └── J (debugger composition) ← three-way hook
+                                                    composition over
+                                                    G + G.3 + DAP
 
 H (native RISC-V sandbox) ← independent; requires Milk-V Duo hardware
 
@@ -876,6 +1303,9 @@ I (cart format end-to-end) ← depends on ADR-0024/ADR-0025 and Spikes
                               C, F, G; can run in parallel with H; QEMU
                               makes the native-RISC-V dimension accessible
                               without physical hardware
+                              ↑
+                              Spikes J, K, L, M consume Spike I's case
+                              binaries as their cart workloads
 ```
 
 Spike C can begin as soon as A produces a working interpreter, since it
@@ -890,3 +1320,14 @@ depends on the settled cart format (ADR-0024 Accepted, ADR-0025
 Accepted) and on the Lua-direct WASM path established by Spikes F and G;
 it can run in parallel with H and is the first end-to-end test of the
 cart format as a container rather than as individual harness components.
+
+Spikes J, K, L, M de-risk the architectural questions left after I lands.
+J answers whether `lua_sethook` can serve three concurrent consumers
+(budget, throttle, debugger) and whether GDB DWARF unwinding works through
+Spike I's PLT/GOT layout. K extends D's per-frame digest result to a
+serialise-on-A / deserialise-on-B / continue round-trip — the structural
+case D did not cover. L composes K's buffer with libretro's callback-pull
+inversion of the runtime's frontend-pulls model (ADR-0036). M reuses K's
+buffer as the migration vehicle for ADR-0045 hot reload. J, K, L, M can
+run in parallel with each other once their listed dependencies are met,
+and in parallel with H (which is gated on hardware, not on these).
