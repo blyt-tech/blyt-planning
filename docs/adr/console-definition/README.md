@@ -30,3 +30,4 @@ work as structural properties of the system rather than bolt-ons.
 | [0081](0081-text-mode-deferred.md) | Text mode — 80×30 character grid at 640×480 (deferred, v1.5+) |
 | [0082](0082-emulator-mips-cap.md) | Emulator MIPS cap fixed to minimum emulation host throughput |
 | [0083](0083-lua-cart-crash-diagnostics.md) | Lua cart crash diagnostics — runtime-owned dump |
+| [0105](0105-project-naming-and-variants.md) | Project naming (Blyt) and console variants (Blyt32 / BlyTTY / Blyt3D) |

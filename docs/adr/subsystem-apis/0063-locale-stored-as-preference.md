@@ -6,31 +6,31 @@ Accepted
 ## Context
 
 Locale selection (language choice) could live in the cart's persistent game
-state (a language field in the player's save data) or in `fc_prefs` (the
+state (a language field in the player's save data) or in `blyt_prefs` (the
 runtime's preference store that is separate from the save game). The two
 approaches have different consequences for save-file portability and for when
 locale changes take effect.
 
 ## Decision
 
-**Locale is stored in `fc_prefs`, not in cart game state.**
+**Locale is stored in `blyt_prefs`, not in cart game state.**
 
 ```c
-fc_result_t fc_prefs_set_locale(const char *locale_tag);  // e.g., "en", "ja"
-const char *fc_prefs_get_locale(void);
+blyt_result_t blyt_prefs_set_locale(const char *locale_tag);  // e.g., "en", "ja"
+const char *blyt_prefs_get_locale(void);
 ```
 
-`fc_prefs` is a per-player, per-console store that persists independently of
+`blyt_prefs` is a per-player, per-console store that persists independently of
 save games (ADR-0013). Locale therefore survives a "new game / erase save"
 operation: the player's language preference is not tied to their save file.
 
 **Immediate effect:** a locale change takes effect on the next call to
-`fc_locale_get()`. There is no deferred-until-restart behavior. Carts that
+`blyt_locale_get()`. There is no deferred-until-restart behavior. Carts that
 display text in `draw()` see the new locale on the next frame.
 
 **Cart interaction:** carts can read the current locale (to select locale-
 appropriate assets or fonts) but are not required to manage it. The standard
-options-menu locale picker calls `fc_prefs_set_locale()` and the runtime
+options-menu locale picker calls `blyt_prefs_set_locale()` and the runtime
 handles the rest.
 
 **RTL (right-to-left) layout:** deferred to v2. In v1, all text is rendered

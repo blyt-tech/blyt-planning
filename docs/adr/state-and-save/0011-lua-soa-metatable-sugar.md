@@ -49,7 +49,7 @@ end
 local e = enemies[5]
 if e.active and e.hp <= 0 then
   e.active = false
-  e.death_frame = console.time.frame()
+  e.death_frame = blyt32.time.frame()
 end
 
 -- Caching the proxy avoids repeated table allocation in a loop:

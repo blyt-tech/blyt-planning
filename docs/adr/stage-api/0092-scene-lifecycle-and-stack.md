@@ -22,7 +22,7 @@ scenes get update calls? — without serving most carts.
 survive save states. This means scene identity cannot live only in Lua;
 it must be in a POD buffer field.
 
-The `fc_cart_draw` constraint (ADR-0076) also applies: `on_draw` must not
+The `blyt_cart_draw` constraint (ADR-0076) also applies: `on_draw` must not
 modify any state. Scene logic that produces side effects belongs in
 `on_update`, not `on_draw`.
 
@@ -60,9 +60,9 @@ packer generates scene ID constants:
 
 ```c
 // Generated: cart_scenes.h
-#define SCENE_TITLE_SCREEN  ((fc_scene_h)1)
-#define SCENE_GAMEPLAY      ((fc_scene_h)2)
-#define SCENE_PAUSE_MENU    ((fc_scene_h)3)
+#define SCENE_TITLE_SCREEN  ((blyt_scene_h)1)
+#define SCENE_GAMEPLAY      ((blyt_scene_h)2)
+#define SCENE_PAUSE_MENU    ((blyt_scene_h)3)
 ```
 
 ### World buffer
@@ -102,7 +102,7 @@ stage_scene_overlay_push(SCENE_PAUSE_MENU);
 stage_scene_overlay_pop();
 
 // Query
-fc_scene_h current = stage_scene_current();
+blyt_scene_h current = stage_scene_current();
 bool       has_overlay = stage_scene_has_overlay();
 ```
 
@@ -126,10 +126,10 @@ spawn duplicates.
 
 Stage distinguishes two restore paths:
 
-- **Save-state restore** (`fc_cart_on_load` called by the runtime during
+- **Save-state restore** (`blyt_cart_on_load` called by the runtime during
   a save-state load): buffer state is already restored; Stage skips
   `on_enter` and calls a separate `on_resume` hook if declared.
-- **Save-game load** (cart calls `console.save.read` to load a save slot):
+- **Save-game load** (cart calls `blyt32.save.read` to load a save slot):
   this is a scene transition initiated by the cart; `on_enter` runs normally.
 
 Carts that need to rebuild Lua-side caches or re-register event subscriptions

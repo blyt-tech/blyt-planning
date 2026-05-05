@@ -67,7 +67,7 @@ big mutable tilemaps) can lengthen the interval to trade verification
 precision for replay file size; carts where every byte matters can
 disable snapshots entirely with `0`.
 
-**Frame-accurate timing.** `console.time.frame()` is the deterministic frame
+**Frame-accurate timing.** `blyt32.time.frame()` is the deterministic frame
 counter. Carts can compute run times natively if they want to display a
 timer in-game.
 

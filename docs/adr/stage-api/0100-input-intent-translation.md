@@ -5,8 +5,8 @@ Accepted
 
 ## Context
 
-The fc32 runtime provides raw hardware input: `fc_input_held(player, button)`,
-`fc_input_pressed(player, button)`, and pointer state. Every game translates
+The blyt runtime provides raw hardware input: `blyt_input_held(player, button)`,
+`blyt_input_pressed(player, button)`, and pointer state. Every game translates
 this raw state into higher-level intent before passing it to game logic:
 horizontal movement is a -1..1 axis derived from left/right buttons; jump is
 a boolean that is true only on the frame the button is pressed.
@@ -24,7 +24,7 @@ to the current hardware state.
 ## Decision
 
 **Stage translates raw hardware input into a structured `InputIntent` value
-once per frame, per player, at the start of `fc_cart_update` (step 1,
+once per frame, per player, at the start of `blyt_cart_update` (step 1,
 ADR-0093). InputIntent is a plain value — a C struct or Lua table — passed
 directly to controller systems. It is not stored in a state buffer.**
 
@@ -72,14 +72,14 @@ a custom translate handler.
 ### C API
 
 ```c
-// Called by Stage at step 1 of fc_cart_update for each active player
+// Called by Stage at step 1 of blyt_cart_update for each active player
 void stage_input_translate(void);
 
 // Read the current frame's intent for a given player (0-indexed)
 stage_input_intent_t stage_input_intent(int player);
 
 // Register a custom translation handler (optional; overrides manifest mapping)
-void stage_input_set_translator(fc_handler_h handler);
+void stage_input_set_translator(blyt_handler_h handler);
 ```
 
 Usage in a player controller system:
@@ -89,17 +89,17 @@ static void system_player_control(void) {
     stage_input_intent_t intent = stage_input_intent(0);
 
     if (intent.jump && player.on_ground) {
-        fc_buffer_set_f32(S_PLAYERS, 0, S_PLAYER_VY, -JUMP_FORCE);
+        blyt_buffer_set_f32(S_PLAYERS, 0, S_PLAYER_VY, -JUMP_FORCE);
     }
     float vx = intent.move_x * WALK_SPEED;
-    fc_buffer_set_f32(S_PLAYERS, 0, S_PLAYER_VX, vx);
+    blyt_buffer_set_f32(S_PLAYERS, 0, S_PLAYER_VX, vx);
 }
 ```
 
 ### Lua API
 
 ```lua
--- Read intent (called after stage.input.translate() in fc_cart_update)
+-- Read intent (called after stage.input.translate() in blyt_cart_update)
 local intent = stage.input.intent(0)  -- player 0
 
 if intent.jump and players.on_ground[0] then
@@ -128,8 +128,8 @@ to the intent struct to fill:
 ```c
 static void my_translator(int32_t player, uint32_t unused) {
     stage_input_intent_t *intent = stage_input_intent_ptr(player);
-    intent->move_x = fc_input_axis_x(player, FC_AXIS_LEFT_STICK);
-    intent->jump   = fc_input_pressed(player, FC_BTN_A);
+    intent->move_x = blyt_input_axis_x(player, BLYT_AXIS_LEFT_STICK);
+    intent->jump   = blyt_input_pressed(player, BLYT_BTN_A);
     // ...
 }
 stage_input_set_translator(HANDLER_MY_TRANSLATOR);
@@ -140,11 +140,11 @@ and AI-driven intent injection (useful for replays and testing).
 
 ## Consequences
 
-- Game logic reads `intent.jump` instead of `fc_input_pressed(0, FC_BTN_A)`.
+- Game logic reads `intent.jump` instead of `blyt_input_pressed(0, BLYT_BTN_A)`.
   Remapping a button requires one change in the manifest, not changes
   throughout game code.
 - Edge-triggered booleans (`jump`, `attack`) are computed once per frame
-  in one place, eliminating duplicated `fc_input_pressed` calls.
+  in one place, eliminating duplicated `blyt_input_pressed` calls.
 - The intent table is transient — it is not saved, not stored in a buffer,
   and not accessible after the frame that produced it.
 - The custom translator handler is the clean extension point for analogue

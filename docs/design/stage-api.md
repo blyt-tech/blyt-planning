@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Stage is an optional, cart-side game logic layer that sits between the fc32
+Stage is an optional, cart-side game logic layer that sits between the blyt
 runtime API and game-specific code. It ships as part of the SDK; carts opt
 in by using it and out by ignoring it. The runtime is unchanged either way.
 
-Stage addresses a specific gap. The fc32 runtime provides building blocks —
+Stage addresses a specific gap. The blyt runtime provides building blocks —
 typed state buffers, input, drawing, audio — but imposes no structure on
 how game logic is organised. Every cart faces the same problems: how
 entities are tracked across scenes, how systems communicate, how scenes
@@ -29,7 +29,7 @@ and a cart picks per scene based on what fits.
 ### Imperative
 
 The cart writes the draw body directly. A scene's `on_draw` handler calls
-`fc_image_blit`, `fc_tilemap_draw`, `fc_text`, and other runtime functions
+`blyt_image_blit`, `blyt_tilemap_draw`, `blyt_text`, and other runtime functions
 in whatever order it wants. This is the pico-8 / SDL programming model:
 immediate-mode, per-frame freedom, tight per-pixel control.
 
@@ -194,7 +194,7 @@ the helpers directly.
 
 ### Fixed timestep
 
-fc32's update loop runs at a fixed rate with no `dt` parameter. Stage
+blyt's update loop runs at a fixed rate with no `dt` parameter. Stage
 systems assume a fixed step size. This is what makes save states, rewind,
 and netplay work as structural properties. Sequences express time in
 frames; cameras lerp by a fixed amount per frame; timers count down in
@@ -244,7 +244,7 @@ obvious: it belongs in the world buffer, not in Lua locals.
 
 - **Arbitrary coroutine state.** Coroutines that branch based on Lua-
   local state and need to survive saves require explicit
-  `console.coroutine.create{}` hooks. Stage's sequence abstraction
+  `blyt32.coroutine.create{}` hooks. Stage's sequence abstraction
   covers the common linear case; complex branching requires the explicit
   form.
 
@@ -293,12 +293,12 @@ obvious: it belongs in the world buffer, not in Lua locals.
 
 | Concern | Provided by |
 |---|---|
-| Typed entity storage, slot allocation | fc32 runtime (ADR-0058) |
-| Packer-generated field constants | fc32 packer (ADR-0057) |
-| SOA / row-proxy Lua sugar | fc32 packer (ADR-0011) |
-| Input hardware polling | fc32 runtime |
-| Drawing primitives, audio, resource loading | fc32 runtime |
-| Screen shake application | fc32 runtime (ADR-0051) |
+| Typed entity storage, slot allocation | blyt runtime (ADR-0058) |
+| Packer-generated field constants | blyt packer (ADR-0057) |
+| SOA / row-proxy Lua sugar | blyt packer (ADR-0011) |
+| Input hardware polling | blyt runtime |
+| Drawing primitives, audio, resource loading | blyt runtime |
+| Screen shake application | blyt runtime (ADR-0051) |
 | **Named handler IDs** | **Stage (ADR-0090)** |
 | **Event bus** | **Stage (ADR-0091)** |
 | **Scene lifecycle and stack** | **Stage (ADR-0092)** |

@@ -39,7 +39,7 @@ its own manifest file compiled to its own ELF section, read by that
 language's own runtime library. For v1, only Lua has a language-specific
 manifest (`cart.lua.yaml` → `.cart.lua`), described below.
 
-**Tooling.** The SDK ships JSON Schemas for all manifest files. `console new`
+**Tooling.** The SDK ships JSON Schemas for all manifest files. `blytbuild new`
 generates projects with a `# yaml-language-server: $schema=` header in each
 manifest and a pre-configured VS Code workspace, giving schema-validated
 completions and inline error highlighting out of the box.
@@ -77,7 +77,7 @@ supported_locales, debug flag.
 
 The frontend can display cart metadata, enforce size-class caps, and decide
 whether to load the runtime — all without initializing the full runtime.
-Framerate is not here: the frontend reads it via `fc_cart_fps()` after cart
+Framerate is not here: the frontend reads it via `blyt_cart_fps()` after cart
 load (see ADR-0047); it is not needed before runtime initialization.
 
 The `debug` field is set by the packer — `true` for debug builds, absent
@@ -218,7 +218,7 @@ packer-derived — no authored source file exists. The section is read by
 When author-facing Lua settings are needed, a `cart.lua.yaml` source file
 following the same `cart.*.yaml` convention will be introduced and compiled
 to this section. Other implementation languages would follow the same
-pattern with their own `cart.<lang>.yaml` and `.cart.<lang>` ELF section.
+pattern with their own `cart.<lang>.yaml` and `.blyt.<lang>` ELF section.
 
 ## Consequences
 

@@ -21,16 +21,16 @@ with smooth presentation.
 **Fixed-timestep with accumulator, owned by the frontend (ADR-0036).**
 
 - `update(dt)` always receives `dt = 1/60` (logical 60 Hz, or the rate
-  declared by `fc_cart_fps()` in `cart.config`).
+  declared by `blyt_cart_fps()` in `cart.config`).
 - The **frontend** maintains the logical-time accumulator and drives
-  `fc_runtime_update()` / `fc_runtime_draw()` (see ADR-0036). The runtime
+  `blyt_runtime_update()` / `blyt_runtime_draw()` (see ADR-0036). The runtime
   does not own or advance the accumulator.
 - Accumulator rules (enforced by convention and documented for all frontends):
   - Add elapsed real time each iteration, capped at 250 ms to prevent death
     spiral.
   - While accumulator ≥ tick interval **and** updates-this-frame < 3, call
-    `fc_runtime_update()`.
-  - Call `fc_runtime_draw()` once per render frame.
+    `blyt_runtime_update()`.
+  - Call `blyt_runtime_draw()` once per render frame.
 - Cap of 3 catch-up updates per render: mild overrun absorbed invisibly;
   severe overrun degrades gracefully to slow-motion gameplay rather than
   spiraling.
@@ -56,7 +56,7 @@ frontends.
 - Save states, rewind, replay, and netplay all rely on the fixed logical
   timestep.
 - Cart authors write `update(dt)` and can treat dt as a constant or use
-  `console.time.frame()` for frame-count-based logic — both are correct.
+  `blyt32.time.frame()` for frame-count-based logic — both are correct.
 - The 250 ms accumulator cap means a brief freeze (garbage collection on
   the host, context switch) is absorbed without a burst of many catch-up
   ticks.

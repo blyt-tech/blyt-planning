@@ -12,30 +12,30 @@ argument lists and long positional argument lists are error-prone. A struct
 
 ## Decision
 
-**Text rendering is controlled by `fc_text_params_t`, a struct with sensible
+**Text rendering is controlled by `blyt_text_params_t`, a struct with sensible
 defaults; most fields are optional.**
 
 ```c
 typedef struct {
-    fc_font_h   font;          // default: FC_FONT_BUILTIN
+    blyt_font_h   font;          // default: BLYT_FONT_BUILTIN
     uint8_t     color;         // palette index; default: 7 (white)
     uint8_t     border_color;  // default: 0 (black)
     int32_t     wrap_width;    // 0 = no wrap
-    uint32_t    border;        // FC_TEXT_BORDER_NONE / _4 / _8 / _SHADOW
+    uint32_t    border;        // BLYT_TEXT_BORDER_NONE / _4 / _8 / _SHADOW
     int32_t     max_chars;     // 0 = all; >0 = typewriter truncation
     int32_t    *chars_drawn;   // out: chars actually drawn (typewriter support)
     bool        auto_reposition; // advance x/y to end of text for chaining
-} fc_text_params_t;
+} blyt_text_params_t;
 
-fc_result_t fc_text_draw(int32_t x, int32_t y, const char *str,
-                          const fc_text_params_t *params); // NULL = all defaults
+blyt_result_t blyt_text_draw(int32_t x, int32_t y, const char *str,
+                          const blyt_text_params_t *params); // NULL = all defaults
 ```
 
 **Border styles:**
-- `FC_TEXT_BORDER_NONE`: plain text.
-- `FC_TEXT_BORDER_4`: 4-directional outline (up, down, left, right).
-- `FC_TEXT_BORDER_8`: 8-directional outline (corners included).
-- `FC_TEXT_BORDER_SHADOW`: drop shadow (down-right only).
+- `BLYT_TEXT_BORDER_NONE`: plain text.
+- `BLYT_TEXT_BORDER_4`: 4-directional outline (up, down, left, right).
+- `BLYT_TEXT_BORDER_8`: 8-directional outline (corners included).
+- `BLYT_TEXT_BORDER_SHADOW`: drop shadow (down-right only).
 
 **Word wrap:** breaks on space characters only. Hyphenation is not supported
 in v1.
@@ -51,16 +51,16 @@ styled text segments.
 In Lua, params are an optional table:
 
 ```lua
-console.text.draw(x, y, "Hello", {
-    font = FC_FONT_SMALL,
-    border = FC_TEXT_BORDER_SHADOW,
+blyt32.text.draw(x, y, "Hello", {
+    font = BLYT_FONT_SMALL,
+    border = BLYT_TEXT_BORDER_SHADOW,
     wrap_width = 200,
 })
 ```
 
 ## Consequences
 
-- A single `fc_text_draw()` entry point handles all text rendering cases.
+- A single `blyt_text_draw()` entry point handles all text rendering cases.
 - No global text state (font, color, etc.) — every call is self-contained.
 - The params struct is forward-compatible: new fields can be added with
   zero-default semantics without breaking existing call sites.

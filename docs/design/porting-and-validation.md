@@ -20,7 +20,7 @@ problem entirely.
 Doom's native framebuffer is **320×200 paletted, 256 colours**. This
 console's framebuffer is 320×240 paletted, 256 colours. The mapping is
 nearly direct: letterbox 40 pixels vertically, hand the game's palette to
-`console.gfx.set_palette`, write the framebuffer. Chocolate Doom already
+`blyt32.gfx.set_palette`, write the framebuffer. Chocolate Doom already
 abstracts its video backend behind `i_video.c`; a console backend is a
 drop-in replacement, not a general SDL compat layer.
 
@@ -80,11 +80,11 @@ then restructure to Option A before treating the port as a real cart.
 | SDL call | Console equivalent | Notes |
 |---|---|---|
 | `SDL_RenderPresent` | framebuffer present | Implicit at end of `draw()` |
-| `SDL_RenderCopy` | `console.gfx.blit` | Texture → resource handle |
-| `SDL_RenderFillRect` | `console.gfx.rect` | Map SDL_Color to palette index |
-| `SDL_RenderDrawLine` | `console.gfx.line` | |
+| `SDL_RenderCopy` | `blyt32.gfx.blit` | Texture → resource handle |
+| `SDL_RenderFillRect` | `blyt32.gfx.rect` | Map SDL_Color to palette index |
+| `SDL_RenderDrawLine` | `blyt32.gfx.line` | |
 | `SDL_SetRenderDrawColor` | palette index lookup | Build colour→index map during init |
-| `SDL_CreateTextureFromSurface` | `console.resource.load` | Source image pre-packed; not runtime-created |
+| `SDL_CreateTextureFromSurface` | `blyt32.resource.load` | Source image pre-packed; not runtime-created |
 
 Runtime texture creation (`SDL_CreateTexture` with dynamic pixel writes) has
 no direct equivalent. Games that procedurally generate textures at runtime
@@ -97,7 +97,7 @@ SDL keyboard and gamepad events map to the console's abstract button model.
 Mapping is game-specific: identify which keys/buttons the game actually uses
 and map them to the console's d-pad + 4 face + 2 shoulders + Start/Select.
 
-Mouse input maps to `console.input.pointer_*()`.
+Mouse input maps to `blyt32.input.pointer_*()`.
 
 SDL has far more keys than the console exposes. Games with complex keyboard
 schemes (RTS, simulation) may need UI redesign, not just remapping.
@@ -106,27 +106,27 @@ schemes (RTS, simulation) may need UI redesign, not just remapping.
 
 | SDL call | Console equivalent | Notes |
 |---|---|---|
-| `SDL_GetTicks()` | `console.time.frame() * (1000/fps)` | Approximate; deterministic |
+| `SDL_GetTicks()` | `blyt32.time.frame() * (1000/fps)` | Approximate; deterministic |
 | `SDL_Delay(ms)` | — | No blocking sleep in cart code; stub as no-op or restructure callers. Usually only in non-hot paths (loading screens, menu transitions). |
 
 ### File I/O
 
 SDL games use `fopen` / `fread` / `SDL_RWops` for asset loading. All
 assets must be pre-packed into the cart at build time and loaded via
-`console.resource.load`. The translation is mechanical:
+`blyt32.resource.load`. The translation is mechanical:
 
 - Identify every asset file the game loads at runtime.
 - Add them to the cart project as resources.
-- Replace `fopen("assets/hero.png")` with `console.resource.load("hero")`.
+- Replace `fopen("assets/hero.png")` with `blyt32.resource.load("hero")`.
 
-Save data (`fopen` for writing) maps to `console.save.*`.
+Save data (`fopen` for writing) maps to `blyt32.save.*`.
 
 ### Audio
 
 | SDL approach | Console equivalent | Difficulty |
 |---|---|---|
-| Tracker / module music | `console.audio.play_music` | Low — tracker formats supported natively |
-| Pre-baked WAV/OGG SFX | `console.audio.play_voice` | Low |
+| Tracker / module music | `blyt32.audio.play_music` | Low — tracker formats supported natively |
+| Pre-baked WAV/OGG SFX | `blyt32.audio.play_voice` | Low |
 | `SDL_mixer` channel mixing | voice groups (ADR-0054) | Medium |
 | `SDL_AudioCallback` (custom mixing) | No direct equivalent | Hard |
 

@@ -6,7 +6,7 @@ Accepted
 ## Context
 
 ADR-0093 specifies that the draw section of the frame (steps 10–14) is
-cart-provided: the cart writes a `fc_cart_draw` body that calls draw
+cart-provided: the cart writes a `blyt_cart_draw` body that calls draw
 functions in order. This matches a pico-8 / SDL programming model and is
 the right floor for low-level carts. It is the wrong ceiling for carts that
 have already populated scene-scoped entity buffers (ADR-0101) — those carts
@@ -15,8 +15,8 @@ re-implement the same iterate-and-blit loop in every scene.
 The aim is two coherent dev modes:
 
 **Imperative.** The cart writes the draw body directly, calling
-`fc_image_blit`, `fc_tilemap_draw`, `fc_text`, and similar in whatever
-order it wants. Existing fc32 mental model. No change.
+`blyt_image_blit`, `blyt_tilemap_draw`, `blyt_text`, and similar in whatever
+order it wants. Existing blyt mental model. No change.
 
 **Declarative.** The cart populates the scene; the runtime draws it. The
 cart declares what's in the scene (clear colour, tilemaps, participating
@@ -76,7 +76,7 @@ Buffers that participate in declarative drawing must supply, by name:
 |----------------|------|----------------------------------------------------|
 | `x`            | f32  | Position of the sprite anchor                      |
 | `y`            | f32  | Position of the sprite anchor                      |
-| `sprite`       | u32  | Image handle (`fc_image_h`); `0` skips the slot    |
+| `sprite`       | u32  | Image handle (`blyt_image_h`); `0` skips the slot    |
 | `z`            | i16  | Draw order; lower draws first                      |
 
 `x` and `y` are world-space by default; if the buffer declares
@@ -132,7 +132,7 @@ model — animated minimap, post-process overlay, debug panel.
 For a declarative scene, Stage's default body is:
 
 ```
-1. fc_clear(scene.clear)
+1. blyt_clear(scene.clear)
 2. for each tilemap layer in declared order:
        draw with camera offset
 3. world-space pass:

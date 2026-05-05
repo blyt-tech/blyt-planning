@@ -29,7 +29,7 @@ them to escape hatches.
 
 Trade-off accepted: time accumulation as f32 seconds loses precision after
 hours of play. Mitigation: store time as i32 frames or milliseconds;
-`console.time.frame()` provides this.
+`blyt.time.frame()` provides this.
 
 ## Consequences
 

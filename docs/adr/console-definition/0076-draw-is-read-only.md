@@ -41,7 +41,7 @@ outcomes — not whether the stream lives outside tracked state.
 **`draw()` must not write to tracked state.** This includes all named RNG
 streams (ADR-0041): cosmetic RNG streams advance in `update()` and are
 read in `draw()` like any other tracked state. A cart calling
-`console.rng.next("sparks")` in `draw()` gets the same value on all
+`blyt32.rng.next("sparks")` in `draw()` gets the same value on all
 clients, in replays, and after save/restore, because the sparks stream
 already advanced in the preceding `update()` tick.
 
@@ -53,12 +53,12 @@ buffers and globals that influence subsequent `update()` calls.
 **The same principle applies to anything that transparently advances
 simulation state.** Cases that matter in practice:
 
-- **RNG consumption**: calling `console.rng.next()` in `draw()` advances
+- **RNG consumption**: calling `blyt32.rng.next()` in `draw()` advances
   the RNG stream, changing the sequence every subsequent call will see.
   RNG streams are tracked state; consuming them in `draw()` is a state
   write by another name. All RNG calls belong in `update()`.
 
-- **Audio triggering**: calling `console.audio.play()` in `draw()` is
+- **Audio triggering**: calling `blyt32.audio.play()` in `draw()` is
   an instruction that lands in simulation state — the frame on which a
   sound fires is how `is_playing()` queries are answered (ADR-0006).
   Triggering in `draw()` also risks double-firing if the frontend ever

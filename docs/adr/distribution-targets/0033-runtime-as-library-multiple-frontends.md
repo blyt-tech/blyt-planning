@@ -13,12 +13,12 @@ rejected as a maintenance trap.
 
 ## Decision
 
-The runtime is a **library** (`libfantasyconsole`) with a narrow public C API
+The runtime is a **library** (`libblyt`) with a narrow public C API
 (~15–20 functions). Multiple thin frontends (~300–500 lines each) wrap it for
 specific platform contexts:
 
 ```
-libfantasyconsole (core)
+libblyt (core)
 ├── Cart loading (ELF) and parsing
 ├── RISC-V interpreter
 ├── Lua interpreter (runtime-owned)
@@ -36,16 +36,16 @@ Frontends (thin adapters):
 └── Hardware image (runtime as PID-1 under minimal Linux)
 ```
 
-The C API is frontend-agnostic: frontends call `fc_init`, `fc_run_frame`,
-`fc_get_framebuffer`, etc. No platform assumptions in the library.
+The C API is frontend-agnostic: frontends call `blyt_init`, `blyt_run_frame`,
+`blyt_get_framebuffer`, etc. No platform assumptions in the library.
 
 **Palette expansion in the libretro adapter.** Libretro has no paletted
 pixel format; it expects a fully-resolved RGB framebuffer
 (`RETRO_PIXEL_FORMAT_XRGB8888` or `RGB565`). The libretro core adapter
 expands the runtime's 320×240 palette-index buffer to XRGB8888 in
-`retro_run()`, after `fc_cart_draw()` completes, by performing a 76,800-
+`retro_run()`, after `blyt_cart_draw()` completes, by performing a 76,800-
 entry lookup against the current 256-entry RGBA palette from
-`fc_framebuffer_palette()`. This is the correct boundary: the core runtime
+`blyt_framebuffer_palette()`. This is the correct boundary: the core runtime
 always works in its native paletted representation; the adapter is the
 translation layer. XRGB8888 is preferred over RGB565 to avoid bit-depth
 rounding on palette colours and for maximum compatibility with RetroArch's

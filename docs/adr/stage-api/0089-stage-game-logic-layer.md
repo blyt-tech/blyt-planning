@@ -5,7 +5,7 @@ Accepted
 
 ## Context
 
-The fc32 runtime provides building blocks — typed state buffers, input,
+The blyt runtime provides building blocks — typed state buffers, input,
 drawing, audio — but imposes no structure on how game logic is organized.
 Every cart must independently solve the same recurring problems: how to
 communicate between systems without tight coupling, how to write sequential
@@ -61,12 +61,12 @@ Stage components that are used pull in only what they need.
 ## Consequences
 
 - Cart authors get a consistent, correct-by-construction framework for the
-  most common game logic patterns without needing to understand fc32's
+  most common game logic patterns without needing to understand blyt's
   save-state constraints first.
 - Advanced carts that want full control skip Stage entirely — the runtime API
   remains the primary contract.
 - The theatrical naming (`stage`, `scene`, `sequence`) is intentionally
   distinct from generic engine terminology (`world`, `system`, `script`)
-  to reduce confusion with fc32 runtime concepts.
+  to reduce confusion with blyt runtime concepts.
 - Stage's ADRs (0090–0100) document each component's design rationale,
   constraints, and API shape independently.

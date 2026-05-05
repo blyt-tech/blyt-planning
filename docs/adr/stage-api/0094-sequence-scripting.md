@@ -15,7 +15,7 @@ not survive save states.
 The full-serialization approach (Eris-style libraries) is heavyweight, tightly
 version-locked to specific Lua releases, and doesn't handle C frames on the
 stack. ADR-0012 rejected it for these reasons and provides
-`console.coroutine.create{}` for cases that genuinely need persistent
+`blyt32.coroutine.create{}` for cases that genuinely need persistent
 coroutines, at the cost of explicit save/restore callbacks.
 
 For purely sequential scripts — a straight-line sequence of actions and waits
@@ -40,7 +40,7 @@ A sequence can:
 
 A sequence cannot branch based on runtime conditions while preserving
 automatic serialization. Sequences with conditional logic must use
-`console.coroutine.create{}` (ADR-0012) with explicit save/restore hooks.
+`blyt32.coroutine.create{}` (ADR-0012) with explicit save/restore hooks.
 
 ### Sequence slot buffer
 
@@ -158,12 +158,12 @@ in buffer fields and pass slot indices as the sequence subject.
   automatically — no explicit save/restore callbacks required.
 - The step-index-plus-timer save state is minimal and correct for any
   purely sequential script.
-- Sequences are backed by a fixed-size pool, consistent with fc32's
+- Sequences are backed by a fixed-size pool, consistent with blyt's
   no-dynamic-allocation discipline.
 - The Lua recording model (`S` object captures step list once at
   registration) means sequences have no runtime overhead from the
   function body — step dispatch is a fixed-cost table lookup.
 - Branching scripts that cannot be expressed as linear sequences require
-  `console.coroutine.create{}` (ADR-0012) with explicit save/restore hooks.
+  `blyt32.coroutine.create{}` (ADR-0012) with explicit save/restore hooks.
   This boundary is intentional: keep the simple case simple, and make the
   complex case explicit about its complexity.

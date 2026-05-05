@@ -16,10 +16,10 @@ would otherwise need.
 The runtime exposes a **single-pointer abstraction** alongside the button API:
 
 ```lua
-console.input.pointer_is_held()
-console.input.pointer_position()    -- x, y in game pixels (0–319, 0–239)
-console.input.pointer_pressed()     -- edge-triggered on press
-console.input.pointer_released()    -- edge-triggered on release
+blyt32.input.pointer_is_held()
+blyt32.input.pointer_position()    -- x, y in game pixels (0–319, 0–239)
+blyt32.input.pointer_pressed()     -- edge-triggered on press
+blyt32.input.pointer_released()    -- edge-triggered on release
 ```
 
 Pointer source by platform:
@@ -47,5 +47,5 @@ Pointer and button input coexist. Carts can use both simultaneously.
 - The pointer is part of the deterministic input snapshot (ADR-0007):
   position and press/release state are recorded per-frame.
 - In netplay, pointer input is associated with the local player
-  (`console.input.local_player()`), not broadcast to all machines.
+  (`blyt32.input.local_player()`), not broadcast to all machines.
 - Multi-touch is a future addition; v1 ships single-pointer only.

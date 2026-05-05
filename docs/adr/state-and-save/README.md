@@ -14,5 +14,5 @@ infrastructure.
 | [0011](0011-lua-soa-metatable-sugar.md) | Lua state buffer ergonomics — SOA metatable sugar, no row proxies in v1 |
 | [0012](0012-lua-coroutines-save-restore-hooks.md) | Lua coroutines — raw available; save/restore requires blessed API |
 | [0013](0013-four-save-mechanisms.md) | Four distinct save mechanisms |
-| [0057](0057-state-buffer-field-constants.md) | State buffer field access via fc_field_h compile-time integer constants |
+| [0057](0057-state-buffer-field-constants.md) | State buffer field access via blyt_field_h compile-time integer constants |
 | [0058](0058-active-slot-management.md) | Active slot management built into the buffer API |

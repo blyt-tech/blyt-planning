@@ -40,12 +40,12 @@ Sources of variation and their controls:
   carts and by Lua spec.
 - **RNG:** runtime-owned, seedable streams; state lives in tracked regions
   (save state preserves it). No uninitialized sources.
-- **Time:** only deterministic time exposed (`console.time.frame()`). No
+- **Time:** only deterministic time exposed (`blyt.time.frame()`). No
   wall-clock API. `dt` in update is always 1/60.
 - **Input:** snapshotted once per logical update; frozen within update.
   Events recorded as `(frame_n, button_state)` tuples, not timestamps.
 - **Audio:** one-way data flow (cart → mixer) for determinism purposes.
-  Exception: `fc_voice_is_playing()` queries actual mixer state (see ADR-0006).
+  Exception: `blyt_voice_is_playing()` queries actual mixer state (see ADR-0006).
   The exception is bounded and acceptable; see ADR-0006 for rationale.
 - **Resource loading:** synchronous. Observable behavior ("I called load, got
   a result") is identical regardless of decompression latency.
@@ -66,7 +66,7 @@ Acknowledged non-determinism:
 - CI validates determinism via cross-platform bit-identity tests (same cart
   workload, compared frame-by-frame across platforms).
 - Cart authors cannot use `math.sin` from Lua's standard library; they use
-  `console.math.sin` (the deterministic version). This is enforced by the
+  `blyt32.math.sin` (the deterministic version). This is enforced by the
   Lua sandbox (ADR-0038).
 - Transcendental determinism requires the console to own its math library,
   which is a maintenance responsibility.

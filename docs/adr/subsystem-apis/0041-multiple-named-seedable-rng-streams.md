@@ -31,16 +31,16 @@ all state runtime-tracked; per-session entropy by default.**
 
 ### Runtime-provided streams
 
-Defined in `fc_cart.h`, always available without manifest declaration:
+Defined in `blyt32.h`, always available without manifest declaration:
 
 | Constant | Purpose |
 |----------|---------|
-| `FC_RNG_DEFAULT` | The standard stream. Gameplay and anything that feeds back into simulation reads from here. |
-| `FC_RNG_COSMETIC` | Randomness whose result is consumed and thrown away the same frame — particle jitter, screen-shake offset, sound pitch variation. Nothing in the simulation reads back from this stream. |
+| `BLYT_RNG_DEFAULT` | The standard stream. Gameplay and anything that feeds back into simulation reads from here. |
+| `BLYT_RNG_COSMETIC` | Randomness whose result is consumed and thrown away the same frame — particle jitter, screen-shake offset, sound pitch variation. Nothing in the simulation reads back from this stream. |
 
 The split exists so authors have a documented home for output-only
-randomness. Routing cosmetic `rng.next()` calls through `FC_RNG_COSMETIC`
-keeps `FC_RNG_DEFAULT`'s sequence undisturbed by polish work, which makes
+randomness. Routing cosmetic `rng.next()` calls through `BLYT_RNG_COSMETIC`
+keeps `BLYT_RNG_DEFAULT`'s sequence undisturbed by polish work, which makes
 fixed-seed worldgen and any future input-only replay system viable
 without further plumbing.
 
@@ -59,15 +59,15 @@ packer-generated-constant pattern (ADR-0059):
 
 ```c
 // Generated: cart_rng.h
-#define RNG_WORLDGEN ((fc_rng_h)1)
-#define RNG_ENEMY_AI ((fc_rng_h)2)
+#define RNG_WORLDGEN ((blyt_rng_h)1)
+#define RNG_ENEMY_AI ((blyt_rng_h)2)
 ```
 
 ```lua
 local RNG = require("RNG")
-console.rng.next(RNG.DEFAULT)     -- runtime-provided
-console.rng.next(RNG.COSMETIC)    -- runtime-provided
-console.rng.next(RNG.WORLDGEN)    -- cart-declared
+blyt32.rng.next(RNG.DEFAULT)     -- runtime-provided
+blyt32.rng.next(RNG.COSMETIC)    -- runtime-provided
+blyt32.rng.next(RNG.WORLDGEN)    -- cart-declared
 ```
 
 Per ADR-0059, the Lua `RNG` module is pre-populated with runtime constants
@@ -82,8 +82,8 @@ suitable source on hardware). This seed is captured into session state
 from frame zero and is therefore part of every save snapshot, every
 replay recording, and every netplay handshake.
 
-**`FC_RNG_DEFAULT` is seeded directly with the session root.** All other
-streams (`FC_RNG_COSMETIC` and any cart-declared streams) derive their
+**`BLYT_RNG_DEFAULT` is seeded directly with the session root.** All other
+streams (`BLYT_RNG_COSMETIC` and any cart-declared streams) derive their
 seeds deterministically from the root using a documented mixing function
 (splitmix64 keyed by stream ID). One root reproduces the full RNG state;
 adding or removing cart-declared streams never disturbs the seeding of
@@ -103,8 +103,8 @@ re-derive from it.
 **Runtime reseeding** is always available:
 
 ```lua
-console.rng.seed(RNG.DEFAULT, today_as_int)   -- e.g., daily challenge
-console.rng.reseed_all(new_root)              -- rederive every stream
+blyt32.rng.seed(RNG.DEFAULT, today_as_int)   -- e.g., daily challenge
+blyt32.rng.reseed_all(new_root)              -- rederive every stream
 ```
 
 ### State and persistence
@@ -141,7 +141,7 @@ versions so save/replay compatibility is preserved.
 - Default-entropy seeding means each player's first run differs naturally;
   the determinism contract is preserved because the seed is just another
   input captured from frame zero. Authors who want fixed-seed reproducibility
-  set `rng_seed` in the manifest or call `console.rng.seed()` at init.
+  set `rng_seed` in the manifest or call `blyt32.rng.seed()` at init.
 - Save/restore, rewind, and netplay rollback all work transparently — the
   full RNG state is in the snapshot.
 - Netplay seed agreement is part of the existing handshake (ADR-0021); no

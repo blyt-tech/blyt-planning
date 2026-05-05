@@ -18,7 +18,7 @@ Four separate mechanisms, each for its natural purpose:
 
 **1. Cart-managed in-game save** (cart decides when and what to save).
 Player progress — story position, inventory, level completion. API:
-`console.save.write(slot, data, metadata)` / `console.save.read(slot)`.
+`blyt32.save.write(slot, data, metadata)` / `blyt32.save.read(slot)`.
 Runtime handles serialization, atomicity, quota (10 MB default), and slot
 metadata (label, timestamp, size).
 
@@ -60,14 +60,14 @@ prefs:
 
 ```c
 // Generated: cart_prefs.h
-#define PREF_SFX_VOLUME   ((fc_pref_h)1)
-#define PREF_MUSIC_VOLUME ((fc_pref_h)2)
-#define PREF_SUBTITLES    ((fc_pref_h)3)
+#define PREF_SFX_VOLUME   ((blyt_pref_h)1)
+#define PREF_MUSIC_VOLUME ((blyt_pref_h)2)
+#define PREF_SUBTITLES    ((blyt_pref_h)3)
 ```
 
 ```c
-fc_prefs_set_f32(PREF_SFX_VOLUME, 0.8f);
-float vol = fc_prefs_get_f32(PREF_SFX_VOLUME);
+blyt_prefs_set_f32(PREF_SFX_VOLUME, 0.8f);
+float vol = blyt_prefs_get_f32(PREF_SFX_VOLUME);
 ```
 
 Available immediately at cart start, before any save is loaded. Quota: 64 KB
@@ -84,22 +84,22 @@ may override the defaults by declaring a pref with the same name:
 
 | Handle | Type | Default | Notes |
 |--------|------|---------|-------|
-| `FC_PREF_MUSIC_VOLUME` | f32 | 1.0 | Volume for the `FC_VG_MUSIC` group (ADR-0054) |
-| `FC_PREF_SFX_VOLUME` | f32 | 1.0 | Volume for the `FC_VG_SFX` group |
-| `FC_PREF_VOICE_VOLUME` | f32 | 1.0 | Volume for the `FC_VG_VOICE` group |
-| `FC_PREF_SUBTITLES` | bool | false | Whether this cart shows subtitles by default |
+| `BLYT_PREF_MUSIC_VOLUME` | f32 | 1.0 | Volume for the `BLYT_VG_MUSIC` group (ADR-0054) |
+| `BLYT_PREF_SFX_VOLUME` | f32 | 1.0 | Volume for the `BLYT_VG_SFX` group |
+| `BLYT_PREF_VOICE_VOLUME` | f32 | 1.0 | Volume for the `BLYT_VG_VOICE` group |
+| `BLYT_PREF_SUBTITLES` | bool | false | Whether this cart shows subtitles by default |
 
 **Global runtime preferences** (distinct from per-cart preferences).
 Some player settings apply across all carts and are owned by the runtime,
 not by any individual cart. Carts can read but not write these:
 
 ```c
-bool fc_runtime_pref_get_bool(fc_runtime_pref_t key);
+bool blyt_runtime_pref_get_bool(blyt_runtime_pref_t key);
 ```
 
 | Handle | Type | Default | Notes |
 |--------|------|---------|-------|
-| `FC_RUNTIME_PREF_SUBTITLES_ALWAYS` | bool | false | If true, overrides per-cart subtitle setting |
+| `BLYT_RUNTIME_PREF_SUBTITLES_ALWAYS` | bool | false | If true, overrides per-cart subtitle setting |
 
 Global preferences are persisted by the runtime in a device-wide store
 separate from per-cart preference files. The locale preference (ADR-0063)

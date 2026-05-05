@@ -81,12 +81,12 @@ static const stage_fsm_state_t enemy_fsm[] = {
     [AI_PATROL] = {
         .on_enter  = HANDLER_AI_PATROL_ENTER,
         .on_update = HANDLER_AI_PATROL_UPDATE,
-        .on_exit   = FC_HANDLER_NONE,
+        .on_exit   = BLYT_HANDLER_NONE,
     },
     [AI_CHASE] = {
         .on_enter  = HANDLER_AI_CHASE_ENTER,
         .on_update = HANDLER_AI_CHASE_UPDATE,
-        .on_exit   = FC_HANDLER_NONE,
+        .on_exit   = BLYT_HANDLER_NONE,
     },
     [AI_ATTACK] = {
         .on_enter  = HANDLER_AI_ATTACK_ENTER,
@@ -107,14 +107,14 @@ static const stage_fsm_t ENEMY_FSM = {
 // Reads current state from buf[slot][state_field].
 // Calls on_update for current state with (slot, 0).
 void stage_fsm_update(const stage_fsm_t *fsm,
-                       fc_buffer_h buf, int32_t slot,
-                       fc_field_h state_field);
+                       blyt_buffer_h buf, int32_t slot,
+                       blyt_field_h state_field);
 
 // Transition to a new state.
 // Calls on_exit for current state, updates field, calls on_enter for new state.
 void stage_fsm_transition(const stage_fsm_t *fsm,
-                           fc_buffer_h buf, int32_t slot,
-                           fc_field_h state_field,
+                           blyt_buffer_h buf, int32_t slot,
+                           blyt_field_h state_field,
                            uint8_t new_state);
 ```
 
@@ -122,10 +122,10 @@ Usage in an update loop:
 
 ```c
 // In system_ai():
-fc_iter_h it;
-fc_buffer_iter_begin(S_ENEMIES, &it);
+blyt_iter_h it;
+blyt_buffer_iter_begin(S_ENEMIES, &it);
 int32_t slot;
-while (fc_buffer_iter_next(it, &slot)) {
+while (blyt_buffer_iter_next(it, &slot)) {
     stage_fsm_update(&ENEMY_FSM, S_ENEMIES, slot, S_ENEMY_AI_STATE);
 }
 
@@ -172,7 +172,7 @@ stage.fsm.transition(enemy_fsm, enemies, slot, "ai_state", AI.CHASE)
 The current state integer is an entity buffer field and serializes
 automatically. The FSM definition is static code; it is never stored in
 a buffer. On save-state restore, the FSM resumes from the saved state
-without re-running on_enter. If the cart's `fc_cart_on_load` or scene
+without re-running on_enter. If the cart's `blyt_cart_on_load` or scene
 `on_resume` needs to synchronize visual state to the restored FSM state,
 it can call `on_enter` explicitly.
 

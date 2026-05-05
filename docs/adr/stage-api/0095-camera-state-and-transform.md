@@ -5,7 +5,7 @@ Accepted
 
 ## Context
 
-ADR-0048 established that the fc32 runtime has no global camera offset:
+ADR-0048 established that the blyt runtime has no global camera offset:
 all draw calls use screen-space pixel coordinates measured from the
 top-left of the 320×240 framebuffer. Cart code is responsible for
 translating world coordinates to screen coordinates before calling draw
@@ -18,7 +18,7 @@ smoothly, handle screen shake, and be readable from both draw and update
 code.
 
 Screen shake is handled by the runtime at present time (ADR-0051): the
-cart passes a trauma value to `fc_screen_shake` each frame, and the
+cart passes a trauma value to `blyt_screen_shake` each frame, and the
 runtime applies the resulting offset when blitting the framebuffer to
 the display. The cart does not compute shake offsets — it only maintains
 the trauma value.
@@ -74,8 +74,8 @@ void stage_camera_to_screen_rot(float wx, float wy,
                                  float *out_sx, float *out_sy);
 
 // Follow an entity slot (lerp toward target position)
-void stage_camera_follow(fc_buffer_h buf, int32_t slot,
-                         fc_field_h x_field, fc_field_h y_field,
+void stage_camera_follow(blyt_buffer_h buf, int32_t slot,
+                         blyt_field_h x_field, blyt_field_h y_field,
                          float lerp_speed);
 
 // Clamp camera to world bounds
@@ -89,7 +89,7 @@ void stage_trauma_add(float amount);         // clamps to 1.0
 
 `stage_camera_update` (step 8 in ADR-0093) calls `stage_camera_follow`
 if a follow target is set. `stage_trauma_decay` (step 9) decays trauma
-toward zero and calls `fc_screen_shake(trauma * trauma)` — squaring trauma
+toward zero and calls `blyt_screen_shake(trauma * trauma)` — squaring trauma
 gives a more natural shake curve at low values.
 
 ### Lua API
@@ -115,18 +115,18 @@ camera.zoom[1] = 2.0
 ### Typical draw usage
 
 ```lua
-function fc_cart_draw()
+function blyt_cart_draw()
     -- Tilemap with camera scroll offset
     local cx = math.floor(camera.x[1])
     local cy = math.floor(camera.y[1])
-    fc_tilemap_draw(T_LEVEL, -cx, -cy)
+    blyt_tilemap_draw(T_LEVEL, -cx, -cy)
 
     -- Entities with world-to-screen transform
     for slot in enemies:slots() do
         local sx, sy = stage.camera.to_screen(enemies.x[slot], enemies.y[slot])
         -- simple visibility cull
         if sx > -32 and sx < 352 and sy > -32 and sy < 272 then
-            fc_image_blit(enemies.sprite[slot], math.floor(sx), math.floor(sy), 0)
+            blyt_image_blit(enemies.sprite[slot], math.floor(sx), math.floor(sy), 0)
         end
     end
 end
@@ -135,9 +135,9 @@ end
 ### Screen shake integration
 
 Trauma is a camera buffer field (serializes automatically). Each frame,
-`stage_trauma_decay` reads the field, calls `fc_screen_shake(trauma²)`,
+`stage_trauma_decay` reads the field, calls `blyt_screen_shake(trauma²)`,
 then decays the field value. The cart never interacts with
-`fc_screen_shake` directly when using Stage — it calls `stage_trauma_add`
+`blyt_screen_shake` directly when using Stage — it calls `stage_trauma_add`
 to trigger shake and Stage manages the rest.
 
 ## Consequences

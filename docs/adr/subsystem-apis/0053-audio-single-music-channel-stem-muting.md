@@ -21,21 +21,21 @@ via channel muting; crossfades briefly overlap two decoders inside the
 mixer.**
 
 ```c
-fc_result_t fc_music_play(fc_resource_h res, fc_music_transition_t transition,
+blyt_result_t blyt_music_play(blyt_resource_h res, blyt_music_transition_t transition,
                           uint32_t duration_ms);
-fc_result_t fc_music_stop(fc_music_transition_t transition,
+blyt_result_t blyt_music_stop(blyt_music_transition_t transition,
                           uint32_t duration_ms);
-fc_result_t fc_music_set_channel_mask(uint32_t muted_channels);
-bool        fc_music_is_playing(void);
+blyt_result_t blyt_music_set_channel_mask(uint32_t muted_channels);
+bool        blyt_music_is_playing(void);
 
 typedef enum {
-    FC_MUSIC_CUT       = 0,  // instant; duration_ms ignored
-    FC_MUSIC_FADE      = 1,  // fade-out then fade-in (gap of silence)
-    FC_MUSIC_CROSSFADE = 2,  // overlap old and new for duration_ms
-} fc_music_transition_t;
+    BLYT_MUSIC_CUT       = 0,  // instant; duration_ms ignored
+    BLYT_MUSIC_FADE      = 1,  // fade-out then fade-in (gap of silence)
+    BLYT_MUSIC_CROSSFADE = 2,  // overlap old and new for duration_ms
+} blyt_music_transition_t;
 ```
 
-Only one tracker module is "current" at any time. Calling `fc_music_play()`
+Only one tracker module is "current" at any time. Calling `blyt_music_play()`
 while music is already playing transitions to the new module: cut, fade
 (sequential — old fades out completely, then new fades in), or crossfade
 (old and new overlap for `duration_ms`).
@@ -64,8 +64,8 @@ the mute mask each frame.
 
 ```lua
 -- Increase intensity: unmute the intensity channels
-console.music.set_channel_mask(0x0000_00FF)  -- mute channels 8–31
-console.music.set_channel_mask(0x0000_0000)  -- unmute all channels
+blyt32.music.set_channel_mask(0x0000_00FF)  -- mute channels 8–31
+blyt32.music.set_channel_mask(0x0000_0000)  -- unmute all channels
 ```
 
 ## Consequences

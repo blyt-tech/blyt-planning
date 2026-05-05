@@ -20,35 +20,35 @@ into Lua.
 
 ```c
 // Required — all carts must export these
-void fc_cart_init(void);
-void fc_cart_update(void);
-void fc_cart_draw(void);
+void blyt_cart_init(void);
+void blyt_cart_update(void);
+void blyt_cart_draw(void);
 
 // Optional — SDK provides weak-linked no-op defaults
-void fc_cart_on_save(void);
-void fc_cart_on_load(void);
-void fc_cart_cleanup(void);
-void fc_cart_on_credits(void);
-void fc_cart_on_quit(void);
+void blyt_cart_on_save(void);
+void blyt_cart_on_load(void);
+void blyt_cart_cleanup(void);
+void blyt_cart_on_credits(void);
+void blyt_cart_on_quit(void);
 
 // Native carts only — not part of the Lua lifecycle (ADR-0083)
-void fc_cart_panic(fc_panic_reason_t reason);
+void blyt_cart_panic(blyt_panic_reason_t reason);
 ```
 
 Cart signals back to the runtime:
 
 ```c
-fc_result_t fc_quit_ready(void);     // called from on_quit when done
-fc_result_t fc_credits_done(void);   // called from on_credits when done
+blyt_result_t blyt_quit_ready(void);     // called from on_quit when done
+blyt_result_t blyt_credits_done(void);   // called from on_credits when done
 ```
 
 **No `dt` parameter.** `update` and `draw` take no arguments. Time is
-available via `fc_time_frame()` — a deterministic frame counter. A `dt`
+available via `blyt_time_frame()` — a deterministic frame counter. A `dt`
 parameter would imply it could vary; it cannot (ADR-0037).
 
 **Weak-linked defaults.** The SDK provides weak-linked implementations of all
 optional callbacks. The default for `on_quit` immediately calls
-`fc_quit_ready()` so the runtime proceeds to exit without a cart-defined
+`blyt_quit_ready()` so the runtime proceeds to exit without a cart-defined
 handler. All other defaults are no-ops.
 
 ### Lua entry point names
@@ -57,22 +57,22 @@ The Lua shim looks up these global function names:
 
 | C symbol | Lua name |
 |---|---|
-| `fc_cart_init` | `init` |
-| `fc_cart_update` | `update` |
-| `fc_cart_draw` | `draw` |
-| `fc_cart_on_save` | `on_save` |
-| `fc_cart_on_load` | `on_load` |
-| `fc_cart_cleanup` | `cleanup` |
-| `fc_cart_on_credits` | `on_credits` |
-| `fc_cart_on_quit` | `on_quit` |
+| `blyt_cart_init` | `init` |
+| `blyt_cart_update` | `update` |
+| `blyt_cart_draw` | `draw` |
+| `blyt_cart_on_save` | `on_save` |
+| `blyt_cart_on_load` | `on_load` |
+| `blyt_cart_cleanup` | `cleanup` |
+| `blyt_cart_on_credits` | `on_credits` |
+| `blyt_cart_on_quit` | `on_quit` |
 
-The SDK preamble (`fc_preamble.lua`) defines no-op implementations of all
+The SDK preamble (`blyt_preamble.lua`) defines no-op implementations of all
 optional functions. Cart code overrides what it needs. The shim invokes them
 unconditionally; the preamble defaults handle the unimplemented case.
 
 ### State initialisation before `init`
 
-Before every call to `fc_cart_init` — whether at first launch or after a
+Before every call to `blyt_cart_init` — whether at first launch or after a
 reset — the runtime zeroes all cart-visible tracked state memory. This
 ensures deterministic initial conditions regardless of any previous session
 and removes any obligation on `init` to explicitly zero fields before use.
@@ -81,10 +81,10 @@ and removes any obligation on `init` to explicitly zero fields before use.
 
 ```
 Cart start:      zero state → init → update/draw loop
-Load save:       fc_save_read → state restored → on_load → loop continues
+Load save:       blyt_save_read → state restored → on_load → loop continues
 Reset:           (autosave written if slot set) → zero state → init → loop
-Credits:         on_credits → fc_credits_done → runtime resumes
-Quit:            on_quit → fc_quit_ready → cleanup → exit
+Credits:         on_credits → blyt_credits_done → runtime resumes
+Quit:            on_quit → blyt_quit_ready → cleanup → exit
 ```
 
 **Load does not call `init`.** A save load happens during normal cart
@@ -119,7 +119,7 @@ active; the runtime handles the rest.
 
 **Carts can implement their own return-to-title.** Nothing prevents a cart
 from implementing a title screen flow entirely within its own logic — calling
-`fc_save_autosave_now()` at an appropriate point, zeroing the relevant state
+`blyt_save_autosave_now()` at an appropriate point, zeroing the relevant state
 fields, and transitioning to its title screen within `update`. The runtime's
 reset mechanism is the player-facing escape hatch; the cart's internal flow
 is the authored experience.
@@ -134,17 +134,17 @@ The cart opts in by designating a save slot in `init`. The runtime then
 manages all saving automatically.
 
 ```c
-fc_result_t fc_save_set_autosave_slot(uint32_t slot);
-fc_result_t fc_save_set_autosave_interval(uint32_t frames);
-fc_result_t fc_save_clear_autosave_slot(void);
-fc_result_t fc_save_autosave_now(void);  // manual checkpoint trigger
+blyt_result_t blyt_save_set_autosave_slot(uint32_t slot);
+blyt_result_t blyt_save_set_autosave_interval(uint32_t frames);
+blyt_result_t blyt_save_clear_autosave_slot(void);
+blyt_result_t blyt_save_autosave_now(void);  // manual checkpoint trigger
 ```
 
 Typical usage:
 
 ```c
-void fc_cart_init(void) {
-    fc_save_set_autosave_slot(0);
+void blyt_cart_init(void) {
+    blyt_save_set_autosave_slot(0);
     // ... rest of init
 }
 ```
@@ -152,11 +152,11 @@ void fc_cart_init(void) {
 Disabling during sensitive moments:
 
 ```c
-fc_save_clear_autosave_slot();   // entering a boss fight — no autosave
+blyt_save_clear_autosave_slot();   // entering a boss fight — no autosave
 
 // boss defeated
-fc_save_set_autosave_slot(0);
-fc_save_autosave_now();          // checkpoint immediately
+blyt_save_set_autosave_slot(0);
+blyt_save_autosave_now();          // checkpoint immediately
 ```
 
 **Periodic saves.** With an autosave slot set, the runtime writes to that
@@ -165,7 +165,7 @@ minute at 60 fps).
 
 **Minimum interval.** In release builds, the minimum permitted interval is
 3600 frames. This protects flash and SD card storage from excessive write
-cycles. `fc_save_set_autosave_interval` clamps silently to this floor in
+cycles. `blyt_save_set_autosave_interval` clamps silently to this floor in
 release. In dev mode the floor is not enforced, allowing rapid save/load
 testing without waiting a minute per cycle.
 
@@ -199,29 +199,29 @@ typedef struct {
     int32_t         total_frames;       // accumulated playtime; 0 if slot empty
     int32_t         elapsed_seconds;    // seconds since this save was written;
                                         //   -1 if platform has no real-time clock
-    fc_image_h      thumbnail;          // 80×60 image handle; 0 if slot empty
+    blyt_image_h      thumbnail;          // 80×60 image handle; 0 if slot empty
     const uint32_t *thumbnail_palette;  // 256 RGBA entries, runtime-owned
     const void     *description;        // save description buffer contents, or NULL
     uint32_t        description_size;   // size in bytes
-} fc_save_meta_t;
+} blyt_save_meta_t;
 
-fc_result_t fc_save_get_meta(uint32_t slot, fc_save_meta_t *out);
+blyt_result_t blyt_save_get_meta(uint32_t slot, blyt_save_meta_t *out);
 ```
 
-`fc_save_get_meta` reads only the metadata header — it does not load the full
+`blyt_save_get_meta` reads only the metadata header — it does not load the full
 save state. Carts call it during their save selection screen's `update` to
-populate the UI before the player chooses a slot; `fc_save_read` loads the
+populate the UI before the player chooses a slot; `blyt_save_read` loads the
 full state when the player confirms.
 
 **Elapsed time.** The runtime records an absolute wall-clock timestamp in the
 save file header at write time (an implementation detail, never exposed
-directly to cart code). `fc_save_get_meta` computes the difference between
+directly to cart code). `blyt_save_get_meta` computes the difference between
 that stored timestamp and the current time, returning it as `elapsed_seconds`.
 The cart receives a relative duration — "this save is 7,320 seconds old" —
 and formats it however it chooses ("2 hours ago", "3 days ago"). No absolute
 timestamp is ever visible to cart code, so determinism is unaffected.
 
-A general real-world time API (`fc_time_unix` or similar) is deliberately
+A general real-world time API (`blyt_time_unix` or similar) is deliberately
 absent from v1. Carts that use real-world time to drive game logic (Animal
 Crossing-style time-sensitive games) require a well-understood "time-sensitive
 mode" design; that is deferred to v2. `elapsed_seconds` is a narrow, safe
@@ -230,7 +230,7 @@ exception scoped entirely to save display.
 **Save description buffer.** Carts can declare a state buffer with
 `role: save_description` in the manifest. The runtime includes its full
 contents verbatim in the save metadata header, making it available to
-`fc_save_get_meta` without loading the full save. The cart writes to it during
+`blyt_save_get_meta` without loading the full save. The cart writes to it during
 gameplay exactly like any other state buffer — the metadata copy is updated
 each time a save is written.
 
@@ -289,20 +289,20 @@ during gameplay"`. In release the write is silently ignored.
 
 **Missing fields.** If an older save predates a field added in a later cart
 version, the field returns its declared default value (0 for numerics, false
-for bools) — the same behaviour as `fc_buffer_was_restored` for ordinary
+for bools) — the same behaviour as `blyt_buffer_was_restored` for ordinary
 state buffers. Dev mode logs a notice identifying which fields were absent.
 
-**Thumbnail image handle.** `thumbnail` is a standard `fc_image_h` valid
+**Thumbnail image handle.** `thumbnail` is a standard `blyt_image_h` valid
 through the remainder of the current `update`/`draw` cycle. The cart blits it
 with the normal image API. It is invalidated on the next call to
-`fc_save_get_meta` or at the next `init`.
+`blyt_save_get_meta` or at the next `init`.
 
 The cart is responsible for palette management before blitting. For
 single-palette carts the stored palette matches the active one and the
 thumbnail can be blitted directly. For multi-palette games the load screen
 needs a palette that covers both its own UI colours and an approximation of
 thumbnail colours from any part of the game. The cart uses `thumbnail_palette`
-(the RGBA values of the palette at save time) alongside `fc_gfx_pal_remap` to
+(the RGBA values of the palette at save time) alongside `blyt_gfx_pal_remap` to
 build an index-remapping table from thumbnail indices to load-screen indices
 at display time. This is achievable with existing tools — a nearest-colour
 search over the load-screen palette per thumbnail palette entry, applied as a
@@ -319,17 +319,17 @@ implementable at the cart level in the meantime.
 (a 1/4 downscale of 320×240) plus a snapshot of the active palette.
 
 **Total playtime.** The runtime accumulates frame counts across sessions.
-`fc_time_frame()` is session-local — starts at 0 on `init`, increments each
+`blyt_time_frame()` is session-local — starts at 0 on `init`, increments each
 frame, does not reset on save loads. The runtime tracks two values internally:
 
 - `playtime_base`: `total_frames` from the most recently loaded save (0 for
   a new game).
-- `frame_at_load`: the value of `fc_time_frame()` at the moment of the load
+- `frame_at_load`: the value of `blyt_time_frame()` at the moment of the load
   (0 for a new game).
 
 On each save:
 ```
-new_total = playtime_base + (fc_time_frame() - frame_at_load)
+new_total = playtime_base + (blyt_time_frame() - frame_at_load)
 ```
 
 Time spent at the title screen before loading is excluded. Multiple loads

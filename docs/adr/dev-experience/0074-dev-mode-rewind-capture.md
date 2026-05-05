@@ -65,8 +65,8 @@ any of three triggers:
 
 3. **Cart API call**:
    ```lua
-   console.dev.dump()          -- write history buffer to disk now
-   console.dev.dump("label")   -- include a label in the filename
+   blyt32.dev.dump()          -- write history buffer to disk now
+   blyt32.dev.dump("label")   -- include a label in the filename
    ```
    Only available in dev mode; a no-op in release builds (ADR-0065
    pattern). This is the most powerful trigger: the author instruments
@@ -77,7 +77,7 @@ any of three triggers:
    Example:
    ```lua
    if enemy_count < 0 then          -- should never happen
-       console.dev.dump("negative-enemy-count")
+       blyt32.dev.dump("negative-enemy-count")
    end
    ```
 
@@ -123,7 +123,7 @@ is sufficient and reuses existing infrastructure.
 
 - Dev mode has a higher memory footprint due to the rolling history buffer.
   This is only active in dev mode; players are unaffected.
-- `console.dev.dump()` follows the ADR-0065 pattern: the call is present
+- `blyt32.dev.dump()` follows the ADR-0065 pattern: the call is present
   in the API header; the release implementation is a no-op. Carts can ship
   with dev instrumentation in place without it having any effect.
 - The debug capture format is compatible with the speedrun replay format

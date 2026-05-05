@@ -7,11 +7,11 @@ Accepted
 
 When a cart panics, the runtime kills the RISC-V VM externally (ADR-0084).
 For native carts, this still allows a brief window: the runtime can call the
-cart's `fc_cart_panic` function pointer before terminating, and the cart's
+cart's `blyt_cart_panic` function pointer before terminating, and the cart's
 native code can execute diagnostic logic within that window.
 
 For Lua carts, no such window is available. The VM is terminated from the
-outside; no further Lua code can run. The `fc_cart_panic` callback model
+outside; no further Lua code can run. The `blyt_cart_panic` callback model
 does not apply.
 
 A separate question is what diagnostic information the runtime should present
@@ -21,15 +21,15 @@ the crash.
 
 ## Decision
 
-### `fc_cart_panic` is restricted to native carts
+### `blyt_cart_panic` is restricted to native carts
 
-The `fc_cart_panic` callback (called by the runtime with a brief window
+The `blyt_cart_panic` callback (called by the runtime with a brief window
 before termination) is defined only for native carts. It is not part of the
 Lua cart contract. The SDK's Lua cart template does not define or reference
 it.
 
 For native carts, the existing model holds: the cart gets a brief execution
-window; only `fc_log_*` calls are valid inside it; the runtime kills the cart
+window; only `blyt_log_*` calls are valid inside it; the runtime kills the cart
 after a hard deadline regardless.
 
 ### Lua cart panics: runtime-owned diagnostic dump
@@ -41,7 +41,7 @@ because it owns the relevant structures independently of the cart.
 **Always dumped (dev and release):**
 - Panic reason (`WATCHDOG` / `OOM` / `FATAL_API_VIOLATION` / `ILLEGAL_INSN`)
 - Frame count at time of panic
-- Last `fc_last_error` string
+- Last `blyt_last_error` string
 
 **Dev mode additionally:**
 - Full contents of all state buffers, formatted by field name using the
@@ -86,7 +86,7 @@ and cannot be spoofed or suppressed by cart code.
 - Lua cart authors have no crash callback to implement; the runtime handles
   everything. This is simpler for authors and eliminates a category of
   "my panic handler panicked" failure modes.
-- Native cart authors retain `fc_cart_panic` for use cases like flushing
+- Native cart authors retain `blyt_cart_panic` for use cases like flushing
   an in-progress save or logging subsystem-specific state that the runtime
   cannot know about.
 - The debug overlay data structures must be implemented as runtime-owned ring

@@ -29,7 +29,7 @@ netplay.
 
 **Cart-level API:**
 ```lua
-local me = console.input.local_player()  -- which player slot this machine is
+local me = blyt32.input.local_player()  -- which player slot this machine is
 ```
 Used for per-player rendering in asymmetric games. Most games are symmetric
 and ignore it.

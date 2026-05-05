@@ -19,7 +19,7 @@ is high and the determinism benefit is narrow.
 
 ## Decision
 
-**`fc_voice_is_playing()` queries actual mixer state**, not a frame-count
+**`blyt_voice_is_playing()` queries actual mixer state**, not a frame-count
 estimate. The mixer is authoritative for whether a voice is currently active.
 
 This is a deliberate, bounded exception to the full-determinism rule
@@ -39,7 +39,7 @@ this is acceptable because:
 
 ## Consequences
 
-- `fc_voice_is_playing()` and `fc_music_is_playing()` return live mixer state.
+- `blyt_voice_is_playing()` and `blyt_music_is_playing()` return live mixer state.
 - Carts that branch on `is_playing` for game logic (not just presentation)
   accept a theoretical determinism limitation in exchange for correct answers.
 - Netplay and replay remain correct because voice-stealing behaviour is

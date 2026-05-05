@@ -66,6 +66,6 @@ Rejected: flat memory region at a fixed address.
 - Save states are implemented by walking tracked typed regions (ADR-0008)
   rather than snapshotting a flat address space — more structured but
   equally fast for typical cart state sizes.
-- Carts can query memory usage via `console.mem.stats()`. Allocation failures
+- Carts can query memory usage via `blyt32.mem.stats()`. Allocation failures
   at the cap return nil/null gracefully. Dev tools display "X of 16 MB used"
   continuously.

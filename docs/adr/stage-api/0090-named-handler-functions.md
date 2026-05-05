@@ -15,7 +15,7 @@ The naive fix — storing function names as strings and looking them up at
 call time — works but requires a string lookup on every dispatch and has no
 compile-time validation.
 
-fc32's existing pattern (ADR-0057, ADR-0059) resolves the same tension for
+blyt's existing pattern (ADR-0057, ADR-0059) resolves the same tension for
 buffer fields, resources, and preferences: declare names in the manifest,
 have the packer assign compile-time integer constants. The same pattern
 applies directly to handler functions.
@@ -45,29 +45,29 @@ The packer generates integer constants in `cart_handlers.h`:
 
 ```c
 // cart_handlers.h (generated, gitignored)
-#define HANDLER_AI_PATROL       ((fc_handler_h)1)
-#define HANDLER_AI_CHASE        ((fc_handler_h)2)
-#define HANDLER_AI_ATTACK       ((fc_handler_h)3)
-#define HANDLER_AI_DEATH        ((fc_handler_h)4)
-#define HANDLER_ON_DOOR_OPENED  ((fc_handler_h)5)
-#define HANDLER_ON_WAVE_COMPLETE ((fc_handler_h)6)
+#define HANDLER_AI_PATROL       ((blyt_handler_h)1)
+#define HANDLER_AI_CHASE        ((blyt_handler_h)2)
+#define HANDLER_AI_ATTACK       ((blyt_handler_h)3)
+#define HANDLER_AI_DEATH        ((blyt_handler_h)4)
+#define HANDLER_ON_DOOR_OPENED  ((blyt_handler_h)5)
+#define HANDLER_ON_WAVE_COMPLETE ((blyt_handler_h)6)
 ```
 
-`fc_handler_h` is a `uint32_t` typedef. `FC_HANDLER_NONE` (zero) is the
+`blyt_handler_h` is a `uint32_t` typedef. `BLYT_HANDLER_NONE` (zero) is the
 invalid sentinel.
 
 Handlers are registered at cart init and called by Stage at dispatch time:
 
 ```c
-// Registration (in fc_cart_init or scene on_enter)
+// Registration (in blyt_cart_init or scene on_enter)
 stage_handler_register(HANDLER_AI_PATROL,  system_ai_patrol);
 stage_handler_register(HANDLER_AI_DEATH,   system_ai_death);
 
 // Storage (in entity buffer field)
-fc_buffer_set_u32(S_ENEMIES, slot, S_ENEMY_BEHAVIOR, HANDLER_AI_PATROL);
+blyt_buffer_set_u32(S_ENEMIES, slot, S_ENEMY_BEHAVIOR, HANDLER_AI_PATROL);
 
 // Dispatch (by Stage internals or directly)
-fc_handler_h h = fc_buffer_get_u32(S_ENEMIES, slot, S_ENEMY_BEHAVIOR);
+blyt_handler_h h = blyt_buffer_get_u32(S_ENEMIES, slot, S_ENEMY_BEHAVIOR);
 stage_handler_call(h, slot);
 ```
 
@@ -128,7 +128,7 @@ buffer field. It is not a closure and has no upvalues.
 
 ### HANDLER_NONE
 
-`FC_HANDLER_NONE` / `H.NONE` (zero) is the unambiguous sentinel for
+`BLYT_HANDLER_NONE` / `H.NONE` (zero) is the unambiguous sentinel for
 "no handler." Stage dispatch calls skip entries with zero handler IDs.
 
 ## Consequences
@@ -143,6 +143,6 @@ buffer field. It is not a closure and has no upvalues.
 - The packer validates that all referenced handler names are declared in
   the manifest, catching missing registrations at build time.
 - Carts must declare all handlers in the manifest before use — this is the
-  same discipline required for all named resources in fc32.
-- `FC_HANDLER_NONE` (zero) provides a safe default for uninitialized
+  same discipline required for all named resources in blyt.
+- `BLYT_HANDLER_NONE` (zero) provides a safe default for uninitialized
   handler fields.

@@ -11,12 +11,12 @@ determines what state each system sees. Running them in the wrong order
 produces one-frame lags, inconsistencies between rendering and simulation,
 or stale data reaching draw calls.
 
-ADR-0076 establishes that `fc_cart_draw` must not modify state — it is a
+ADR-0076 establishes that `blyt_cart_draw` must not modify state — it is a
 read-only rendering pass. This divides all systems into two groups:
 systems that write state (update) and systems that read state to produce
 pixels (draw). Stage formalizes the canonical order within each group.
 
-fc32 uses a fixed timestep with no `dt` parameter. Systems express time
+blyt uses a fixed timestep with no `dt` parameter. Systems express time
 in frames (1/fps seconds per step).
 
 ## Decision
@@ -24,7 +24,7 @@ in frames (1/fps seconds per step).
 **Stage defines a canonical system execution order. Carts can omit systems
 they don't use or insert cart-specific systems at defined extension points.**
 
-### fc_cart_update — all state writes
+### blyt_cart_update — all state writes
 
 ```
 1.  stage_input_translate     reads hardware input → writes InputIntent (ADR-0100)
@@ -44,10 +44,10 @@ Steps 2–5 and 7 are cart-provided. Stage provides 1, 6, 8, and 9. The
 positions of Stage-provided steps are fixed; cart steps are inserted between
 them.
 
-### fc_cart_draw — read only, no state writes (ADR-0076)
+### blyt_cart_draw — read only, no state writes (ADR-0076)
 
 ```
-10. [clear / background]      fc_framebuffer_acquire, sky fill or clear color
+10. [clear / background]      blyt_framebuffer_acquire, sky fill or clear color
 11. [tilemaps]                draw scrolling layers back to front
 12. [world entities]          for each entity: camera.to_screen(pos) → blit sprite
 13. [particles]               drawn above or interleaved with entities by depth
@@ -83,11 +83,11 @@ reads the state machine after all transitions have occurred.
 
 **Camera last in update.** Camera follows entity positions, which are
 finalized only after physics and collision. If camera ran earlier it would
-lag one frame. Camera position must be final before `fc_cart_draw` reads it.
+lag one frame. Camera position must be final before `blyt_cart_draw` reads it.
 
 **Trauma decay after camera.** Trauma is a camera buffer field that drives
-the screen shake offset passed to `fc_screen_shake` each frame. It decays
-toward zero in update so that the value passed to `fc_screen_shake` reflects
+the screen shake offset passed to `blyt_screen_shake` each frame. It decays
+toward zero in update so that the value passed to `blyt_screen_shake` reflects
 this frame's shake magnitude.
 
 **UI after world in draw.** UI is always rendered on top of the world. It
@@ -96,12 +96,12 @@ uses screen-space coordinates with no camera transform applied.
 ### Extension points
 
 Carts insert their own systems by calling them at the appropriate position
-within `fc_cart_update` and `fc_cart_draw`. Stage does not provide a system
+within `blyt_cart_update` and `blyt_cart_draw`. Stage does not provide a system
 registration mechanism — the order is expressed directly in cart code, which
 is explicit and requires no framework machinery.
 
 ```c
-void fc_cart_update(void) {
+void blyt_cart_update(void) {
     stage_input_translate();        // step 1
     system_player_control();        // step 2
     system_ai();                    // step 3
@@ -113,7 +113,7 @@ void fc_cart_update(void) {
     stage_trauma_decay();           // step 9
 }
 
-void fc_cart_draw(void) {
+void blyt_cart_draw(void) {
     draw_background();              // step 10
     draw_tilemaps();                // step 11
     draw_entities();                // step 12
@@ -122,7 +122,7 @@ void fc_cart_draw(void) {
 ```
 
 ```lua
-function fc_cart_update()
+function blyt_cart_update()
     stage.input.translate()
     system.player_control()
     system.ai()
@@ -134,7 +134,7 @@ function fc_cart_update()
     stage.trauma_decay()
 end
 
-function fc_cart_draw()
+function blyt_cart_draw()
     draw_background()
     draw_tilemaps()
     draw_entities()
@@ -150,7 +150,7 @@ end
   before rendering begins.
 - Stage-provided steps (input, event flush, camera, trauma decay) have
   fixed positions that other steps are organized around.
-- Carts express the order directly in `fc_cart_update` and `fc_cart_draw` —
+- Carts express the order directly in `blyt_cart_update` and `blyt_cart_draw` —
   no registration framework, no hidden ordering. What the code says is what
   runs.
 - The fixed event flush point (step 6) means events posted by physics or

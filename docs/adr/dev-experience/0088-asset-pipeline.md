@@ -23,11 +23,11 @@ re-processed. All staged resources are uncompressed; compression is deferred
 to Phase 2.
 
 **Phase 2 — Bundle.** Staged files are compressed where beneficial (ADR-0026)
-and packed into the ELF cart file. This phase runs only for `console pack`;
-it is skipped entirely in `console watch` / dev mode.
+and packed into the ELF cart file. This phase runs only for `blytbuild pack`;
+it is skipped entirely in `blytbuild watch` / dev mode.
 
 **Dev mode** runs Phase 1 only. The runtime accepts a `build/` directory
-path in place of a `.cart` file and reads resources directly from the staged,
+path in place of a `.blyt` file and reads resources directly from the staged,
 uncompressed files. Hot reload (ADR-0045) signals the runtime to re-read
 changed files from the staging directory — no ELF step required.
 
@@ -249,7 +249,7 @@ palette: assets/palette.png
 
 Effects:
 - The runtime loads this palette automatically before `init`; the cart never
-  calls `fc_gfx_palette_set` for the base palette.
+  calls `blyt_gfx_palette_set` for the base palette.
 - All images are quantized to this palette at pack time using nearest-colour.
   Off-palette pixels produce dev-mode log warnings identifying the affected
   file and the colour delta, suppressable via `warn: false` or `quantize: dither`.

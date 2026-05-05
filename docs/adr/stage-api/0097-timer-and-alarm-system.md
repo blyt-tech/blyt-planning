@@ -38,7 +38,7 @@ stage:
 
 ```
 remaining_frames: u16    frames until expiry; 0 = inactive
-handler_id:       u8     called on expiry (fc_handler_h)
+handler_id:       u8     called on expiry (blyt_handler_h)
 repeat_frames:    u16    if non-zero, reschedule with this count on expiry
 subject:          u16    passed to handler as first argument
 data:             u32    passed to handler as second argument
@@ -51,24 +51,24 @@ serializes automatically.
 
 ```c
 // Schedule a one-shot timer
-fc_timer_h stage_timer_after(uint16_t frames,
-                              fc_handler_h handler,
+blyt_timer_h stage_timer_after(uint16_t frames,
+                              blyt_handler_h handler,
                               uint16_t subject,
                               uint32_t data);
 
 // Schedule a repeating timer
-fc_timer_h stage_timer_every(uint16_t frames,
-                              fc_handler_h handler,
+blyt_timer_h stage_timer_every(uint16_t frames,
+                              blyt_handler_h handler,
                               uint16_t subject,
                               uint32_t data);
 
 // Cancel a timer
-void stage_timer_cancel(fc_timer_h timer);
+void stage_timer_cancel(blyt_timer_h timer);
 
-// FC_TIMER_NONE = 0 (invalid / already expired handle)
+// BLYT_TIMER_NONE = 0 (invalid / already expired handle)
 ```
 
-`fc_timer_h` is a `uint16_t` slot index. It is valid only until the timer
+`blyt_timer_h` is a `uint16_t` slot index. It is valid only until the timer
 expires (one-shot) or is cancelled. Carts that need to cancel a timer before
 expiry must store the handle in a buffer field.
 
@@ -103,13 +103,13 @@ not free the slot.
 
 The timer pool is a POD state buffer. All fields — including `remaining_frames`
 — are serialized with the buffer. A save state taken mid-countdown restores
-with the countdown intact; a save game loaded via `console.save.read` also
+with the countdown intact; a save game loaded via `blyt32.save.read` also
 restores countdown state. Timers continue from exactly where they were.
 
 ### Pool overflow
 
 If `stage_timer_after` or `stage_timer_every` is called when the pool is
-full, the call fails and returns `FC_TIMER_NONE`. In dev builds this
+full, the call fails and returns `BLYT_TIMER_NONE`. In dev builds this
 additionally asserts. Carts that overflow their pool should increase
 `timer_slots` in the manifest.
 
@@ -119,7 +119,7 @@ additionally asserts. Carts that overflow their pool should increase
   because the timer pool is a POD buffer.
 - Repeating timers (ambient events, periodic spawns) require no per-frame
   cart code — they fire and reschedule themselves.
-- Timer handles (`fc_timer_h`) are valid only until expiry or cancellation.
+- Timer handles (`blyt_timer_h`) are valid only until expiry or cancellation.
   Carts that need to cancel timers store the handle in a buffer field (u16
   or u32).
 - The per-slot memory cost is 11 bytes; 32 slots = 352 bytes. A generous

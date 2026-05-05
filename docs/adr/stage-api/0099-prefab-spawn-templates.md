@@ -39,19 +39,19 @@ handlers:
 The packer generates constants in the same `cart_handlers.h`:
 
 ```c
-#define HANDLER_PREFAB_GRUNT        ((fc_handler_h)7)
-#define HANDLER_PREFAB_ARCHER       ((fc_handler_h)8)
-#define HANDLER_PREFAB_EXPLOSION    ((fc_handler_h)9)
-#define HANDLER_PREFAB_COIN_PICKUP  ((fc_handler_h)10)
+#define HANDLER_PREFAB_GRUNT        ((blyt_handler_h)7)
+#define HANDLER_PREFAB_ARCHER       ((blyt_handler_h)8)
+#define HANDLER_PREFAB_EXPLOSION    ((blyt_handler_h)9)
+#define HANDLER_PREFAB_COIN_PICKUP  ((blyt_handler_h)10)
 ```
 
 ### C API
 
 ```c
 // Allocate a slot and call the prefab handler.
-// Returns the new slot index, or FC_INVALID_SLOT if the buffer is full.
-int32_t stage_spawn(fc_buffer_h buf,
-                    fc_handler_h prefab,
+// Returns the new slot index, or BLYT_INVALID_SLOT if the buffer is full.
+int32_t stage_spawn(blyt_buffer_h buf,
+                    blyt_handler_h prefab,
                     float x, float y);
 
 // Prefab handler signature — called by stage_spawn:
@@ -59,13 +59,13 @@ int32_t stage_spawn(fc_buffer_h buf,
 stage_handler_register(HANDLER_PREFAB_GRUNT, prefab_grunt);
 
 static void prefab_grunt(int32_t slot, float x, float y) {
-    fc_buffer_set_f32(S_ENEMIES, slot, S_ENEMY_X,        x);
-    fc_buffer_set_f32(S_ENEMIES, slot, S_ENEMY_Y,        y);
-    fc_buffer_set_f32(S_ENEMIES, slot, S_ENEMY_VX,       0.f);
-    fc_buffer_set_f32(S_ENEMIES, slot, S_ENEMY_VY,       0.f);
-    fc_buffer_set_i32(S_ENEMIES, slot, S_ENEMY_HP,       30);
-    fc_buffer_set_u8 (S_ENEMIES, slot, S_ENEMY_AI_STATE, AI_PATROL);
-    fc_buffer_set_u32(S_ENEMIES, slot, S_ENEMY_SPRITE,   SPR_GRUNT_IDLE);
+    blyt_buffer_set_f32(S_ENEMIES, slot, S_ENEMY_X,        x);
+    blyt_buffer_set_f32(S_ENEMIES, slot, S_ENEMY_Y,        y);
+    blyt_buffer_set_f32(S_ENEMIES, slot, S_ENEMY_VX,       0.f);
+    blyt_buffer_set_f32(S_ENEMIES, slot, S_ENEMY_VY,       0.f);
+    blyt_buffer_set_i32(S_ENEMIES, slot, S_ENEMY_HP,       30);
+    blyt_buffer_set_u8 (S_ENEMIES, slot, S_ENEMY_AI_STATE, AI_PATROL);
+    blyt_buffer_set_u32(S_ENEMIES, slot, S_ENEMY_SPRITE,   SPR_GRUNT_IDLE);
 }
 ```
 

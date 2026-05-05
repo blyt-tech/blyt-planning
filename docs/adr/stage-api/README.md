@@ -3,7 +3,7 @@
 Design decisions for Stage, the optional cart-side game logic layer. Stage
 provides structured patterns for entity lifecycle, event-driven communication,
 scene management, sequential scripting, camera handling, and input translation
-— all designed to work correctly with fc32's save-state and hot-reload
+— all designed to work correctly with blyt's save-state and hot-reload
 constraints.
 
 | # | Decision |

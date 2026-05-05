@@ -16,15 +16,15 @@ count scheme, often incorrectly.
 **Active slot management is a first-class capability of the buffer API.**
 
 ```c
-// Allocate the next free slot; returns FC_INVALID_SLOT if full
-fc_result_t fc_buffer_alloc_slot(fc_buffer_h buf, int32_t *out_slot);
+// Allocate the next free slot; returns BLYT_INVALID_SLOT if full
+blyt_result_t blyt_buffer_alloc_slot(blyt_buffer_h buf, int32_t *out_slot);
 
 // Mark a slot as free for reuse
-fc_result_t fc_buffer_free_slot(fc_buffer_h buf, int32_t slot);
+blyt_result_t blyt_buffer_free_slot(blyt_buffer_h buf, int32_t slot);
 
 // Iteration over active slots (for use in a loop)
-fc_result_t fc_buffer_iter_begin(fc_buffer_h buf, fc_iter_h *out_iter);
-bool        fc_buffer_iter_next(fc_iter_h iter, int32_t *out_slot);
+blyt_result_t blyt_buffer_iter_begin(blyt_buffer_h buf, blyt_iter_h *out_iter);
+bool        blyt_buffer_iter_next(blyt_iter_h iter, int32_t *out_slot);
 ```
 
 Active-slot state is stored in the buffer's own tracked region (a compact

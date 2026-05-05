@@ -23,7 +23,7 @@ The cart can only affect the outside world through the console API. On
 emulated platforms, the RISC-V interpreter bounds-checks memory accesses and
 the console API is reached via ECALL; the ECALL dispatch table is the
 complete host-level audit boundary. On native RISC-V hardware, the console
-API is reached via direct function calls into `libconsole.so` (see ADR-0024);
+API is reached via direct function calls into `libblyt32.so` (see ADR-0024);
 seccomp and namespace isolation enforce that no other host effects are
 reachable from the cart process.
 
@@ -60,7 +60,7 @@ security perimeter for all carts.
 - Carts can be distributed and run without trust in the author.
 - On emulated platforms, the ECALL dispatch table is the complete host
   security boundary; auditing what carts can do means auditing the ECALL
-  list. On native hardware, the equivalent boundary is `libconsole.so`'s
+  list. On native hardware, the equivalent boundary is `libblyt32.so`'s
   exported symbol set plus the seccomp allowlist.
 - Lua sandboxing is now the VM's own responsibility. The host runtime has no
   Lua-specific security logic; it does not need to know whether a cart is

@@ -7,7 +7,7 @@ Accepted
 
 New carts need to display text, draw with colors, and produce sound without
 requiring authors to supply their own resources first. Without defaults, the
-first `console.text.draw(...)` call fails unless the author has already
+first `blyt32.text.draw(...)` call fails unless the author has already
 configured a font. Additionally, the console needs a consistent first-
 impression identity across all carts.
 
@@ -59,9 +59,9 @@ available to all carts.**
   decision: makes the console useful for small teams using AI-generated or
   off-the-shelf art.
 - Authors wanting the VGA aesthetic swap in one line:
-  `console.gfx.set_palette(FC_PALETTE_VGA)`. Built-in asset constants
-  (`FC_FONT_BUILTIN`, `FC_PALETTE_VGA`, etc.) are defined in `fc_cart.h`
-  and follow the `FC_` prefix convention (ADR-0059).
+  `blyt32.gfx.set_palette(BLYT_PALETTE_VGA)`. Built-in asset constants
+  (`BLYT_FONT_BUILTIN`, `BLYT_PALETTE_VGA`, etc.) are defined in `blyt32.h`
+  and follow the `BLYT_` prefix convention (ADR-0059).
 - Icon font uses neutral geometric shapes to avoid PlayStation trade dress
   concerns. Abstract prompt API resolves `{prompt_action_a}` to the right
   icon for the current input device automatically.

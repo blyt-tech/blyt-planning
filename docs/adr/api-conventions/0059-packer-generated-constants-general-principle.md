@@ -42,11 +42,11 @@ manifest (strings) → packer → generated header (compile-time constants)
 
 ### Naming convention for generated constants
 
-Packer-generated constants use short domain prefixes with **no `FC_` prefix**.
-`FC_` is reserved exclusively for SDK-defined constants in `fc_cart.h`
+Packer-generated constants use short domain prefixes with **no `BLYT_` prefix**.
+`BLYT_` is reserved exclusively for SDK-defined constants in `blyt32.h`
 (built-in assets, error codes, flag values, button identifiers). Cart-specific
-constants such as `R_HERO_SPRITES` are never `FC_R_HERO_SPRITES` — the
-absence of `FC_` is the signal that a constant was generated for this
+constants such as `R_HERO_SPRITES` are never `BLYT_R_HERO_SPRITES` — the
+absence of `BLYT_` is the signal that a constant was generated for this
 particular cart, not defined by the SDK.
 
 | Namespace | C prefix | C example | Lua module | Lua example |
@@ -70,14 +70,14 @@ constants. Packer-generated constants start at 1 and increment; a cart with
 set bit 31:
 
 ```c
-// fc_cart.h — static, not generated
-#define FC_FONT_BUILTIN   ((fc_resource_h)0x80000001)
-#define FC_FONT_SMALL     ((fc_resource_h)0x80000002)
-#define FC_FONT_ICONS     ((fc_resource_h)0x80000003)
-#define FC_PALETTE_DEFAULT ((fc_resource_h)0x80000010)
-#define FC_PALETTE_VGA    ((fc_resource_h)0x80000011)
-#define FC_PALETTE_EGA    ((fc_resource_h)0x80000012)
-#define FC_PALETTE_CGA    ((fc_resource_h)0x80000013)
+// blyt32.h — static, not generated
+#define BLYT_FONT_BUILTIN   ((blyt_resource_h)0x80000001)
+#define BLYT_FONT_SMALL     ((blyt_resource_h)0x80000002)
+#define BLYT_FONT_ICONS     ((blyt_resource_h)0x80000003)
+#define BLYT_PALETTE_DEFAULT ((blyt_resource_h)0x80000010)
+#define BLYT_PALETTE_VGA    ((blyt_resource_h)0x80000011)
+#define BLYT_PALETTE_EGA    ((blyt_resource_h)0x80000012)
+#define BLYT_PALETTE_CGA    ((blyt_resource_h)0x80000013)
 ```
 
 This means:
@@ -87,7 +87,7 @@ This means:
   table" from "look up in built-in asset table" with a single mask check.
 - Zero remains the universal invalid/null sentinel across all handle types.
 
-In C, the `FC_` prefix on runtime constants (vs. `R_`, `A_`, `PREF_`, etc.
+In C, the `BLYT_` prefix on runtime constants (vs. `R_`, `A_`, `PREF_`, etc.
 on cart constants) is a naming-level signal of the same distinction.
 
 **In Lua, runtime-provided constants are merged into the same per-namespace
@@ -104,7 +104,7 @@ R.PALETTE_VGA    -- runtime built-in
 The `R` module is pre-populated with all runtime built-ins for its namespace
 before the cart runs; the packer appends cart-declared constants on top.
 Authors always `require("R")` for any resource handle regardless of origin.
-The `FC_` prefix appears only in C (`fc_cart.h`); in Lua the module name
+The `BLYT_` prefix appears only in C (`blyt32.h`); in Lua the module name
 itself provides sufficient namespacing.
 
 ### Cart override of built-in resources
@@ -112,18 +112,18 @@ itself provides sufficient namespacing.
 If a cart declares a resource whose name matches a known built-in name
 (e.g., a resource named `font_builtin`), the cart's version silently replaces
 the built-in for all code in that cart. This is deliberate: a shared library
-or framework can reference `FC_FONT_BUILTIN` / `R.FONT_BUILTIN` without
+or framework can reference `BLYT_FONT_BUILTIN` / `R.FONT_BUILTIN` without
 knowing or caring whether the cart has substituted its own version.
 
-**In C**, the generated header redefines the colliding `FC_` constant to the
+**In C**, the generated header redefines the colliding `BLYT_` constant to the
 cart's resource ID. Library code compiled with the cart's generated headers
-(`#include "cart_resources.h"` after `#include "fc_cart.h"`) transparently
+(`#include "cart_resources.h"` after `#include "blyt32.h"`) transparently
 gets the override:
 
 ```c
 // cart_resources.h (generated — excerpt when cart overrides font_builtin)
-#undef  FC_FONT_BUILTIN
-#define FC_FONT_BUILTIN  ((fc_resource_h)3)   // cart's resource ID
+#undef  BLYT_FONT_BUILTIN
+#define BLYT_FONT_BUILTIN  ((blyt_resource_h)3)   // cart's resource ID
 ```
 
 **In Lua**, the `R` module entry for the colliding name is replaced with the
@@ -143,7 +143,7 @@ substitution is visible in build output.
 - **Zero runtime overhead:** constants are integers; no hash lookup or string
   comparison occurs at any call site.
 - **Type safety in C:** each namespace uses a distinct `uint32_t` typedef
-  (`fc_resource_h`, `fc_field_h`, `fc_rng_h`, `fc_locale_key_h`, etc.),
+  (`blyt_resource_h`, `blyt_field_h`, `blyt_rng_h`, `blyt_locale_key_h`, etc.),
   so passing a locale key handle where a resource handle is expected is a
   compile error.
 - **Gitignored generated files:** all generated headers (`cart_resources.h`,
@@ -155,8 +155,8 @@ substitution is visible in build output.
 
 ### What is NOT covered by this pattern
 
-- **Button identifiers** in label queries: abstract button names (`FC_BUTTON_A`
-  etc.) are compile-time constants defined in `fc_cart.h`, not generated by
+- **Button identifiers** in label queries: abstract button names (`BLYT_BUTTON_A`
+  etc.) are compile-time constants defined in `blyt32.h`, not generated by
   the packer.
 - **Manifest-internal strings:** the manifest files themselves use string
   names for clarity and yaml-language-server schema validation (ADR-0073) —

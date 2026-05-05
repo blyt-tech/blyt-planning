@@ -25,7 +25,7 @@ Three candidate designs were considered:
 2. **scene_id field on the entity.** Every scene-scoped row carries a `u8`
    tag. Despawn is free — the field disappears with the slot. One
    capacity dimension. No sync invariants. Iteration costs one byte load
-   plus one branch per slot, which is negligible at fc32-scale entity
+   plus one branch per slot, which is negligible at blyt-scale entity
    counts and SOA-friendly.
 
 3. **Join table.** A global `(scene_id, buffer_id, slot, generation)`
@@ -33,7 +33,7 @@ Three candidate designs were considered:
    most machinery and most sync risk; introduces a global capacity
    ceiling separate from any buffer's.
 
-Design 2 is the natural fit for fc32: it composes with the existing pattern
+Design 2 is the natural fit for blyt: it composes with the existing pattern
 of packer-assigned integer constants in POD fields (handlers, events, scene
 ids), it has zero sync invariants, and despawn requires no extra work.
 Multi-scene presence — the only thing Design 2 doesn't do natively — is not
@@ -82,8 +82,8 @@ The injected field is an ordinary u8 column under SOA layout. Code accesses
 it through a handle:
 
 ```c
-fc_field_h s = fc_buffer_scene_field(S_ENEMIES);
-uint8_t scene = fc_buffer_get_u8(S_ENEMIES, slot, s);
+blyt_field_h s = blyt_buffer_scene_field(S_ENEMIES);
+uint8_t scene = blyt_buffer_get_u8(S_ENEMIES, slot, s);
 ```
 
 A type-prefixed constant (`S_ENEMY_SCENE_ID`) is also generated for code that
@@ -96,14 +96,14 @@ Stage provides scene-aware iterators that filter on the field transparently:
 
 ```c
 // Iterate slots in a specific scene; SCENE_GLOBAL slots are always visited.
-fc_iter_h it;
+blyt_iter_h it;
 stage_buffer_iter_scene_begin(S_ENEMIES, SCENE_GAMEPLAY, &it);
 
 // Iterate slots in the active iteration scope (= the running scene).
 stage_buffer_iter_active_begin(S_ENEMIES, &it);
 
 int32_t slot;
-while (fc_buffer_iter_next(it, &slot)) {
+while (blyt_buffer_iter_next(it, &slot)) {
     // ...
 }
 ```
@@ -128,7 +128,7 @@ int32_t slot = stage_spawn(S_ENEMIES, HANDLER_PREFAB_GRUNT, x, y);
 // slot's scene_id is now SCENE_GAMEPLAY without the cart writing it.
 ```
 
-Spawning into a different scope (e.g. `fc_cart_init` creating the player as
+Spawning into a different scope (e.g. `blyt_cart_init` creating the player as
 `SCENE_GLOBAL`) uses the explicit form:
 
 ```c
@@ -145,10 +145,10 @@ Scene-transition cleanup uses the same field:
 
 ```c
 // Clear all slots in a single buffer that match this scene.
-void stage_buffer_clear_scene(fc_buffer_h buf, fc_scene_h scene);
+void stage_buffer_clear_scene(blyt_buffer_h buf, blyt_scene_h scene);
 
 // Clear every scene-scoped buffer at once.
-void stage_scene_clear(fc_scene_h scene);
+void stage_scene_clear(blyt_scene_h scene);
 ```
 
 `stage_scene_clear` walks the packer's list of scene-scoped buffers and
@@ -197,11 +197,11 @@ handling required.
 - Single source of truth (the field). No parallel scene-list to keep in
   sync; no class of bugs where the list and the buffer disagree.
 - Field position is hidden behind a packer-emitted handle, so SOA/AOS
-  layout choices remain free and fc32's existing pack-time-constants
+  layout choices remain free and blyt's existing pack-time-constants
   pattern is reused unchanged.
 - Iteration costs one byte load and one branch per slot. Under SOA this is
   sequential memory access on a single column; cost is negligible at the
-  entity counts fc32 targets.
+  entity counts blyt targets.
 - An entity belongs to exactly one scene at a time, or `SCENE_GLOBAL`.
   Multi-scene presence is intentionally unsupported; carts that ever need
   it manage extra membership themselves.

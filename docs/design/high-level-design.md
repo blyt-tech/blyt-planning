@@ -216,7 +216,7 @@ Rejected because:
 **Runtime-implemented decode:** streamed audio decode happens in the
 runtime's native code, not in cart code. This means decode cost doesn't
 compound with the RISC-V interpreter's overhead on emulated platforms.
-Cart API is `console.audio.play_stream(resource_id)`; runtime handles
+Cart API is `blyt32.audio.play_stream(resource_id)`; runtime handles
 the decode loop.
 
 **Future optimization (v2):** on mobile browser platforms, runtime could
@@ -300,7 +300,7 @@ zero-budget toolchain.
 
 **Trade-off accepted:** Time accumulation as f32 seconds loses precision
 after hours of play. Mitigation: store time as i32 frames or milliseconds;
-`console.time.frame()` API provides this.
+`blyt32.time.frame()` API provides this.
 
 ---
 
@@ -350,7 +350,7 @@ is handled as follows:**
 ### Time
 
 - **Only deterministic time is exposed to carts.** The time API:
-  - `console.time.frame()` — i32 frame count since cart start.
+  - `blyt32.time.frame()` — i32 frame count since cart start.
     Increments once per logical update. Deterministic.
   - Cart-start-relative durations derived from frame count
     (at 60 Hz, 3600 frames = 60 seconds of logical play).
@@ -566,7 +566,7 @@ helper functions; can add `ref<T>` machinery in a later version.
 
 Raw Lua coroutines (`coroutine.create`) are available but do not round-trip
 through save states. Authors who need persistent coroutines use a blessed
-console API (`console.coroutine.create{ start, save, restore }`) with
+console API (`blyt32.coroutine.create{ start, save, restore }`) with
 structured yield points and explicit save/restore hooks.
 
 **Rationale:** Full coroutine serialization (Eris-style) is heavyweight
@@ -587,11 +587,11 @@ The player's ongoing progress — story position, inventory, party
 state, level completion. Cart controls when and what to save.
 
 ```lua
-console.save.write("slot1", state_table, {label = "Chapter 5 - 80%"})
-local state, metadata = console.save.read("slot1")
-local slots = console.save.list()   -- {slot_name, label, timestamp, size}
-console.save.delete("slot2")
-console.save.quota_remaining()      -- bytes
+blyt32.save.write("slot1", state_table, {label = "Chapter 5 - 80%"})
+local state, metadata = blyt32.save.read("slot1")
+local slots = blyt32.save.list()   -- {slot_name, label, timestamp, size}
+blyt32.save.delete("slot2")
+blyt32.save.quota_remaining()      -- bytes
 ```
 
 Runtime handles:
@@ -642,9 +642,9 @@ Small persistent key-value store for player configuration —
 volume, controller layout, accessibility settings. Not gameplay state.
 
 ```lua
-console.prefs.set("volume", 0.8)
-local volume = console.prefs.get("volume")
-console.prefs.delete("legacy_option")
+blyt32.prefs.set("volume", 0.8)
+local volume = blyt32.prefs.get("volume")
+blyt32.prefs.delete("legacy_option")
 ```
 
 Separate API because:
@@ -730,9 +730,9 @@ achievements:
 **Cart API:**
 
 ```lua
-console.achievements.unlock("final_boss")
-console.achievements.progress("collector", current, total)  -- optional
-local unlocked = console.achievements.is_unlocked("final_boss")
+blyt32.achievements.unlock("final_boss")
+blyt32.achievements.progress("collector", current, total)  -- optional
+local unlocked = blyt32.achievements.is_unlocked("final_boss")
 ```
 
 **Runtime behavior:**
@@ -788,7 +788,7 @@ state) to the original.
 Replay files are tiny (input state per frame is a few bytes) and the
 infrastructure is nearly free given the existing determinism work.
 
-*Frame-accurate timing.* `console.time.frame()` already provides the
+*Frame-accurate timing.* `blyt32.time.frame()` already provides the
 deterministic frame counter; carts can compute run times from this
 natively if they want to display a timer in-game.
 
@@ -829,7 +829,7 @@ follow.
 **Deferred to v2:**
 
 *Cart-declared split points.* Carts declare segment markers in the
-manifest; cart code announces `console.speedrun.split("id")` as it
+manifest; cart code announces `blyt32.speedrun.split("id")` as it
 happens; runtime overlays split times. Polish feature — the
 foundation (deterministic timing + input recording) is v1; split
 tooling is v2. Community can build external split tooling (LiveSplit
@@ -920,7 +920,7 @@ distribution-layer add-on.
 
 - Steam SDK, GOG Galaxy SDK, or other service SDK integration in the
   runtime.
-- Generic service-abstraction API (e.g., `console.services.*`).
+- Generic service-abstraction API (e.g., `blyt32.services.*`).
 - Authentication, account identity, or cloud storage infrastructure.
 - DLC / entitlement management.
 - Service-mediated multiplayer or matchmaking.
@@ -1079,10 +1079,10 @@ Start/Select), the runtime exposes a **single pointer abstraction** for
 mouse and touch input:
 
 ```lua
-console.input.pointer_is_held()
-console.input.pointer_position()    -- x, y in game pixels
-console.input.pointer_pressed()     -- edge-triggered on press
-console.input.pointer_released()    -- edge-triggered on release
+blyt32.input.pointer_is_held()
+blyt32.input.pointer_position()    -- x, y in game pixels
+blyt32.input.pointer_pressed()     -- edge-triggered on press
+blyt32.input.pointer_released()    -- edge-triggered on release
 ```
 
 Pointer source depends on platform:
@@ -1182,7 +1182,7 @@ code:
 
 The cart has no netplay awareness. It starts up normally, reads
 inputs normally, runs its simulation. The only netplay-related API
-is `console.input.local_player()` — returns which player slot this
+is `blyt32.input.local_player()` — returns which player slot this
 machine represents — and that's for per-player rendering (see below),
 not for any netplay session management.
 
@@ -1261,11 +1261,11 @@ Two modes supported by libretro:
 ```lua
 -- Returns which player slot the local machine represents (1-4).
 -- For single-player or local-only multiplayer, always returns 1.
-local me = console.input.local_player()
+local me = blyt32.input.local_player()
 
 -- Read any player's input normally:
 for p = 1, 4 do
-    if console.input.button_pressed(p, BUTTON_A) then ... end
+    if blyt32.input.button_pressed(p, BUTTON_A) then ... end
 end
 ```
 
@@ -1287,7 +1287,7 @@ local player's perspective* based on `local_player()`.
 
 ```lua
 function draw()
-    local me = console.input.local_player()
+    local me = blyt32.input.local_player()
     draw_world_from_camera(players[me].camera)
     draw_hud_for_player(me)
 end
@@ -1348,18 +1348,18 @@ counts; carts use the per-player input API with player indices 1-4.
 ```lua
 -- Returns which player slot the local machine represents (1-4).
 -- For single-player or local multiplayer, always returns 1.
-local me = console.input.local_player()
+local me = blyt32.input.local_player()
 
 -- Read any player's input:
 for p = 1, 4 do
-    if console.input.button_pressed(p, BUTTON_A) then ... end
+    if blyt32.input.button_pressed(p, BUTTON_A) then ... end
 end
 ```
 
 **Cart design considerations for netplay:**
 
 - **Pointer input** is associated with the local player. Cart should
-  treat `console.input.pointer_*()` as player `local_player()`'s
+  treat `blyt32.input.pointer_*()` as player `local_player()`'s
   pointer, not a shared pointer.
 - **Per-machine local state** (volume, accessibility settings) must
   not affect the simulation. Already a deterministic design principle;
@@ -1530,7 +1530,7 @@ authoring complexity.
 Carts that want to handle drop-out gracefully check connection state:
 
 ```lua
-if not console.input.is_player_connected(3) then
+if not blyt32.input.is_player_connected(3) then
     -- handle player 3 drop-out: AI takeover, pause, remove from match
 end
 ```
@@ -1621,9 +1621,9 @@ carts (written in C/Rust/Zig/etc.) or "Lua" carts. One format, one loader,
 one distribution story.
 
 **Properties:**
-- Single file (`.cart`).
+- Single file (`.blyt`).
 - Standard ELF structure (RV32IMFC, little-endian, statically linked).
-- Resources embedded in ELF sections under the `.cart.*` namespace.
+- Resources embedded in ELF sections under the `.blyt.*` namespace.
 - Metadata distributed across `.cart.info` (frontend-facing — title, author,
   API version, size class, etc.) and `.cart.config` (runtime-facing — state
   buffer schemas, voice groups, achievements, etc.); see ADR-0073.
@@ -1666,7 +1666,7 @@ one distribution story.
 
 The runtime exposes a minimal Lua-host API via ECALLs — shaped like the
 Lua C API, but routed to the runtime-owned Lua interpreter. The SDK
-provides a cart-side shim library (`libconsolelua`) that wraps these
+provides a cart-side shim library (`libblyt32lua`) that wraps these
 ECALLs so authors see normal-looking Lua C API calls.
 
 A Lua cart's native side is small boilerplate:
@@ -1791,9 +1791,9 @@ supports explicit release alongside GC-driven cleanup.
 
 **API:**
 ```lua
-local hero_sprites = console.resource.load("hero_sprites")
+local hero_sprites = blyt32.resource.load("hero_sprites")
 -- ... use it ...
-console.resource.release(hero_sprites)
+blyt32.resource.release(hero_sprites)
 -- handle is now invalid; re-load returns a new handle
 ```
 
@@ -1850,7 +1850,7 @@ for the genuinely transient cases.
 ### Decision: Memory introspection API.
 
 ```lua
-local mem = console.mem.stats()
+local mem = blyt32.mem.stats()
 -- mem.resource_cache_used  -- bytes of decompressed resources in cache
 -- mem.cart_allocations     -- bytes of cart-allocated memory (state buffers, etc.)
 -- mem.total_used           -- total cart-visible memory in use
@@ -1866,7 +1866,7 @@ debug overlay so authors see memory usage during development.
 — notifies the cart when budget usage crosses warning / critical
 thresholds, giving it a chance to release non-essential resources
 before allocations fail. Nice pattern but not required for v1; authors
-can poll `console.mem.stats()` in their update loop.
+can poll `blyt32.mem.stats()` in their update loop.
 
 ### Decision: Size-class-based cart caps.
 
@@ -2029,7 +2029,7 @@ version. Minor bumps are backward-compatible feature additions.
 ### Decision: Runtime as a library, multiple frontends.
 
 ```
-libfantasyconsole (core)
+libblyt (core)
 ├── Cart loading (ELF) and parsing
 ├── RISC-V interpreter (for emulated native cart execution)
 ├── Lua interpreter (runtime-owned; service to carts via Lua-host ECALLs)
@@ -2105,7 +2105,7 @@ GPL-3.0 distribution obligations.
 **Architecture:**
 
 ```
-libfantasyconsole (core library, shared across all frontends)
+libblyt (core library, shared across all frontends)
 └── [as specified above]
 
 Libretro core adapter (wraps core as libretro-compatible .so/.dylib/.dll)
@@ -2352,7 +2352,7 @@ the rest of the cart state automatically.
 ### Decision: Runtime ships with a bundle of default assets, always available.
 
 Shipping good defaults does two jobs: it lowers the barrier for new
-authors (first `console.text.draw(...)` call just works without supplying
+authors (first `blyt32.text.draw(...)` call just works without supplying
 a font), and it gives the console a distinct identity via signature
 visual and auditory touches.
 
@@ -2455,7 +2455,7 @@ production rather than recreating a specific past era.
 
 Authors who want the full VGA aesthetic swap palettes in a single line:
 ```lua
-console.gfx.set_palette("palette_vga")
+blyt32.gfx.set_palette("palette_vga")
 ```
 
 ### Identity investments worth prioritizing
@@ -2489,8 +2489,8 @@ identity meaningfully:
 
 **Drawing icons:**
 ```lua
-console.text.draw_icon(x, y, "btn_a", color)
-console.text.draw(x, y, "Press {btn_a} to jump", color)  -- inline substitution
+blyt32.text.draw_icon(x, y, "btn_a", color)
+blyt32.text.draw(x, y, "Press {btn_a} to jump", color)  -- inline substitution
 ```
 
 **Abstract prompt API:** since the input model is abstract (carts see
@@ -2499,7 +2499,7 @@ and resolves abstract prompts to the right icon:
 
 ```lua
 -- Cart writes device-agnostic prompts:
-console.text.draw(x, y, "Press {prompt_action_a} to jump", color)
+blyt32.text.draw(x, y, "Press {prompt_action_a} to jump", color)
 
 -- Runtime substitutes based on active input:
 -- Keyboard:      shows keycap "Z" glyph
@@ -2509,8 +2509,8 @@ console.text.draw(x, y, "Press {prompt_action_a} to jump", color)
 
 Authors querying current style:
 ```lua
-local style = console.input.current_prompt_style()  -- "keyboard" | "gamepad" | ...
-local icon = console.input.prompt_for(BUTTON_A)     -- current icon name for abstract A
+local style = blyt32.input.current_prompt_style()  -- "keyboard" | "gamepad" | ...
+local icon = blyt32.input.prompt_for(BUTTON_A)     -- current icon name for abstract A
 ```
 
 This elevates the console's feel significantly — seeing the actual key
@@ -2566,7 +2566,7 @@ images with "PRESS" text are button-identification trade dress.
 Authors who want PS-style prompts in their carts can opt into a prompt
 style that maps abstract buttons to these geometric glyphs:
 ```lua
-console.input.set_prompt_style("geometric")
+blyt32.input.set_prompt_style("geometric")
 ```
 
 Authors who want strictly-branded prompts ship their own icons as cart
@@ -2877,10 +2877,10 @@ For touch-first schemes and for desktop mouse support, the input API
 exposes a single pointer abstraction:
 
 ```lua
-console.input.pointer_is_held()       -- true if pointer is pressed
-console.input.pointer_position()      -- x, y in screen pixels (320×240)
-console.input.pointer_pressed()       -- fires once on press edge
-console.input.pointer_released()      -- fires once on release edge
+blyt32.input.pointer_is_held()       -- true if pointer is pressed
+blyt32.input.pointer_position()      -- x, y in screen pixels (320×240)
+blyt32.input.pointer_pressed()       -- fires once on press edge
+blyt32.input.pointer_released()      -- fires once on release edge
 ```
 
 Single pointer — a unified abstraction for mouse (desktop), first touch
@@ -2997,9 +2997,9 @@ Carts don't see or influence any of this — the abstraction is clean
 
 ### Decision: CLI tool packs project directory to cart; VS Code dev loop.
 
-**Packer:** `console pack ./myproject` → `myproject.cart`. Takes a project
+**Packer:** `blytbuild pack ./myproject` → `myproject.blyt`. Takes a project
 directory with a manifest, source files, and resources; produces the cart
-container. `console run myproject.cart` for local testing.
+container. `blytbuild run myproject.blyt` for local testing.
 
 **VS Code integration:** Extension or task-based setup that runs packer
 on save and reloads a webview panel containing the browser build of the
@@ -3072,7 +3072,7 @@ ambiguous cases, and fails safe (offer full reset) when unresolvable.
 
 **Signal protocol:**
 
-Packer runs in watch mode (`console watch ./project`), detects file
+Packer runs in watch mode (`blytbuild watch ./project`), detects file
 changes, rebuilds, signals runtime. Signal channel is the DAP
 connection (already present in dev mode) via a custom `hot_reload`
 command. Alternative channels (Unix socket, filesystem marker) available
@@ -3267,7 +3267,7 @@ to fix.
 
 ### Starter kit and examples
 
-`console new myproject` creates a project with:
+`blytbuild new myproject` creates a project with:
 - Pre-configured manifest, VS Code workspace, recommended extensions.
 - Starter Lua or native-cart code with inline comments explaining the API.
 - Example sprite sheet, tilemap, tracker module in correct formats —
@@ -3446,7 +3446,7 @@ tests for representative cart workloads.
     structural — hard to retrofit.
   - VS Code extension should be extensible by other extensions (standard
     VS Code pattern). Also structural.
-  - Resource namespace (`.cart.*` ELF sections) should be open-ended,
+  - Resource namespace (`.blyt.*` ELF sections) should be open-ended,
     letting frameworks add their own resource types later. Already
     the case.
 
@@ -3500,19 +3500,23 @@ tests for representative cart workloads.
   while sharing the hard-won infrastructure (determinism, serialization,
   cart format, etc.).
 
-  Examples of hypothetical sibling consoles this would enable:
-  - Higher-fidelity console: 640×360 truecolor with OpenGL ES renderer.
-  - Lower-fidelity console: 160×144 monochrome with 4-color palettes
-    (Game Boy-class).
-  - Different input model: console with dual analog sticks for twin-stick
-    games.
-  - Different language: console using a different scripting language
-    in place of Lua (Python, JavaScript, Wren).
-  - Platform variation: console targeting different hardware class
-    (phones-as-primary-target with different input specifics).
+  This is now a concrete near-term goal, not a v2 abstraction. The project
+  ships as **Blyt** with three planned variants sharing the runtime
+  infrastructure (RV32IMFC, Lua, state, audio, lifecycle) and varying only
+  in graphics and input (see ADR-0105):
 
-  None of these need to exist; the library abstraction just makes them
-  possible without rebuilding the infrastructure.
+  - **Blyt32** — initial focus. 320×240 paletted, dpad+4face+2shoulder
+    input, 2D Mode-X-style graphics, 2D scene-graph API.
+  - **BlyTTY** — planned. 640×480×256 colours, 80×30 8×16 text grid,
+    keyboard-primary input. Forcing function for the variant boundary
+    (see ADR-0081).
+  - **Blyt3D** — far future. 640×480 OpenGLES-style 3D, Blyt32 inputs.
+
+  Carts link to a single variant-specific dynamic library
+  (`libblyt32.so`, `libblytty.so`, `libblyt3d.so`); one runtime / libretro
+  core hosts any variant. Other hypothetical siblings (different
+  scripting language, different ISA, phones-primary input) remain
+  possible but are not on the roadmap.
 - Bare-metal runtime on dedicated hardware. Future option if the project
   matures into a hardware product; Linux-on-SBC is the right v1 approach.
 - 400×300 "widescreen" resolution option. Lean toward no, for identity
@@ -3524,12 +3528,19 @@ tests for representative cart workloads.
 
 ### Phase 1: Foundations (weeks 1-4)
 
-1. **Core library C API header** (`fantasyconsole.h`). This is the primary
-   contract; everything else follows from it. Iterate on this until it
-   reads well — write example cart code against it (on paper) to validate
-   the shape before implementing. Two headers: one for *cart* authors
-   (cart-facing API) and one for *frontend* authors (driving the core).
-2. **Skeleton core library** (`libfantasyconsole`). Stubs for all API
+1. **Core library C API headers.** Two headers form the primary contract;
+   everything else follows from them. Iterate on these until they read
+   well — write example code against each (on paper) to validate the
+   shape before implementing.
+   - `blyt32.h` — cart-facing umbrella for Blyt32 cart authors. Pulls in
+     subsystem headers under `blyt/` (e.g. `blyt/audio.h`, `blyt/state.h`,
+     `blyt/gfx.h`). BlyTTY and Blyt3D will get sibling umbrellas
+     (`blytty.h`, `blyt3d.h`) when those variants land.
+   - `blyt_runtime.h` — frontend-facing API for embedding the host
+     runtime. Variant-agnostic (one runtime hosts any cart variant).
+   Cart code never includes `blyt_runtime.h`; frontend code never needs
+   `blyt32.h`.
+2. **Skeleton core library** (`libblyt`). Stubs for all API
    functions, returns placeholder data. Validates that the API factoring
    is realizable.
 3. **SDL2 frontend.** Thin wrapper around the core, window + input + audio
@@ -3542,7 +3553,7 @@ tests for representative cart workloads.
    compression, single ELF output.
 5. **Embedded Lua interpreter in runtime**, with sandbox applied
    (stripped stdlib, deterministic math).
-6. **Lua-host API (ECALLs)** plus cart-side `libconsolelua` shim.
+6. **Lua-host API (ECALLs)** plus cart-side `libblyt32lua` shim.
    Default Lua-cart template that forwards `init`/`update`/`draw` into
    Lua automatically. First working Lua cart (Snake or Pong).
 7. **State buffer system.** Typed layouts (stored in `.cart.layouts`
@@ -3555,7 +3566,7 @@ tests for representative cart workloads.
 9. **RISC-V interpreter** embedded in core. Start simple (decode/dispatch
     loop), validate against `riscv-tests`. Target RV32IMFC.
 10. **Native cart SDK.** Compiler toolchain config, linker script with
-    `.cart.*` section conventions, API header for C/Rust/Zig cart
+    `.blyt.*` section conventions, API header for C/Rust/Zig cart
     authors, layout-declaration helpers (macros emitting `.cart.layouts`
     entries).
 11. **First pure-native cart.** A simple game exercising the full
@@ -3583,7 +3594,7 @@ tests for representative cart workloads.
 ### Phase 5: Player Features (weeks 24-30)
 
 17. **Cart save / preferences APIs.** Runtime-managed per-cart save
-    directories, multi-slot `console.save.*`, `console.prefs.*`. See §7.
+    directories, multi-slot `blyt32.save.*`, `blyt32.prefs.*`. See §7.
 18. **Save state via libretro** (`retro_serialize` / `retro_unserialize`)
     using the runtime's serialize machinery. Enables rewind in the
     libretro frontends for free.
@@ -3635,7 +3646,7 @@ tests for representative cart workloads.
     and forces discovery of API gaps that pure test carts wouldn't
     reveal.
 30. Community bootstrap: example carts, tutorials, starter kit
-    (`console new myproject`), CC0 starter asset pack, initial tooling
+    (`blytbuild new myproject`), CC0 starter asset pack, initial tooling
     polish.
 
 **Capability reference points:** The console is **Doom-class** in raw
@@ -3679,7 +3690,7 @@ case of the "scripting is optional" principle.
 1. **API-first.** The C API is the contract; everything is a consumer.
 2. **One core, many frontends.** Runtime is a library; native app, libretro
    core, browser, hardware image are thin adapters.
-3. **Same cart everywhere.** One `.cart` file runs natively on RISC-V,
+3. **Same cart everywhere.** One `.blyt` file runs natively on RISC-V,
    interpreted on desktop/browser, via libretro wherever RetroArch runs.
 4. **32-bit everywhere.** Unified numeric model; no precision boundaries
    inside the system.

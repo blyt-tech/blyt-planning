@@ -13,13 +13,13 @@ implemented per-primitive or via a global fill state.
 
 ## Decision
 
-**A fill pattern (`fc_fillp_t`) is a `uint16_t` 4×4 bitmask that modifies
+**A fill pattern (`blyt_fillp_t`) is a `uint16_t` 4×4 bitmask that modifies
 how filled primitives are rasterized.**
 
 ```c
-typedef uint16_t fc_fillp_t;
-// FC_FILLP_SOLID = 0xFFFF (all bits set — fully opaque, default)
-// FC_FILLP_NONE  = 0x0000 (all bits clear — fully transparent)
+typedef uint16_t blyt_fillp_t;
+// BLYT_FILLP_SOLID = 0xFFFF (all bits set — fully opaque, default)
+// BLYT_FILLP_NONE  = 0x0000 (all bits clear — fully transparent)
 ```
 
 The 16 bits map to a 4×4 pixel grid tiled across the primitive's extent.
@@ -30,14 +30,14 @@ primitive shows through).
 Fill pattern is passed per-call, not stored as global state:
 
 ```c
-fc_rect_fill(x, y, w, h, color, FC_FILLP_SOLID);  // solid fill
-fc_rect_fill(x, y, w, h, color, 0xAAAA);           // 50% checker dither
+blyt_rect_fill(x, y, w, h, color, BLYT_FILLP_SOLID);  // solid fill
+blyt_rect_fill(x, y, w, h, color, 0xAAAA);           // 50% checker dither
 ```
 
 Use cases:
 - **Dithering:** approximate intermediate colors between two palette entries.
 - **Hatching:** lines, crosses, diagonal patterns.
-- **Crossfade:** animate from `FC_FILLP_SOLID` to `FC_FILLP_NONE` over N
+- **Crossfade:** animate from `BLYT_FILLP_SOLID` to `BLYT_FILLP_NONE` over N
   frames to fade a screen overlay in or out.
 
 Fill pattern applies to all filled primitives (rect, circle, triangle, convex

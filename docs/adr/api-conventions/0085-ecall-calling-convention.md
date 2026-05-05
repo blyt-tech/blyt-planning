@@ -2,36 +2,56 @@
 
 ## Status
 Accepted (scope revised — ECALL is now the internal mechanism of the
-emulator-side `libconsole.so`, not the cart-facing ABI; see ADR-0024)
+emulator-side `libblyt32.so`, not the cart-facing ABI; see ADR-0024)
 
 ## Context
 
 Every cart — regardless of implementation language — communicates with the
-runtime through `libconsole.so` (ADR-0024). On emulated platforms,
-`libconsole.so`'s function bodies issue `ecall` instructions to the
+runtime through `libblyt32.so` (ADR-0024). On emulated platforms,
+`libblyt32.so`'s function bodies issue `ecall` instructions to the
 emulator's dispatch table; on native RISC-V hardware they are direct
 implementations. This ADR specifies the ECALL convention used internally
-by the emulator-side `libconsole.so`. It is not the cart-facing ABI.
+by the emulator-side `libblyt32.so`. It is not the cart-facing ABI.
 
 The calling convention and number assignment for ECALLs must be specified
-before the emulator-side `libconsole.so` can be implemented.
+before the emulator-side `libblyt32.so` can be implemented.
 
-Lua is the first and primary scripting language for carts, and
-`libconsolelua` is the first shim library to consume this surface. It is not
-the only one: any future scripting language (Python, JavaScript via QuickJS,
-etc.) would provide its own shim library. The ECALL surface is
-language-neutral; the shim layers above it are language-specific.
+Lua is the first and primary scripting language for carts. A scripting
+language implementation has two pieces (see ADR-0105):
 
-The interface for all callers — native carts, Lua shims, and any future
-language shim — is the SDK's C wrapper functions in `fc_cart.h`. These are
-thin function declarations resolved at link time against `libconsole.so`;
-shim authors include `fc_cart.h` and call the named functions. On emulated
-platforms, `libconsole.so`'s function bodies issue ECALLs to the emulator's
-dispatch table, so the ECALL numbers below are the emulator-internal contract.
-On native hardware they are direct implementations. Neither cart code nor shim
-code ever handles ECALL numbers directly; ECALL numbers are an implementation
-detail of the emulator-side `libconsole.so`, not of the shim authoring
-contract.
+- An **engine core** — VM lifecycle, sandbox, bytecode loading. Touches
+  only shared subsystems (resources, state, lifecycle, etc.) and is
+  variant-portable. Compiled once across all variants. For Lua this is
+  `libblytcommonlua.so`.
+- A set of **bindings** — registers language-level names against C
+  symbols. Variant-specific because the C symbols include variant-only
+  ones (`blyt_gfx_blit`, `blyt_term_put`). For Lua, the per-variant
+  bindings are `libblyt32lua.so`, `libblyttylua.so`, `libblyt3dlua.so`,
+  each a thin shim re-exporting the engine core.
+
+Future scripting languages (Python, JavaScript via QuickJS, etc.) follow
+the same pattern: one shared engine core, per-variant binding shims. The
+ECALL surface is language-neutral; the shim layers above it are
+language-specific.
+
+The interface for all callers — native carts, language engine cores, and
+language bindings — is the SDK's C wrapper functions:
+
+- **Variant-portable code** (engine cores, cross-variant libraries)
+  includes `blyt.h` (the shared umbrella) and calls only `blyt_*`
+  symbols guaranteed to exist on every variant.
+- **Variant-specific code** (cart code, language bindings) includes the
+  variant umbrella (`blyt32.h` / `blytty.h` / `blyt3d.h`) and may also
+  call symbols exported only by that variant's library
+  (e.g. `blyt_gfx_blit` lives in `libblyt32.so`).
+
+These declarations are resolved at link time against the variant library.
+On emulated platforms, the variant library's function bodies issue ECALLs
+to the emulator's dispatch table, so the ECALL numbers below are the
+emulator-internal contract. On native hardware they are direct
+implementations. Neither cart code nor shim code ever handles ECALL
+numbers directly; ECALL numbers are an implementation detail of the
+emulator-side variant library, not of the shim authoring contract.
 
 ## Decision
 
@@ -41,7 +61,7 @@ Follow the RISC-V Linux syscall ABI:
 
 - `a7`: ECALL number
 - `a0`–`a5`: arguments (up to 6 registers)
-- `a0`: return value (`fc_result_t`, a typedef'd `int32_t`; ADR-0046)
+- `a0`: return value (`blyt_result_t`, a typedef'd `int32_t`; ADR-0046)
 
 This matches RISC-V toolchain expectations and is immediately legible to
 anyone familiar with RISC-V Linux development. SDK stubs are thin inline
@@ -67,7 +87,7 @@ the call site when given a C string literal; the result is passed as the
 length register.
 
 **Out-parameters**: a pointer in one of the argument registers; the ECALL
-handler writes the result through it. For calls returning `fc_result_t` plus
+handler writes the result through it. For calls returning `blyt_result_t` plus
 one value, this fits comfortably in the register budget alongside the input
 arguments.
 
@@ -112,10 +132,12 @@ ranges.
 ## Consequences
 
 - Any language that compiles to RV32IMFC uses this convention without
-  modification. `libconsolelua` and any future `libconsolepy`,
-  `libconsolejs`, or similar shim library each include `fc_cart.h` and
-  call named SDK wrapper functions. ECALL numbers are never hardcoded in
-  shim code; they are an implementation detail of the SDK headers.
+  modification. The engine core for each language (`libblytcommonlua`,
+  any future `libblytcommonpy`, `libblytcommonjs`) is variant-portable
+  and includes `blyt.h`; per-variant binding shims (`libblyt32lua`,
+  `libblyttylua`, etc.) include the variant umbrella and call named
+  SDK wrapper functions. ECALL numbers are never hardcoded in shim
+  code; they are an implementation detail of the SDK headers.
 - The ECALL surface is auditable as a numbered table. ADR-0038's security
   boundary is implementable as a dispatch table lookup — every host-side
   effect maps to exactly one entry.

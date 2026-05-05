@@ -26,7 +26,7 @@ ready.
 
 ```lua
 -- Carts that want to handle drop-out gracefully:
-if not console.input.is_player_connected(3) then
+if not blyt32.input.is_player_connected(3) then
   -- handle: AI takeover, pause, remove from match
 end
 ```

@@ -25,8 +25,8 @@ palette_cycles:
 The packer generates constants:
 
 ```c
-#define CYCLE_WATER ((fc_cycle_h)1)
-#define CYCLE_LAVA  ((fc_cycle_h)2)
+#define CYCLE_WATER ((blyt_cycle_h)1)
+#define CYCLE_LAVA  ((blyt_cycle_h)2)
 ```
 
 Each cycle advances automatically every `interval` frames in the given
@@ -36,11 +36,11 @@ once per tick (not per draw), before `draw()` is called.
 Carts can override cycle behavior at runtime:
 
 ```c
-fc_result_t fc_cycle_set_speed(fc_cycle_h cycle, int32_t interval);
-fc_result_t fc_cycle_set_direction(fc_cycle_h cycle, int32_t direction);
-fc_result_t fc_cycle_pause(fc_cycle_h cycle);
-fc_result_t fc_cycle_resume(fc_cycle_h cycle);
-fc_result_t fc_cycle_set_offset(fc_cycle_h cycle, int32_t offset);
+blyt_result_t blyt_cycle_set_speed(blyt_cycle_h cycle, int32_t interval);
+blyt_result_t blyt_cycle_set_direction(blyt_cycle_h cycle, int32_t direction);
+blyt_result_t blyt_cycle_pause(blyt_cycle_h cycle);
+blyt_result_t blyt_cycle_resume(blyt_cycle_h cycle);
+blyt_result_t blyt_cycle_set_offset(blyt_cycle_h cycle, int32_t offset);
 ```
 
 Cycle state (current offset, speed, direction, paused flag) is stored in

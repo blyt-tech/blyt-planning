@@ -10,7 +10,7 @@ input (on-screen keyboard on mobile/console, physical keyboard on desktop).
 The cart cannot directly poll for text; it must request input and wait for
 the platform to supply it.
 
-An earlier draft proposed a `FC_TEXT_INPUT_ALL_PLAYERS` mode for soliciting
+An earlier draft proposed a `BLYT_TEXT_INPUT_ALL_PLAYERS` mode for soliciting
 text from every connected player simultaneously (lobby name entry in local
 multiplayer). The implementation surface is large — N concurrent platform
 keyboards, N independent submit/cancel flows, per-device focus management,
@@ -27,21 +27,21 @@ entry is runtime-provided, triggered by a manifest declaration.**
 ### Single-player text input (cart-facing API)
 
 ```c
-fc_result_t fc_text_input_begin(const char *prompt, const char *initial,
+blyt_result_t blyt_text_input_begin(const char *prompt, const char *initial,
                                 int32_t max_len);
 
 // Called on completion (next update after input is dismissed):
-const char *fc_text_input_result(void);  // NULL if cancelled
+const char *blyt_text_input_result(void);  // NULL if cancelled
 ```
 
 **Flow:**
-1. Cart calls `fc_text_input_begin()` during `update()`.
+1. Cart calls `blyt_text_input_begin()` during `update()`.
 2. Runtime finishes the current frame (calls `draw()` once more so the cart
    can show a "waiting for input" UI), then suspends cart `update()`.
 3. Runtime raises the platform text input UI (on-screen keyboard or native
    text field).
 4. When the player submits or cancels, the runtime resumes cart `update()`.
-5. Cart calls `fc_text_input_result()` to retrieve the string (or `NULL`
+5. Cart calls `blyt_text_input_result()` to retrieve the string (or `NULL`
    for cancel).
 
 This solicits exactly one player — the local player driving the session.
@@ -63,7 +63,7 @@ player for a name in its own UI before handing the session to the cart.
 By the time `init()` runs, every player slot has a name available via:
 
 ```c
-const char *fc_player_name(uint32_t player_index);
+const char *blyt_player_name(uint32_t player_index);
 ```
 
 **Default behaviour: pre-fill with the last entered name.** The runtime
@@ -75,11 +75,11 @@ device the prompt is shown on — a host machine has its own stored name,
 each remote netplay client has its own stored name, and on local hot-seat
 the device's stored name is offered to whichever player is being
 solicited at that moment. The cart never sees the keyboard flow; it just
-reads names via `fc_player_name()`.
+reads names via `blyt_player_name()`.
 
 ### Netplay during a session
 
-`fc_text_input_begin()` returns `FC_ERR_NOT_AVAILABLE` during a netplay
+`blyt_text_input_begin()` returns `BLYT_ERR_NOT_AVAILABLE` during a netplay
 session. Mid-session text entry would require synchronising platform
 keyboard state across rollback, which v1 does not support. Lobby-phase
 name entry is handled by the runtime as above.
@@ -89,8 +89,8 @@ name entry is handled by the runtime as above.
 Concurrent multi-player text input may return as a future API once a
 genuine cart use case beyond name entry exists (e.g., simultaneous chat,
 collaborative naming flows). The single-player API would extend rather
-than break: a future `fc_text_input_begin_player(player_index, ...)` could
-sit alongside the current `fc_text_input_begin()` without disturbing
+than break: a future `blyt_text_input_begin_player(player_index, ...)` could
+sit alongside the current `blyt_text_input_begin()` without disturbing
 existing carts.
 
 ## Consequences
@@ -103,8 +103,8 @@ existing carts.
   implementing it.
 - Persisting names as a per-device preference removes the friction of
   re-entering names every session.
-- The implementation surface for `FC_TEXT_INPUT_ALL_PLAYERS` (N concurrent
+- The implementation surface for `BLYT_TEXT_INPUT_ALL_PLAYERS` (N concurrent
   platform keyboards, focus management, layout) is removed from v1; we
   buy back the flexibility to redesign it once we have real cart needs.
-- `FC_ERR_NOT_AVAILABLE` during netplay remains a clear error that carts
+- `BLYT_ERR_NOT_AVAILABLE` during netplay remains a clear error that carts
   should handle gracefully (log and no-op in release; warn in dev).

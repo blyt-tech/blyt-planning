@@ -28,7 +28,7 @@ want internet netplay use RetroArch.
 
 *LAN discovery:* UDP broadcast on a chosen port at ~1–2 second intervals
 while hosting; UDP listener on the same port while browsing. Broadcast
-payload: cart binary hash (BLAKE3-256 of the loaded `.cart` file), cart
+payload: cart binary hash (BLAKE3-256 of the loaded `.blyt` file), cart
 title (display only, taken from `cart.info`), host name, player count
 (current/max), host IP. Hosts aged out after ~5 seconds without broadcasts.
 

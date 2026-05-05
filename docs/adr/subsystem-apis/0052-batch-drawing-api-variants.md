@@ -17,17 +17,17 @@ single-element forms.**
 
 Single-element (ergonomic):
 ```c
-fc_image_blit(img, x, y, flags);
-fc_rect_fill(x, y, w, h, color, pattern);
+blyt_image_blit(img, x, y, flags);
+blyt_rect_fill(x, y, w, h, color, pattern);
 ```
 
 Batch (performance):
 ```c
-// Batch blit: array of fc_blit_cmd_t structs, N elements
-fc_image_blit_n(img, cmds, n, flags);
+// Batch blit: array of blyt_blit_cmd_t structs, N elements
+blyt_image_blit_n(img, cmds, n, flags);
 
-// Batch rect fill: array of fc_rect_cmd_t structs, N elements
-fc_rect_fill_n(cmds, n);
+// Batch rect fill: array of blyt_rect_cmd_t structs, N elements
+blyt_rect_fill_n(cmds, n);
 ```
 
 Batch variants accept a pointer to an array of command structs and a count.

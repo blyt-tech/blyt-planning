@@ -109,13 +109,13 @@ would for an auto-scanned file, using the same name derivation rule.
 ### Generated constants
 
 The packer emits a header (native carts) or Lua module (Lua carts) with
-`fc_resource_h` constants for every resource, auto-scanned or explicit:
+`blyt_resource_h` constants for every resource, auto-scanned or explicit:
 
 ```c
 // Generated: cart_resources.h
-#define R_HERO_SPRITES   ((fc_resource_h)1)
-#define R_TILEMAP_WORLD  ((fc_resource_h)2)
-#define R_THEME_MUSIC    ((fc_resource_h)3)
+#define R_HERO_SPRITES   ((blyt_resource_h)1)
+#define R_TILEMAP_WORLD  ((blyt_resource_h)2)
+#define R_THEME_MUSIC    ((blyt_resource_h)3)
 ```
 
 ```lua
@@ -126,7 +126,7 @@ R.TILEMAP_WORLD
 R.THEME_MUSIC
 ```
 
-Built-in runtime resources (`FC_FONT_BUILTIN`, `FC_PALETTE_DEFAULT`, etc.)
+Built-in runtime resources (`BLYT_FONT_BUILTIN`, `BLYT_PALETTE_DEFAULT`, etc.)
 set bit 31 to guarantee no collision with cart-generated IDs; see ADR-0059
 for the full convention.
 

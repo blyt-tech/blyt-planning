@@ -82,7 +82,7 @@ the SD card.
 
 **Cart API (release builds):**
 ```lua
-console.capture.screenshot()
+blyt32.capture.screenshot()
 ```
 
 ---
@@ -104,8 +104,8 @@ proceeds directly from stored pixel data and is fast on any device.
 **Cart API (release builds):**
 ```lua
 -- Capture the last N seconds (clamped to the available buffer window)
-console.capture.gif(seconds)
-console.capture.gif(seconds, "label")  -- optional label for the filename
+blyt32.capture.gif(seconds)
+blyt32.capture.gif(seconds, "label")  -- optional label for the filename
 ```
 
 The GIF is written asynchronously; the cart does not block. This is the

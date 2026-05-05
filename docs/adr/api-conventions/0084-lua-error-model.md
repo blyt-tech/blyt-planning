@@ -5,7 +5,7 @@ Accepted
 
 ## Context
 
-The C API uses `fc_result_t` return codes throughout (ADR-0046). The Lua
+The C API uses `blyt_result_t` return codes throughout (ADR-0046). The Lua
 API needs a corresponding error model that is idiomatic for Lua authors,
 consistent with the C model, and that handles the distinction between
 recoverable errors and unrecoverable panics.
@@ -37,18 +37,18 @@ voice:is_playing()         -- voice finished: returns false, not an error
 
 These are all operations where the worst outcome is a missing pixel or a
 missed audio nudge — not a corrupted game state. The corresponding C
-functions return `fc_result_t` but Lua does not surface it.
+functions return `blyt_result_t` but Lua does not surface it.
 
 ### Tier 2: nil + last_error_code
 
 Operations that can fail in ways the cart may legitimately want to handle.
-The function returns `nil` on failure; `console.last_error_code()` returns
+The function returns `nil` on failure; `blyt32.last_error_code()` returns
 the specific code.
 
 ```lua
 local data, meta = save.read("slot1")
 if not data then
-    local code = console.last_error_code()
+    local code = blyt32.last_error_code()
     if code == ERR.SAVE_NOT_FOUND then
         -- first run: start fresh
     end

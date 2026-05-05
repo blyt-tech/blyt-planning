@@ -68,12 +68,12 @@ character cells by column and row regardless of the underlying font.
 
 **Cart API (sketch):**
 ```lua
-console.text.put(col, row, char, fg, bg)
-console.text.print(col, row, str, fg, bg)
-console.text.fill(col, row, w, h, char, fg, bg)
-console.text.scroll(top_row, bottom_row, lines)
-console.text.cursor(col, row, visible)
-console.text.clear(fg, bg)
+blytty.text.put(col, row, char, fg, bg)
+blytty.text.print(col, row, str, fg, bg)
+blytty.text.fill(col, row, w, h, char, fg, bg)
+blytty.text.scroll(top_row, bottom_row, lines)
+blytty.text.cursor(col, row, visible)
+blytty.text.clear(fg, bg)
 ```
 
 Character constants for CP437 special characters (box-drawing, blocks, etc.)
@@ -111,8 +111,8 @@ Two options when porting:
   the game running.
 - **Map to the cart save API**: bones files are named by dungeon level
   and character class (`bones.dlvl5.val`, etc.) and are modest in size.
-  They can be stored as named slots via `console.save.write` /
-  `console.save.read`, giving the full bones experience within the
+  They can be stored as named slots via `blyt32.save.write` /
+  `blyt32.save.read`, giving the full bones experience within the
   console's save infrastructure. The save quota (default 10 MB per
   cart) is ample for accumulating bones files over many runs.
 
@@ -159,29 +159,30 @@ in the manifest. A keyboard-required declaration causes the runtime to
 warn (or refuse to start) when no keyboard is present, rather than
 silently providing a degraded experience.
 
-**Alternative: keyboard-primary sibling console.** Rather than extending
-this console with an awkward keyboard-required mode, a cleaner path may
-be a sibling console that shares the same runtime infrastructure
-(RV32IMFC ELF cart format, Lua, save state, packer, toolchain) but
-declares a keyboard-primary input contract. Text mode at 640×480 would
-be its natural display mode rather than an optional extension. Carts for
-the sibling target roguelikes, text adventures, interactive fiction, and
-BBS-style tools — genres that are ill-served by a gamepad model.
+**Resolution: BlyTTY, the keyboard-primary sibling variant.** Rather than
+extending Blyt32 with an awkward keyboard-required mode, the sibling
+variant **BlyTTY** is the planned home for text mode (see ADR-0105 for the
+variant model). BlyTTY shares the runtime infrastructure (RV32IMFC ELF
+cart format, Lua, save state, audio, lifecycle, `blytbuild` toolchain) but
+declares a keyboard-primary input contract. Text mode at 640×480 is its
+natural display mode rather than an optional extension. Carts for BlyTTY
+target roguelikes, text adventures, interactive fiction, and BBS-style
+tools — genres that are ill-served by a gamepad model.
 
-This is exactly the kind of sibling console contemplated in §17 of the
-design document ("Extract a console-agnostic library"), and building it
-would be a practical forcing function for drawing the clean
-library/console boundary that §17 recommends practising. The sibling
-shares all the hard infrastructure; the differences are input model,
-display resolution, and the default font and character set bundled in
-the runtime binary.
+BlyTTY is the practical forcing function for drawing the clean
+variant/runtime boundary that §17 of the design document recommends
+practising. It shares all the hard infrastructure; the differences are
+input model, display resolution, and the default font and character set
+bundled in the runtime binary. Carts link `libblytty.so` (and
+`libblyttylua.so` for Lua carts) instead of the Blyt32 equivalents; the
+Lua API surface is exposed under `blytty.*` instead of `blyt32.*`.
 
-**Startup chime.** The sibling console's boot audio identity should
-evoke an IBM XT or PC/AT cold start: the single short POST beep from
-the PC speaker, followed by the sounds of a hard disk spinning up and
-seeking. This is immediately recognisable to the audience that grew up
-with DOS machines and establishes the aesthetic before a single
-character appears on screen.
+**Startup chime.** BlyTTY's boot audio identity should evoke an IBM XT or
+PC/AT cold start: the single short POST beep from the PC speaker,
+followed by the sounds of a hard disk spinning up and seeking. This is
+immediately recognisable to the audience that grew up with DOS machines
+and establishes the aesthetic before a single character appears on
+screen.
 
 ## Why deferred
 

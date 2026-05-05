@@ -15,7 +15,7 @@ the console's constraints:
   neither seeded nor tracked.
 - **Sandboxing (ADR-0038):** `io`, `file`, and filesystem-related `os`
   functions give carts direct access to the host filesystem. The console
-  provides `console.resource.*` as the only sanctioned I/O path.
+  provides `blyt32.resource.*` as the only sanctioned I/O path.
 
 At the same time, third-party Lua libraries and authors' intuitions assume
 the standard library names (`math`, `string`, `require`, etc.) are present
@@ -36,11 +36,11 @@ These modules are safe and useful as-is:
 | `utf8` | Read-only iteration utilities; deterministic. |
 | `pcall`, `xpcall`, `error`, `tostring`, `tonumber`, `type`, `ipairs`, `pairs`, `next`, `select`, `unpack`, `rawget`, `rawset`, `rawequal`, `rawlen`, `setmetatable`, `getmetatable` | Core Lua globals; safe and expected. |
 
-### Replaced: `math` → `console.math`, aliased as `math`
+### Replaced: `math` → `blyt32.math`, aliased as `math`
 
-The standard `math` library is replaced by `console.math`, which provides
+The standard `math` library is replaced by `blyt32.math`, which provides
 deterministic implementations of all transcendentals using a controlled
-math library (musl libm). `console.math` is also installed as `math` in
+math library (musl libm). `blyt32.math` is also installed as `math` in
 the cart's global environment, so code written against the standard `math`
 API works without modification.
 
@@ -56,7 +56,7 @@ hidden default RNG stream managed by the runtime. The stream is
 deterministic (seeded at cart start from the cart's declared initial seed),
 advances normally, and participates in save state (ADR-0041). Third-party
 code using `math.random` works and is deterministic. Authors who need
-explicit seeds or multiple independent streams use `console.rng` directly.
+explicit seeds or multiple independent streams use `blyt32.rng` directly.
 
 ### Replaced: `require`
 
@@ -77,13 +77,13 @@ files from arbitrary paths at runtime; all Lua source is fixed at pack time.
 
 `print` writes to the runtime's dev-mode console output. In release builds
 it is a no-op. This is the standard convention for embedded Lua and matches
-what most Lua authors expect. `console.log()` is the explicit dev API
+what most Lua authors expect. `blyt32.log()` is the explicit dev API
 (ADR-0065 pattern — no-op in release).
 
 ### Removed: `io`
 
 The `io` module is not present. All resource access goes through
-`console.resource.*`. Attempts to use `io.*` produce a clear "not
+`blyt32.resource.*`. Attempts to use `io.*` produce a clear "not
 available" error in dev mode rather than a silent nil.
 
 ### Removed: `os` (except `os.exit`)
@@ -106,7 +106,7 @@ manipulating the loader chain or accessing `package.loadlib`.
 The `debug` module is not available to carts. The runtime uses `debug`
 internally for its DAP server implementation (ADR-0044), but exposing it
 to cart code would break the sandbox. Dev-mode introspection goes through
-`console.dev.*` APIs.
+`blyt32.dev.*` APIs.
 
 ### Not present: `load`, `loadfile`, `dofile`
 
@@ -129,5 +129,5 @@ escape vector. `loadfile` and `dofile` are absent for the same reasons.
   authors porting code that uses runtime code generation. This is a
   deliberate constraint, not an oversight.
 - Dev mode surfaces "not available" errors with console-specific
-  guidance ("use `console.resource.load` instead of `io.open`") rather
+  guidance ("use `blyt32.resource.load` instead of `io.open`") rather
   than silent nils.

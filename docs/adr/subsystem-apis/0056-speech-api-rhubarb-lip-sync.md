@@ -35,29 +35,29 @@ data.
 ### Runtime API
 
 ```c
-fc_result_t  fc_speech_play(fc_resource_h res, fc_voice_h *out_voice);
-fc_result_t  fc_speech_stop(fc_voice_h voice);
-bool         fc_speech_is_playing(fc_voice_h voice);
-fc_phoneme_t fc_speech_mouth_shape(fc_voice_h voice);
-// Returns: FC_PHONEME_A .. FC_PHONEME_X (Preston Blair set)
-bool         fc_subtitles_active(void);
+blyt_result_t  blyt_speech_play(blyt_resource_h res, blyt_voice_h *out_voice);
+blyt_result_t  blyt_speech_stop(blyt_voice_h voice);
+bool         blyt_speech_is_playing(blyt_voice_h voice);
+blyt_phoneme_t blyt_speech_mouth_shape(blyt_voice_h voice);
+// Returns: BLYT_PHONEME_A .. BLYT_PHONEME_X (Preston Blair set)
+bool         blyt_subtitles_active(void);
 ```
 
-`fc_speech_mouth_shape()` returns the phoneme for the current playback
-position, or `FC_PHONEME_X` (rest) if the voice is not playing. Cart code
+`blyt_speech_mouth_shape()` returns the phoneme for the current playback
+position, or `BLYT_PHONEME_X` (rest) if the voice is not playing. Cart code
 maps phonemes to sprite frames.
 
-`fc_subtitles_active()` returns true if subtitles should currently be shown.
+`blyt_subtitles_active()` returns true if subtitles should currently be shown.
 The result is the logical OR of two independent settings (see below); cart
-code should call this rather than reading `FC_PREF_SUBTITLES` directly.
+code should call this rather than reading `BLYT_PREF_SUBTITLES` directly.
 
 ### Subtitle activation
 
 Subtitles are shown when **either** of the following is true:
 
-- **Per-cart preference** `FC_PREF_SUBTITLES` (ADR-0013) — the player has
+- **Per-cart preference** `BLYT_PREF_SUBTITLES` (ADR-0013) — the player has
   enabled subtitles in this cart's options menu.
-- **Global runtime preference** `FC_RUNTIME_PREF_SUBTITLES_ALWAYS` (ADR-0013)
+- **Global runtime preference** `BLYT_RUNTIME_PREF_SUBTITLES_ALWAYS` (ADR-0013)
   — the player has set "always show subtitles" at the device level. This
   overrides any cart's per-cart setting; if the global is on, subtitles are
   always shown regardless of what the cart's options say.
@@ -66,12 +66,12 @@ Subtitles are shown when **either** of the following is true:
 (frontend-specific; not captured by cart code) that toggles subtitles from
 anywhere without entering a menu. The toggle logic is:
 
-- **If subtitles are currently active** (either `FC_RUNTIME_PREF_SUBTITLES_ALWAYS`
-  or `FC_PREF_SUBTITLES` is true): turn both off — clear the global pref and,
-  if the cart has declared `FC_PREF_SUBTITLES`, clear that too. This ensures
+- **If subtitles are currently active** (either `BLYT_RUNTIME_PREF_SUBTITLES_ALWAYS`
+  or `BLYT_PREF_SUBTITLES` is true): turn both off — clear the global pref and,
+  if the cart has declared `BLYT_PREF_SUBTITLES`, clear that too. This ensures
   the hotkey is a decisive "off" regardless of which setting was responsible.
 - **If subtitles are currently inactive** (both are false/absent): set only
-  `FC_RUNTIME_PREF_SUBTITLES_ALWAYS` to true. The cart pref is left untouched.
+  `BLYT_RUNTIME_PREF_SUBTITLES_ALWAYS` to true. The cart pref is left untouched.
 
 The runtime displays a brief "Subtitles ON" / "Subtitles OFF" overlay on
 toggle. This allows players who always need subtitles to enable them
@@ -85,7 +85,7 @@ speech line plays and subtitles are active, the runtime automatically
 renders the locale-resolved subtitle text as an overlay — no cart code
 required. Carts that want custom subtitle presentation (different position,
 font, styling) can suppress the automatic overlay and render manually using
-`fc_subtitles_active()` as before.
+`blyt_subtitles_active()` as before.
 
 This means subtitle support is an accessibility guarantee at the platform
 level: any cart that uses the speech API gets subtitles for free. The cart
@@ -106,15 +106,15 @@ expected flow is: speech line plays and completes → subtitle remains
 visible → player presses a confirm button → cart proceeds to the next line.
 
 The runtime cannot implement this automatically because the cart controls
-when it calls `console.speech.play()` for the next line. The runtime
+when it calls `blyt32.speech.play()` for the next line. The runtime
 provides:
 
-- A readable preference (`FC_PREF_SPEECH_WAIT_FOR_ACK` or equivalent).
-- A query `console.subtitles.waiting()` — true when subtitles are visible
+- A readable preference (`BLYT_PREF_SPEECH_WAIT_FOR_ACK` or equivalent).
+- A query `blyt32.subtitles.waiting()` — true when subtitles are visible
   and the pacing preference is on, indicating the cart should hold before
   advancing.
 
-Cart code checks `console.subtitles.waiting()` in its dialogue sequencing
+Cart code checks `blyt32.subtitles.waiting()` in its dialogue sequencing
 logic and waits for a button press before playing the next line. Carts that
 do not check this preference are unaffected; the feature only works in
 carts that opt in to honouring it.
@@ -123,15 +123,15 @@ carts that opt in to honouring it.
 
 ```lua
 -- Subtitles render automatically when active — no cart code needed.
-local voice = console.speech.play(R_LINE_HELLO)
+local voice = blyt32.speech.play(R_LINE_HELLO)
 
 -- In update (lip sync only — subtitles handled by runtime):
 local shape = voice:mouth_shape()  -- "A".."X"
 mouth_sprite:blit(MOUTH_FRAMES[shape], mx, my)
 
 -- Custom subtitle rendering (suppresses automatic overlay):
-if console.subtitles.active() then
-  console.text.draw(L.LINE_HELLO, 10, 220, { style = "my_subtitle_style" })
+if blyt32.subtitles.active() then
+  blyt32.text.draw(L.LINE_HELLO, 10, 220, { style = "my_subtitle_style" })
 end
 ```
 

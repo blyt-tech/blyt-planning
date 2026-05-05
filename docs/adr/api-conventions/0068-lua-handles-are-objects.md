@@ -6,7 +6,7 @@ Accepted
 ## Context
 
 The C API uses opaque `uint32_t` handles for all runtime objects. In Lua,
-passing handle integers to module functions (`console.image.blit(img, x, y)`)
+passing handle integers to module functions (`blyt32.image.blit(img, x, y)`)
 is correct but verbose and does not leverage Lua's object-oriented idioms. A
 metatables-based wrapper makes Lua cart code more concise and idiomatic.
 
@@ -16,9 +16,9 @@ metatables-based wrapper makes Lua cart code more concise and idiomatic.
 
 Rather than:
 ```lua
-console.image.blit(img, x, y, {})
-console.voice.stop(voice)
-local active = console.voice.is_playing(voice)
+blyt32.image.blit(img, x, y, {})
+blyt32.voice.stop(voice)
+local active = blyt32.voice.is_playing(voice)
 ```
 
 Cart code writes:
@@ -38,7 +38,7 @@ handle whose voice has finished) is a silent no-op on all method calls except
 handles — this is intentional: carts that fire-and-forget sounds do not need
 to guard every method call with a validity check.
 
-**State buffer handles** (`fc_buffer_h`) are not Lua objects — they are
+**State buffer handles** (`blyt_buffer_h`) are not Lua objects — they are
 accessed via the SOA metatable sugar (ADR-0011) which provides `buffer.field[i]`
 syntax at the aggregate level rather than per-slot object wrappers.
 

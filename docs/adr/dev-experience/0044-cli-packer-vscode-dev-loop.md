@@ -13,13 +13,13 @@ the in-console editor incompatible with the design goals.
 
 ## Decision
 
-**CLI packer:** `console pack ./myproject` produces `myproject.cart`. The
+**CLI packer:** `blytbuild pack ./myproject` produces `myproject.blyt`. The
 packer always stages its output to `myproject/.build/` first (see ADR-0024
 for the directory layout), then bundles that directory into the ELF cart file.
-`console run myproject.cart` for local testing; `console run ./myproject`
+`blytbuild run myproject.blyt` for local testing; `blytbuild run ./myproject`
 runs directly from the staging directory without packing.
 
-**Watch mode:** `console watch ./myproject` runs the incremental build loop:
+**Watch mode:** `blytbuild watch ./myproject` runs the incremental build loop:
 on any source or asset change, the packer reprocesses only the affected files
 into `build/`, then signals the runtime via the DAP connection to hot-reload
 from the directory (ADR-0045). The ELF bundling step is skipped entirely
@@ -36,10 +36,10 @@ native code changes.
 **Debug connection:** in dev mode the runtime opens a TCP socket and acts as
 a byte-pipe passthrough between VS Code (DAP client) and the in-VM DAP server
 running inside the cart (ADR-0025). The runtime is agnostic to the DAP
-protocol; `console watch` signals hot reload via this same connection using
+protocol; `blytbuild watch` signals hot reload via this same connection using
 a custom DAP command.
 
-**`console new myproject`** creates a project with:
+**`blytbuild new myproject`** creates a project with:
 - Pre-configured manifest with `size_class: standard` (ADR-0030 default),
   VS Code workspace, and recommended extensions.
 - Starter Lua or native-cart code with inline comments explaining the API.
@@ -60,7 +60,7 @@ for audio (converted to QOA/ADPCM internally), BMFont FNT.
   support is cheaper than making authors convert.
 - The VS Code extension is the primary authoring environment; its extension
   architecture should accommodate genre-specific framework extensions (v2+).
-- `console new` turns "start from blank files" into "start from a working
+- `blytbuild new` turns "start from blank files" into "start from a working
   game and modify," significantly reducing initial friction.
 - The dev loop targets sub-second rebuild for the common case (Lua source
   edit, asset change); native code rebuild is acceptably slower.

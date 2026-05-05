@@ -26,14 +26,14 @@ For each mutable tilemap, the runtime maintains two structures:
 2. A diff table: a sparse map of `(x, y) → new_tile_id` for cells that have
    been modified.
 
-`fc_tilemap_set_tile()` writes to the diff table. `fc_tilemap_get_tile()`
+`blyt_tilemap_set_tile()` writes to the diff table. `blyt_tilemap_get_tile()`
 checks the diff table first, then falls back to the base data. Save/restore
 serializes only the diff table (compact for typical cases where few tiles
 change). A full reset clears the diff table, restoring the base resource.
 
 **Per-instance tile flags** are separate from per-type tile flags:
 
-- **Per-type flags** (`FC_TILE_SOLID`, `FC_TILE_WATER`, etc.) are declared
+- **Per-type flags** (`BLYT_TILE_SOLID`, `BLYT_TILE_WATER`, etc.) are declared
   in the cart resource and describe the tile type's properties.
 - **Per-instance flags** are stored per-tile in the mutable diff table
   (e.g., a flag marking "this specific wall tile has been broken").
@@ -42,12 +42,12 @@ Per-instance flags exist only for declared-mutable tilemaps and are
 serialized with the diff table.
 
 ```c
-fc_result_t fc_tilemap_set_tile(fc_tilemap_h tm, int32_t x, int32_t y,
+blyt_result_t blyt_tilemap_set_tile(blyt_tilemap_h tm, int32_t x, int32_t y,
                                  uint16_t tile_id, uint16_t instance_flags);
-fc_result_t fc_tilemap_get_tile(fc_tilemap_h tm, int32_t x, int32_t y,
+blyt_result_t blyt_tilemap_get_tile(blyt_tilemap_h tm, int32_t x, int32_t y,
                                  uint16_t *out_tile_id,
                                  uint16_t *out_instance_flags);
-fc_result_t fc_tilemap_reset(fc_tilemap_h tm);  // restore to resource baseline
+blyt_result_t blyt_tilemap_reset(blyt_tilemap_h tm);  // restore to resource baseline
 ```
 
 ## Consequences

@@ -38,11 +38,11 @@ The packer generates `PAUSE_ITEM_RESUME`, `PAUSE_ITEM_SETTINGS`, etc.
 The cart receives a callback for each item selection:
 
 ```c
-void fc_cart_on_pause_item(fc_pause_item_h item);
+void blyt_cart_on_pause_item(blyt_pause_item_h item);
 ```
 
 Standard items (`PAUSE_ITEM_QUIT`, `PAUSE_ITEM_CREDITS`) are handled
-entirely by the runtime if the cart does not override `fc_cart_on_pause_item`.
+entirely by the runtime if the cart does not override `blyt_cart_on_pause_item`.
 
 ### Credits
 
@@ -51,12 +51,12 @@ entirely by the runtime if the cart does not override `fc_cart_on_pause_item`.
 credits_file: credits.txt  # plain text; runtime formats and scrolls
 ```
 
-Alternatively, the cart implements `fc_cart_on_credits()` to render its own
+Alternatively, the cart implements `blyt_cart_on_credits()` to render its own
 credits sequence.
 
 ### Quit confirmation
 
-`fc_quit_request()` (callable by cart code or triggered by the pause menu)
+`blyt_quit_request()` (callable by cart code or triggered by the pause menu)
 shows a runtime-rendered confirmation dialog. On confirmation the runtime
 calls the frontend's quit callback. The dialog is non-skippable on the first
 call (prevents accidental quits); subsequent calls in the same session may

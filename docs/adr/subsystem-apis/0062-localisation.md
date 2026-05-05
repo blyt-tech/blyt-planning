@@ -30,17 +30,17 @@ The packer generates:
 
 ```c
 // cart_locale.h (generated, gitignored)
-#define L_MENU_START          ((fc_locale_key_h)1)
-#define L_MENU_OPTIONS        ((fc_locale_key_h)2)
-#define L_HUD_SCORE           ((fc_locale_key_h)5)
-#define L_DIALOG_HERO_GREETING ((fc_locale_key_h)6)
+#define L_MENU_START          ((blyt_locale_key_h)1)
+#define L_MENU_OPTIONS        ((blyt_locale_key_h)2)
+#define L_HUD_SCORE           ((blyt_locale_key_h)5)
+#define L_DIALOG_HERO_GREETING ((blyt_locale_key_h)6)
 ```
 
 Locale string data is stored in cart resources, one resource per locale
 (`locale_en.dat`, `locale_ja.dat`, etc.), loaded on demand.
 
 ```c
-const char *fc_locale_get(fc_locale_key_h key);
+const char *blyt_locale_get(blyt_locale_key_h key);
 // Returns: pointer to string for current locale; falls back to base locale
 // if key not found; pointer valid until next locale change.
 ```
@@ -53,7 +53,7 @@ falls back to the declared base locale (usually English).
 - F9 highlights untranslated strings (those falling through to base locale).
 - `console loc-report` packer command generates a missing-translations report.
 
-**Overflow detection:** `fc_locale_get()` in dev builds warns if the returned
+**Overflow detection:** `blyt_locale_get()` in dev builds warns if the returned
 string exceeds the expected display width (useful for detecting layout-breaking
 translations before they ship).
 

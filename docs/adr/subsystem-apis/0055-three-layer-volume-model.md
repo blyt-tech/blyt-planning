@@ -22,7 +22,7 @@ level:**
    not control it.
 
 2. **Cart preferences volume** — per-group volume preferences stored in
-   `fc_prefs` (master, music, SFX, voice — up to the groups declared in
+   `blyt_prefs` (master, music, SFX, voice — up to the groups declared in
    `cart.config`). Persisted across sessions. The player sets these in the
    in-game options menu. Range 0.0–1.0.
 
@@ -35,11 +35,11 @@ Final sample amplitude = frontend_master × prefs_group_volume × transient_volu
 The runtime exposes the transient layer to carts:
 
 ```c
-fc_result_t fc_audio_set_group_volume(fc_group_h group, float volume);
-float       fc_audio_get_group_volume(fc_group_h group);
+blyt_result_t blyt_audio_set_group_volume(blyt_group_h group, float volume);
+float       blyt_audio_get_group_volume(blyt_group_h group);
 ```
 
-Preferences volume is managed via `fc_prefs` (ADR-0013).
+Preferences volume is managed via `blyt_prefs` (ADR-0013).
 
 ## Consequences
 

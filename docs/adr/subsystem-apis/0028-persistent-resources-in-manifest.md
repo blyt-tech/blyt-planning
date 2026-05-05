@@ -31,13 +31,13 @@ not a separate access pattern. Persistent resources are:
   on a Lua handle to a persistent resource do nothing.
 
 **Obtaining a usable handle is unchanged.** Carts still call
-`console.resource.load()` (or its Lua equivalent) on the resource ID to
+`blyt32.resource.load()` (or its Lua equivalent) on the resource ID to
 get a typed handle of the kind required by the API they want to call (image,
 audio, tilemap, etc., per ADR-0027 and ADR-0068):
 
 ```lua
 local R = require("R")                       -- packer-generated IDs (ADR-0040)
-local sprites = console.resource.load(R.PLAYER_SPRITES)  -- typed image handle
+local sprites = blyt32.resource.load(R.PLAYER_SPRITES)  -- typed image handle
 sprites:blit(x, y)                           -- ADR-0068 method-style call
 ```
 

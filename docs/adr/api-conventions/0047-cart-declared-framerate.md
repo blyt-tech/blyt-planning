@@ -20,12 +20,12 @@ and to set deterministic time expectations.
 fps: 30  # optional; default 60
 ```
 
-The runtime exposes this to the frontend via `fc_cart_fps()`, called after
+The runtime exposes this to the frontend via `blyt_cart_fps()`, called after
 cart load. The frontend uses the declared rate to configure its accumulator
 loop: `dt = 1 / fps`, tick-interval = `1 / fps`.
 
 `update(dt)` always receives the declared `dt` as a constant (e.g., `1/30`),
-never a measured elapsed time. `console.time.frame()` advances by 1 each
+never a measured elapsed time. `blyt32.time.frame()` advances by 1 each
 `update`, regardless of wall-clock rate.
 
 **Supported rates:** any positive integer from 1 to 60 inclusive. The packer
@@ -43,7 +43,7 @@ artifacts.
 
 - Turn-based and narrative carts can declare 30 Hz or 24 Hz and spend fewer
   CPU cycles without changing any game logic.
-- The frontend accumulator loop is parameterized by `fc_cart_fps()`; all
+- The frontend accumulator loop is parameterized by `blyt_cart_fps()`; all
   frontends behave consistently for any declared rate.
 - Netplay (ADR-0020) works correctly at any declared rate since tick counting
   is still integer-based.

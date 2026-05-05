@@ -46,11 +46,11 @@ events:
 
 ```c
 // Generated: cart_events.h
-#define EVT_DAMAGE           ((fc_event_type_h)1)
-#define EVT_ENTITY_DIED      ((fc_event_type_h)2)
-#define EVT_TRIGGER_ENTERED  ((fc_event_type_h)3)
-#define EVT_ITEM_COLLECTED   ((fc_event_type_h)4)
-#define EVT_WAVE_COMPLETE    ((fc_event_type_h)5)
+#define EVT_DAMAGE           ((blyt_event_type_h)1)
+#define EVT_ENTITY_DIED      ((blyt_event_type_h)2)
+#define EVT_TRIGGER_ENTERED  ((blyt_event_type_h)3)
+#define EVT_ITEM_COLLECTED   ((blyt_event_type_h)4)
+#define EVT_WAVE_COMPLETE    ((blyt_event_type_h)5)
 ```
 
 ### Event payload
@@ -62,10 +62,10 @@ relevant data in buffer fields before posting.
 
 ```c
 typedef struct {
-    fc_event_type_h type;
+    blyt_event_type_h type;
     uint32_t        subject;  // typically a slot index
     uint32_t        data;     // event-specific value
-} fc_event_t;
+} blyt_event_t;
 ```
 
 ### Queue
@@ -93,7 +93,7 @@ in the same frame.
 Subscriptions are registered at scene load and stored in a static table,
 not in POD buffers. They are rebuilt on scene entry and on save-state
 restore. Dynamic subscriptions created during gameplay (outside `on_enter`)
-must be re-registered in `fc_cart_on_load`; this is discouraged in favour
+must be re-registered in `blyt_cart_on_load`; this is discouraged in favour
 of registering all subscriptions unconditionally in `on_enter`.
 
 ```c
@@ -135,15 +135,15 @@ end)
 
 Lua handlers are called via `lua_pcall`. A handler that throws an error is
 logged and skipped; remaining handlers for the same event are still called.
-This follows the general fc32 policy (ADR-0084) that Lua errors must not
+This follows the general blyt policy (ADR-0084) that Lua errors must not
 crash the engine.
 
 ### Save state
 
 Events are fully transient. The queue is empty at the start of every
-`fc_cart_update`. No event data is stored in POD buffers; no save/restore
+`blyt_cart_update`. No event data is stored in POD buffers; no save/restore
 handling is required for the bus itself. Subscription lists are rebuilt
-on restore via `on_enter` or `fc_cart_on_load`.
+on restore via `on_enter` or `blyt_cart_on_load`.
 
 ## Consequences
 

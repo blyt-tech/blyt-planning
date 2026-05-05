@@ -21,7 +21,7 @@ re-implementing dynamic linking in a non-standard way. Standard dynamic
 linking achieves the same result with no custom mechanism, integrates
 naturally with debuggers and profilers, and handles versioning via
 well-understood ELF symbol versioning. A single controlled dynamic dependency
-on `libconsole.so` captures the necessary change without opening carts to
+on `libblyt32.so` captures the necessary change without opening carts to
 arbitrary dynamic linking.
 
 ## Decision
@@ -30,32 +30,51 @@ arbitrary dynamic linking.
 regardless of implementation language. One format, one loader, one
 distribution story.
 
-**Dynamic linking — one controlled dependency.**
-Carts declare a dynamic dependency on exactly one runtime-provided library:
-`libconsole.so` (the console API). Lua carts additionally depend on
-`libconsolelua.so`, also runtime-provided (see ADR-0025). All other code —
-game logic, stage SDK, language shims, user libraries — is statically linked
-into the cart binary. The packer validates that no `DT_NEEDED` entries other
-than the permitted runtime libraries are present; a cart with an unexpected
-dynamic dependency is rejected at pack time and at load time.
+**Dynamic linking — one controlled dependency, variant-specific.**
+Carts declare a dynamic dependency on exactly one runtime-provided variant
+library matching the cart's declared console (manifest field `console:`
+in `.cart.info`, defaulting to `blyt32`; see ADR-0105):
 
-`libconsole.so` is not shipped with the cart. It is provided by the runtime
-environment and behaves differently depending on execution context:
+- Blyt32 carts depend on `libblyt32.so` (default; `console:` may be
+  omitted).
+- BlyTTY carts (planned) depend on `libblytty.so` (`console: blytty`).
+- Blyt3D carts (far future) depend on `libblyt3d.so` (`console: blyt3d`).
 
-- **On emulated platforms:** `libconsole.so` is an RV32IMFC shared library
-  pre-mapped into the cart's guest address space by the emulator before
-  execution begins. Its function bodies are thin stubs that issue ECALLs to
-  the emulator's internal dispatch table (see ADR-0085). PLT/GOT entries for
-  console API symbols are resolved in guest space before the cart entry point
-  is called. This is the same dynamic-loader path established by Spike C
-  (which validated pre-mapping a RV32IMFC shared library into guest memory).
-- **On native RISC-V hardware:** `libconsole.so` is a real implementation
-  library mapped into the cart process by the runtime before execution begins.
-  Console API calls are direct function calls into the library with no IPC
-  overhead.
+Lua carts additionally depend on the variant's Lua library
+(`libblyt32lua.so`, `libblyttylua.so`, `libblyt3dlua.so`), also
+runtime-provided (see ADR-0025). All other code — game logic, stage SDK,
+language shims, user libraries — is statically linked into the cart binary.
+The packer validates that the `DT_NEEDED` entries match exactly the
+console declared in `.cart.info` (or the `blyt32` default if absent); a
+cart with an unexpected dynamic dependency, or with a mismatch between
+manifest console and `DT_NEEDED`, is rejected at pack time and at load
+time.
 
-Cart code calls console API functions identically on both paths. The two-mode
-behaviour of `libconsole.so` is the runtime's concern, not the cart's.
+The variant library is not shipped with the cart. It is provided by the
+runtime environment (the `blyt` runner, libretro core, or hardware image),
+which can host any variant. The runtime selects the appropriate variant
+library at load time based on `.cart.info`. The library behaves differently
+depending on execution context:
+
+- **On emulated platforms:** the variant library (e.g. `libblyt32.so`) is an
+  RV32IMFC shared library pre-mapped into the cart's guest address space by
+  the emulator before execution begins. Its function bodies are thin stubs
+  that issue ECALLs to the emulator's internal dispatch table (see ADR-0085).
+  PLT/GOT entries for console API symbols are resolved in guest space before
+  the cart entry point is called. This is the same dynamic-loader path
+  established by Spike C (which validated pre-mapping a RV32IMFC shared
+  library into guest memory).
+- **On native RISC-V hardware:** the variant library is a real implementation
+  library mapped into the cart process by the runtime before execution
+  begins. Console API calls are direct function calls into the library with
+  no IPC overhead.
+
+Cart code calls console API functions identically on both paths. The
+two-mode behaviour of the variant library is the runtime's concern, not the
+cart's. A variant library may internally re-export symbols from a private
+shared library (`libblytcommon.so`-class) holding logic common to all
+variants — this is an implementation detail; carts see only the variant
+library's exported surface.
 
 **ELF identity and verification.**
 The standard ELF header provides layered cart verification before any section
@@ -67,9 +86,10 @@ is parsed:
 - `e_machine` = `EM_RISCV` (0xF3) — RISC-V ISA.
 - `e_flags` = `EF_RISCV_RVC | EF_RISCV_FLOAT_ABI_SINGLE` — confirms the
   RV32IMFC profile; a runtime built for a different subset rejects here.
-- `e_ident[EI_OSABI]` — set to a console-specific value to distinguish carts
-  from arbitrary RISC-V ELF binaries. Value is name-pending (see
-  `docs/pending-name.md`).
+- `e_ident[EI_OSABI]` — set to `0x42` ('B' for Blyt) to distinguish carts
+  from arbitrary RISC-V ELF binaries. Value sits in the OS-specific range
+  (64–127). If the project later registers a formal value with the RISC-V
+  community, the formal value supersedes (see ADR-0105).
 
 The runtime checks these fields in sequence; each is a fast rejection point
 requiring no section parsing. Dynamic section validation (permitted
@@ -79,36 +99,42 @@ requiring no section parsing. Dynamic section validation (permitted
 - `.text`, `.data`, `.bss`, `.rodata` — standard code and data.
 - `.dynamic`, `.dynsym`, `.plt`, `.got` — standard dynamic linking sections,
   present in all cart binaries. The only external symbols resolved at load
-  time are those imported from `libconsole.so` (and `libconsolelua.so` in Lua
-  carts).
+  time are those imported from the variant library (e.g. `libblyt32.so`)
+  and, for Lua carts, the variant Lua library (e.g. `libblyt32lua.so`).
 - `.cart.info` — frontend metadata (title, author, API version, size class,
   etc.), compiled to FlatBuffers by the packer (see ADR-0073).
 - `.cart.config` — runtime configuration (state buffer schemas, voice groups,
   palette cycles, etc.), compiled to FlatBuffers by the packer (see ADR-0073).
 - `.cart.lua` — Lua-specific configuration (bytecode version, etc.), compiled
-  to FlatBuffers by the packer. Present only in Lua carts; read by
-  `libconsolelua.so` during VM initialisation. The host runtime does not parse
-  this section (see ADR-0073).
+  to FlatBuffers by the packer. Present only in Lua carts; read by the
+  variant Lua library (e.g. `libblyt32lua.so`) during VM initialisation. The
+  host runtime does not parse this section (see ADR-0073).
 - `.cart.resources` — directory of named resources (sprites, tilemaps, audio,
   Lua source, etc.) accessed by name through the resource API.
 
 **Loading:**
-- On hardware: runtime's own ELF loader parses program headers; maps
-  `libconsole.so` (and `libconsolelua.so` for Lua carts) into the cart process;
-  resolves PLT/GOT entries; then begins execution. Resource sections are
-  direct pointers into the mmap'd cart bytes (zero-copy). The cart is not
-  exec()'d or dlopen()'d by the OS — the runtime controls the load
-  environment, including applying seccomp and namespace isolation before
-  jumping to the cart entry point.
+- On hardware: runtime's own ELF loader parses program headers; reads the
+  declared variant from `.cart.info`; maps the matching variant library
+  (and variant Lua library for Lua carts) into the cart process; resolves
+  PLT/GOT entries; then begins execution. Resource sections are direct
+  pointers into the mmap'd cart bytes (zero-copy). The cart is not exec()'d
+  or dlopen()'d by the OS — the runtime controls the load environment,
+  including applying seccomp and namespace isolation before jumping to the
+  cart entry point.
 - In emulator: emulator's dynamic loader (approach established by Spike C)
-  maps the cart into guest memory; pre-maps the emulator-side
-  `libconsole.so` (and `libconsolelua.so` for Lua carts) at fixed guest addresses;
+  maps the cart into guest memory; pre-maps the emulator-side variant
+  library (and variant Lua library for Lua carts) at fixed guest addresses;
   resolves PLT/GOT entries in guest space before execution begins.
 
-**Single cart file (`.cart`).** No separate resource archives or metadata
-sidecars. `libconsole.so` and `libconsolelua.so` are platform infrastructure, not
-cart files; they are never bundled with the cart. File extension is
-name-pending (see `docs/pending-name.md`).
+**Single cart file (`.blyt`).** No separate resource archives or metadata
+sidecars. Variant libraries (e.g. `libblyt32.so`, `libblyt32lua.so`) are
+platform infrastructure, not cart files; they are never bundled with the
+cart. The `.blyt` extension is shared across all consoles; the manifest
+field `console:` in `.cart.info` discriminates which library set a cart
+links to (defaulting to `blyt32` if absent — see ADR-0105). Non-interactive
+carts (per ADR-0031's `interactive: false`) may use the placeholder suffix
+`.blyt.demo` as a file-manager affordance; frontends filter on the
+manifest field, not the suffix.
 
 **Dev-mode directory container.**
 In dev mode the runtime accepts a directory path in place of a cart file and
@@ -173,7 +199,7 @@ directory.
 - ELF is battle-tested with mature tooling (binutils, objcopy, linker scripts)
   and debuggers (GDB, LLDB) understand ELF and DWARF natively.
 - Console API calls are visible to standard debuggers and profilers as named
-  function symbols in `libconsole.so`, not as opaque ECALL numbers.
+  function symbols in `libblyt32.so`, not as opaque ECALL numbers.
 - Resources in ELF sections enable zero-copy mmap on hardware — a real
   performance and simplicity win.
 - Language extensibility is natural: any language targeting RV32IMFC ELF is
@@ -182,18 +208,18 @@ directory.
   documentation.
 - Lua carts are also ELF carts (see ADR-0025); the format distinction between
   "native" and "Lua" is an authoring distinction, not a format distinction.
-- The `.cart.*` ELF section namespace is open-ended; frameworks can add
+- The `.blyt.*` ELF section namespace is open-ended; frameworks can add
   their own resource types without runtime changes.
 - Native RISC-V execution no longer requires an IPC ring buffer. The
   ring-buffer design proposed in Spike H (Stage 2) is superseded; direct
-  calls into `libconsole.so` eliminate per-call IPC overhead entirely. Spike H
+  calls into `libblyt32.so` eliminate per-call IPC overhead entirely. Spike H
   Stages 1, 3, and 4 (RV32 on RV64 kernel, OS-level isolation, cgroups CPU
   quota) remain relevant.
 - ADR-0085's ECALL convention is now the internal mechanism used by the
-  emulator-side `libconsole.so`, not the cart-facing ABI. The cart-facing ABI
-  is the C function call convention of `libconsole.so`'s symbols. ADR-0085
+  emulator-side `libblyt32.so`, not the cart-facing ABI. The cart-facing ABI
+  is the C function call convention of `libblyt32.so`'s symbols. ADR-0085
   requires an annotation noting this scope change.
 - ADR-0038 Layer 1's description of ECALL as the sole host-effects boundary
-  applies only to emulated platforms. On native hardware, `libconsole.so`
+  applies only to emulated platforms. On native hardware, `libblyt32.so`
   function calls are the API boundary; seccomp enforces that no other host
   effects are reachable. ADR-0038 requires an annotation.

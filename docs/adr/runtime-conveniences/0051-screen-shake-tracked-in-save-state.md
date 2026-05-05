@@ -33,10 +33,10 @@ on replay.
 The cart-facing API:
 
 ```c
-fc_result_t fc_screen_shake(int32_t frames, float intensity);
+blyt_result_t blyt_screen_shake(int32_t frames, float intensity);
 ```
 
-Calling `fc_screen_shake` replaces (not accumulates) any existing shake. The
+Calling `blyt_screen_shake` replaces (not accumulates) any existing shake. The
 framebuffer blit at end-of-frame applies the computed offset; no individual
 draw call is affected (consistent with ADR-0048).
 
@@ -48,5 +48,5 @@ draw call is affected (consistent with ADR-0048).
 - The shake region is a small fixed-size addition to the runtime's own
   tracked state — no cart API changes to declare it.
 - Replacing rather than accumulating shake is a simplification; carts that
-  want compounding shake call `fc_screen_shake` repeatedly with updated
+  want compounding shake call `blyt_screen_shake` repeatedly with updated
   parameters.

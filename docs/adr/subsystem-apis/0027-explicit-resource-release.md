@@ -17,9 +17,9 @@ eviction, or explicit release combined with GC as a fallback.
 
 ```lua
 -- R_HERO_SPRITES: packer-generated compile-time constant (ADR-0059)
-local hero_sprites = console.resource.load(R_HERO_SPRITES)
+local hero_sprites = blyt32.resource.load(R_HERO_SPRITES)
 -- ... use it ...
-console.resource.release(hero_sprites)
+blyt32.resource.release(hero_sprites)
 -- handle is now invalid; re-load returns a new handle
 ```
 

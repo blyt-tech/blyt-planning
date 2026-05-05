@@ -40,7 +40,7 @@ launched via Steam, GOG Galaxy, itch.io, or standalone.
    sync augments, doesn't replace.
 
 **Explicitly not v1 scope:** Steam SDK / GOG / Epic SDK integration, generic
-`console.services.*` API, authentication, DLC, service overlay UI,
+`blyt32.services.*` API, authentication, DLC, service overlay UI,
 cross-service cloud save.
 
 ## Consequences

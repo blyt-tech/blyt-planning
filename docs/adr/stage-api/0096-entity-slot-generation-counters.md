@@ -50,15 +50,15 @@ state_buffers:
 Buffers that never store inter-slot references (e.g. a particle pool) can
 omit this to save memory.
 
-When `fc_buffer_free_slot` is called, the slot's generation counter is
+When `blyt_buffer_free_slot` is called, the slot's generation counter is
 incremented. Generation wraps at 65535 back to 1 (never 0, which is
 reserved as the invalid sentinel).
 
 ### Reference type
 
 ```c
-typedef uint32_t fc_entity_ref_t;
-// FC_ENTITY_REF_NONE = 0  (invalid sentinel)
+typedef uint32_t blyt_entity_ref_t;
+// BLYT_ENTITY_REF_NONE = 0  (invalid sentinel)
 // encoding: high 16 bits = generation, low 16 bits = slot
 ```
 
@@ -66,13 +66,13 @@ typedef uint32_t fc_entity_ref_t;
 
 ```c
 // Create a reference to the entity currently occupying this slot
-fc_entity_ref_t stage_entity_ref(fc_buffer_h buf, int32_t slot);
+blyt_entity_ref_t stage_entity_ref(blyt_buffer_h buf, int32_t slot);
 
 // Check if a reference still points to the same entity
-bool stage_entity_ref_valid(fc_buffer_h buf, fc_entity_ref_t ref);
+bool stage_entity_ref_valid(blyt_buffer_h buf, blyt_entity_ref_t ref);
 
 // Extract slot index from a reference (check validity first)
-int32_t stage_entity_ref_slot(fc_entity_ref_t ref);
+int32_t stage_entity_ref_slot(blyt_entity_ref_t ref);
 ```
 
 Usage:
@@ -86,7 +86,7 @@ if (stage_entity_ref_valid(S_PLAYERS, ai.target_ref)) {
     int32_t tgt = stage_entity_ref_slot(ai.target_ref);
     // use tgt safely
 } else {
-    ai.target_ref = FC_ENTITY_REF_NONE;  // target gone; clear ref
+    ai.target_ref = BLYT_ENTITY_REF_NONE;  // target gone; clear ref
     ai.state = AI_PATROL;
 }
 ```
@@ -102,14 +102,14 @@ if stage.entity.ref_valid(players, ref) then
     local tgt = stage.entity.ref_slot(ref)
     -- use tgt
 else
-    enemies.target_ref[slot] = 0  -- FC_ENTITY_REF_NONE
+    enemies.target_ref[slot] = 0  -- BLYT_ENTITY_REF_NONE
     enemies.ai_state[slot] = AI_PATROL
 end
 ```
 
 ### Storage in buffer fields
 
-`fc_entity_ref_t` is a `u32` and can be stored directly in a buffer field:
+`blyt_entity_ref_t` is a `u32` and can be stored directly in a buffer field:
 
 ```yaml
 types:
@@ -117,7 +117,7 @@ types:
     x:          f32
     y:          f32
     ai_state:   u8
-    target_ref: u32   # fc_entity_ref_t — slot + generation packed
+    target_ref: u32   # blyt_entity_ref_t — slot + generation packed
 ```
 
 Because it is a POD u32 field, it serializes automatically with the buffer.
@@ -131,7 +131,7 @@ if the target entity was not destroyed in the intervening time.
 ## Consequences
 
 - Stale references are detectable at any call site that holds an
-  `fc_entity_ref_t`. The pattern "check validity, then use slot" replaces
+  `blyt_entity_ref_t`. The pattern "check validity, then use slot" replaces
   the silent "use slot, get wrong entity" failure mode.
 - The `u32` encoding fits in a single buffer field with no metadata overhead
   at the point of storage.
@@ -142,5 +142,5 @@ if the target entity was not destroyed in the intervening time.
   acceptable risk.
 - Buffers that never hold inter-slot references can omit `generations: true`
   to save 2 bytes per slot.
-- The counter is maintained by `fc_buffer_free_slot` — no cart code is
+- The counter is maintained by `blyt_buffer_free_slot` — no cart code is
   required to increment it.
