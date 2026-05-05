@@ -113,9 +113,9 @@ equals `SCENE_GLOBAL`.
 
 When Stage calls a scene's `on_update`, it sets a thread-local iteration
 scope to that scene's id. `stage_buffer_iter_active_begin` reads it. When
-the primary scene has `background_update: true` and an overlay is active,
-each scene's update runs with its own scope, so primary-scene systems still
-see only primary-scene entities.
+multiple stack frames update in the same frame (the top scene plus any
+below it with `background_update: true`), each scene's update runs with
+its own scope, so each scene's systems see only their own entities.
 
 ### Spawn integration
 

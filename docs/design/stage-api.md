@@ -253,9 +253,10 @@ obvious: it belongs in the world buffer, not in Lua locals.
   the Enemy type. You cannot add a component to an entity at runtime as
   you would in a runtime-archetype ECS.
 
-- **Arbitrary-depth scene stacks.** Stage provides primary scene plus one
-  overlay. Games that need deeper nesting (unusual at this fidelity)
-  must manage additional depth themselves.
+- **Unbounded scene stacks.** Stage's stack is a fixed depth declared
+  in the manifest (default 2). Carts raise the limit when they need
+  more layers; carts that legitimately need an unbounded stack (rare)
+  manage the extra depth themselves.
 
 - **Multi-scene entity membership.** An entity belongs to exactly one
   scene at a time, or `SCENE_GLOBAL`. Carts that genuinely need an entity

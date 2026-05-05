@@ -66,7 +66,7 @@ handler and does not touch the framebuffer otherwise. A scene that omits
 `on_draw` is declarative; Stage runs its default draw using the manifest
 fields. The two are not mixed in a single scene declaration — a cart that
 wants partial control uses a per-buffer draw handler or splits the work
-into a primary + overlay pair.
+across separate scene-stack frames (ADR-0092).
 
 ### Reserved drawable fields
 
