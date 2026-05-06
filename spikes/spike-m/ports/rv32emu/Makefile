@@ -221,6 +221,7 @@ $(eval $(call define_cart,det_short_script))
 $(eval $(call define_cart,det_two_scripts_destroy))
 $(eval $(call define_cart,det_scripts_with_entities))
 $(eval $(call define_cart,det_table_shapes))
+$(eval $(call define_cart,det_transient_coroutine))
 
 # ── targets ─────────────────────────────────────────────────────────────────
 

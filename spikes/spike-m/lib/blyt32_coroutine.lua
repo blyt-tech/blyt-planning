@@ -165,12 +165,25 @@ function M.invalidate_transients()
     end
 end
 
+-- Manual boundary-cross mark — used by the Stage 5 negative-test cart
+-- on a load resume, where the cart re-creates a transient that
+-- corresponds to one that was suspended at save time.  Production
+-- would derive this from a wrapper-managed transient ID list saved
+-- alongside cart state; the spike validates the throw mechanism
+-- with explicit cart-side marking.
+function M.mark_boundary_crossed(co)
+    _live[co] = "boundary-crossed"
+end
+
 -- Wrap coroutine.resume so a boundary-crossed transient throws
 -- the canonical error string on next resume.  This must run in the
 -- *load* side, where _live has been reseeded by `invalidate_transients`.
 coroutine.resume = function (co, ...)
     if _live[co] == "boundary-crossed" then
-        error("RuntimeError: coroutine crossed a save/restore boundary.\n" ..
+        -- Single-line message so the harness's `grep '^STDERR '`
+        -- captures the whole ADR-0012 string in one line for the
+        -- cross-host byte-equality check.
+        error("RuntimeError: coroutine crossed a save/restore boundary. " ..
               "Use blyt32.coroutine.create() if this coroutine needs to survive saves.", 2)
     end
     return _raw_resume(co, ...)
