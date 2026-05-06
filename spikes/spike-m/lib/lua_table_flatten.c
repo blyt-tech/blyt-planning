@@ -170,6 +170,7 @@ static int detect_array(lua_State *L, int ti, uint8_t *out_tag, uint32_t *out_n)
      * record, not an array — but `detect_array` is called only when
      * the caller has already concluded the value should be flattened
      * as an array (e.g. it's a value-position table). */
+    ti = lua_absindex(L, ti);
     uint32_t n = 0;
     uint8_t  tag = 0;
     lua_Integer i = 1;
@@ -208,6 +209,7 @@ static int detect_array(lua_State *L, int ti, uint8_t *out_tag, uint32_t *out_n)
 
 static int emit_array(lua_State *L, int ti, sink_t *out)
 {
+    ti = lua_absindex(L, ti);
     uint8_t  elem_tag = 0;
     uint32_t elem_n   = 0;
     int rc = detect_array(L, ti, &elem_tag, &elem_n);
