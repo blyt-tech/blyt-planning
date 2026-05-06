@@ -90,16 +90,49 @@ complete and what remains.
 
 ## Stage 3 — Multiple concurrent scripts and the entity-handle pattern
 
-- [ ] `workloads/det_two_scripts.lua` — cutscene + AI script (no entity
-      references); slots 0 and 1.
-- [ ] `workloads/det_scripts_with_entities.lua` — two scripts on entity 0
-      + one rotator on entity 1; slots 0, 1, 2.
-- [ ] `workloads/det_two_scripts_destroy.lua` — destroy AI at frame 20;
-      create loader script in slot 1 at frame 21.
-- [ ] `workloads/det_short_script.lua` — body that completes at frame 10;
-      auto-reclamation on body return.
-- [ ] **Stage 3 PASS** — all-S sweep on each workload; slot independence
-      and reclamation visible in buffer hex.
+- [x] `workloads/det_two_scripts.lua` — cutscene + AI script, slots 0
+      and 1, PASSes the all-S sweep.  Validates the floor case for
+      slot-table independence.
+- [x] `workloads/det_scripts_with_entities.lua` — two scripts on entity
+      0 (mover_x + mover_y, advancing different fields of the same
+      entity row) + one rotator on entity 1.  PASSes the all-S sweep.
+      Validates: no per-entity script limit; cart_state_lua_simple +
+      persistent_scripts round-trip independently per save_state's
+      registry-order serialisation.
+- [x] `workloads/det_two_scripts_destroy.lua` — frames 0..19 cs+ai;
+      frame 20 destroy ai; frame 21 create loader → slot 1.
+      PASSes the all-S sweep.  Cart structurally encodes the
+      topology decision based on `console.frame()` so its load-side
+      create order matches the save-side slot allocation order.
+      Validates slot reclamation across save/restore.
+- [x] `workloads/det_short_script.lua` — body completes at frame 10;
+      auto-reclaim on body return.  PASSes the all-S sweep.  Cart
+      uses the new `console.script_has_saved_bytes(slot)` binding
+      to detect "this slot was empty at save time" and skip
+      re-creating the script on a load resume past completion.
+- [x] **Stage 3 PASS** — 4 workloads × 29 save frames × 4 directions
+      = 464 cross-host runs PASS.  Slot independence, slot
+      reclamation (both explicit destroy and implicit body-return),
+      and the entity-handle pattern (same entity referenced by
+      multiple scripts; entity rows round-trip via existing
+      cart_state_lua_simple region) all validated.
+
+Stage 3 design choices flagged for the result write-up:
+- The cart's load-side logic must structurally mirror the save-side
+  topology (which scripts existed at save time; which slots they
+  occupied).  For workloads with destroy/recreate, the cart uses
+  `console.frame()` to gate its `create` calls.  An alternative
+  (slot-keyed body-id stored in the slot bytes) keeps cart
+  authoring simpler at the cost of a richer wrapper protocol —
+  the spike's structural approach minimises the wrapper changes
+  but pushes a discipline burden onto cart authors.
+- New binding `console.script_has_saved_bytes(slot)` exposes
+  `slot_lens[slot] > 0` regardless of `active_bits`.  Required
+  for the auto-reclaim case where the slot was occupied at save
+  time but the body completed before the save snapshot.
+- Wrapper now falls through to `seed` when the loaded slot has
+  zero bytes (instead of unflatten'ing an empty string).  Handles
+  the "destroyed-then-realloc'd-to-different-body" edge case.
 
 ## Stage 4 — Constrained-table flattener cross-host validation
 

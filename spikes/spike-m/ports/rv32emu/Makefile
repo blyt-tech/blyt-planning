@@ -216,6 +216,10 @@ ALL_ELFS :=
 
 $(eval $(call define_cart,det_cutscene_linear))
 $(eval $(call define_cart,det_cutscene_branched))
+$(eval $(call define_cart,det_two_scripts))
+$(eval $(call define_cart,det_short_script))
+$(eval $(call define_cart,det_two_scripts_destroy))
+$(eval $(call define_cart,det_scripts_with_entities))
 
 # ── targets ─────────────────────────────────────────────────────────────────
 

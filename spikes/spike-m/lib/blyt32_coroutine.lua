@@ -71,10 +71,13 @@ function M.create(body, seed)
 
     -- On a load run, the slot's bytes were just restored from the
     -- buffer.  Use them as the deserialized ctx, overriding seed.
+    -- An empty string means the slot was occupied at save time but
+    -- the saved coroutine completed or was destroyed before save —
+    -- fall through to the seed in that case.
     local ctx = seed
     if console.is_load_resume() then
         local bytes = console.script_read_blob(slot)
-        if bytes ~= nil then
+        if bytes and #bytes > 0 then
             local restored, err = console.lua_table_unflatten(bytes)
             if restored == nil then
                 error("BLYT_ERR_UNFLATTEN: " .. tostring(err), 2)

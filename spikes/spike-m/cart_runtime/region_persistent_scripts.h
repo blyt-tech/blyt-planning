@@ -64,6 +64,12 @@ int      persistent_scripts_is_active(int slot);
 uint32_t persistent_scripts_active_count(void);
 uint16_t persistent_scripts_blob_len(int slot);
 
+/* Raw blob length — returns slot_lens[slot] regardless of active_bits.
+ * Used by carts on load resume after `unmark_all` clears the bitmap
+ * but the saved bytes are still in place; cart code needs to check
+ * "was this script alive at save time" without reactivating the slot. */
+uint16_t persistent_scripts_raw_blob_len(int slot);
+
 /* Reset the region to all-empty.  Called at cart init before any allocation. */
 void     persistent_scripts_reset(void);
 

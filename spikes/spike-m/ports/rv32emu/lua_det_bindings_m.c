@@ -185,6 +185,18 @@ static int l_max_persistent_scripts(lua_State *L)
     return 1;
 }
 
+/* Returns true if the slot has saved-blob bytes (slot_lens[s] > 0)
+ * regardless of the active bit.  Used by carts on load resume to
+ * detect "this script completed (or was destroyed) before save", so
+ * the cart can skip re-creating it.  Distinct from `script_is_active`,
+ * which reflects the runtime-side allocation bit. */
+static int l_script_has_saved_bytes(lua_State *L)
+{
+    int s = (int)luaL_checkinteger(L, 1);
+    lua_pushboolean(L, persistent_scripts_raw_blob_len(s) > 0);
+    return 1;
+}
+
 static int l_lua_table_flatten(lua_State *L)
 {
     luaL_checktype(L, 1, LUA_TTABLE);
@@ -233,6 +245,7 @@ static const luaL_Reg console_funcs[] = {
     { "script_read_blob",        l_script_read_blob        },
     { "script_is_active",        l_script_is_active        },
     { "max_persistent_scripts",  l_max_persistent_scripts  },
+    { "script_has_saved_bytes",  l_script_has_saved_bytes  },
     { "lua_table_flatten",       l_lua_table_flatten       },
     { "lua_table_unflatten",     l_lua_table_unflatten     },
     { NULL, NULL }

@@ -116,6 +116,12 @@ uint16_t persistent_scripts_blob_len(int slot)
     return g_region.slot_lens[slot];
 }
 
+uint16_t persistent_scripts_raw_blob_len(int slot)
+{
+    if (!slot_in_range(slot)) return 0;
+    return g_region.slot_lens[slot];
+}
+
 /* ── tracked region callbacks ────────────────────────────────────────────── */
 
 static void describe(string_sink_t *out)
