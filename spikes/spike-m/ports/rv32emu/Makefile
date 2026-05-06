@@ -222,6 +222,9 @@ $(eval $(call define_cart,det_two_scripts_destroy))
 $(eval $(call define_cart,det_scripts_with_entities))
 $(eval $(call define_cart,det_table_shapes))
 $(eval $(call define_cart,det_transient_coroutine))
+$(eval $(call define_cart,det_neg_slot_overflow))
+$(eval $(call define_cart,det_neg_unsupported_type))
+$(eval $(call define_cart,det_neg_blob_truncation))
 
 # ── targets ─────────────────────────────────────────────────────────────────
 

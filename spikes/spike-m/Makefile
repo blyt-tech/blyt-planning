@@ -168,90 +168,71 @@ stage-1-diff: stage-1-load
 stage-1: elf-bytes-diff stage-1-buffer-diff stage-1-diff
 	@echo "=== Spike M — Stage 1 PASS ==="
 
-# ─── Stage 2: branched cutscene all-S sweep ─────────────────────────────────
+# ─── per-stage sweep harnesses ──────────────────────────────────────────────
 #
-# For every S in 1..NFRAMES-1:
-#   • save on arm64 + amd64; assert buffers byte-identical
-#   • run 4 load combinations; assert all 4 digest streams byte-identical
-#   • assert the digest stream matches the same-host straight-through
-#     full-run suffix from frame S+1 onwards
+# Each stage's all-S save-frame sweep is wrapped by scripts/run-sweep.sh,
+# which iterates S in [S_MIN..S_MAX], saves on both hosts, runs the
+# four load combinations, and asserts (a) byte-identical buffers,
+# (b) byte-identical 4-way digest streams, and (c) match against the
+# same-host straight-through suffix from frame S+1.
 #
-# This is the gate that catches resume-marker bugs (saves taken inside
-# branching code).  See workloads/det_cutscene_branched.lua for the
-# re-entrant `ctx.pc` idiom that makes this gate pass.
+# The Stage 5 transient negative test has its own harness because the
+# headline gate is STDERR byte-equality alongside DIGEST byte-equality.
 
-DCB_FULL_ARM64 := $(DIGESTS_DIR)/det_cutscene_branched.full.arm64.txt
-DCB_FULL_AMD64 := $(DIGESTS_DIR)/det_cutscene_branched.full.amd64.txt
+S_MAX := $(shell echo $$(($(NFRAMES) - 1)))
 
-$(DCB_FULL_ARM64): docker-build-arm64 | $(DIGESTS_DIR)
-	docker run --rm --platform linux/arm64 $(DOCKER_IMAGE_ARM64) \
-	    $(RV32EMU_BIN) $(ELFS_DIR)/$(STAGE_2_FULL_ELF) \
-	    | grep '^DIGEST ' > $@
+.PHONY: stage-2 stage-2-sweep
+stage-2-sweep: docker-build-arm64 docker-build-amd64 | $(BUFFERS_DIR) $(DIGESTS_DIR)
+	./scripts/run-sweep.sh det_cutscene_branched 1 $(S_MAX)
 
-$(DCB_FULL_AMD64): docker-build-amd64 | $(DIGESTS_DIR)
-	docker run --rm --platform linux/amd64 $(DOCKER_IMAGE_AMD64) \
-	    $(RV32EMU_BIN) $(ELFS_DIR)/$(STAGE_2_FULL_ELF) \
-	    | grep '^DIGEST ' > $@
-
-.PHONY: stage-2-full
-stage-2-full: $(DCB_FULL_ARM64) $(DCB_FULL_AMD64)
-	@diff -q $(DCB_FULL_ARM64) $(DCB_FULL_AMD64) >/dev/null && \
-	    echo "FULL PASS — branched straight-through identical across hosts" || \
-	    { echo "FULL FAIL — branched straight-through diverges"; exit 1; }
-
-.PHONY: stage-2-sweep
-stage-2-sweep: docker-build-arm64 docker-build-amd64 stage-2-full | $(BUFFERS_DIR) $(DIGESTS_DIR)
-	@echo "=== Stage 2 — sweep S=1..$$(($(NFRAMES)-1)) on det_cutscene_branched ==="
-	@fail=0; \
-	for S in $$(seq 1 $$(($(NFRAMES)-1))); do \
-	    docker run --rm --platform linux/arm64 $(DOCKER_IMAGE_ARM64) \
-	        $(RV32EMU_BIN) $(ELFS_DIR)/$(STAGE_2_SAVE_ELF) $$S 2>/dev/null \
-	        | grep '^BUFFER ' > $(BUFFERS_DIR)/det_cutscene_branched.arm64.f$$S.hex; \
-	    docker run --rm --platform linux/amd64 $(DOCKER_IMAGE_AMD64) \
-	        $(RV32EMU_BIN) $(ELFS_DIR)/$(STAGE_2_SAVE_ELF) $$S 2>/dev/null \
-	        | grep '^BUFFER ' > $(BUFFERS_DIR)/det_cutscene_branched.amd64.f$$S.hex; \
-	    if ! diff -q $(BUFFERS_DIR)/det_cutscene_branched.arm64.f$$S.hex \
-	                  $(BUFFERS_DIR)/det_cutscene_branched.amd64.f$$S.hex >/dev/null; then \
-	        echo "S=$$S BUFFER FAIL"; fail=$$((fail+1)); continue; \
-	    fi; \
-	    docker run --rm --platform linux/arm64 -v $(abspath $(BUFFERS_DIR)):/spike-m/buffers:ro $(DOCKER_IMAGE_ARM64) \
-	        $(RV32EMU_BIN) $(ELFS_DIR)/$(STAGE_2_LOAD_ELF) /spike-m/buffers/det_cutscene_branched.arm64.f$$S.hex 2>/dev/null \
-	        | grep '^DIGEST ' > $(DIGESTS_DIR)/det_cutscene_branched.same.arm64.f$$$$(($$S+1)).txt; \
-	    docker run --rm --platform linux/amd64 -v $(abspath $(BUFFERS_DIR)):/spike-m/buffers:ro $(DOCKER_IMAGE_AMD64) \
-	        $(RV32EMU_BIN) $(ELFS_DIR)/$(STAGE_2_LOAD_ELF) /spike-m/buffers/det_cutscene_branched.amd64.f$$S.hex 2>/dev/null \
-	        | grep '^DIGEST ' > $(DIGESTS_DIR)/det_cutscene_branched.same.amd64.f$$$$(($$S+1)).txt; \
-	    docker run --rm --platform linux/arm64 -v $(abspath $(BUFFERS_DIR)):/spike-m/buffers:ro $(DOCKER_IMAGE_ARM64) \
-	        $(RV32EMU_BIN) $(ELFS_DIR)/$(STAGE_2_LOAD_ELF) /spike-m/buffers/det_cutscene_branched.amd64.f$$S.hex 2>/dev/null \
-	        | grep '^DIGEST ' > $(DIGESTS_DIR)/det_cutscene_branched.cross.arm64.f$$$$(($$S+1)).txt; \
-	    docker run --rm --platform linux/amd64 -v $(abspath $(BUFFERS_DIR)):/spike-m/buffers:ro $(DOCKER_IMAGE_AMD64) \
-	        $(RV32EMU_BIN) $(ELFS_DIR)/$(STAGE_2_LOAD_ELF) /spike-m/buffers/det_cutscene_branched.arm64.f$$S.hex 2>/dev/null \
-	        | grep '^DIGEST ' > $(DIGESTS_DIR)/det_cutscene_branched.cross.amd64.f$$$$(($$S+1)).txt; \
-	    h1=$$(sha256sum $(DIGESTS_DIR)/det_cutscene_branched.same.arm64.f$$$$(($$S+1)).txt | awk '{print $$1}'); \
-	    h2=$$(sha256sum $(DIGESTS_DIR)/det_cutscene_branched.same.amd64.f$$$$(($$S+1)).txt | awk '{print $$1}'); \
-	    h3=$$(sha256sum $(DIGESTS_DIR)/det_cutscene_branched.cross.arm64.f$$$$(($$S+1)).txt | awk '{print $$1}'); \
-	    h4=$$(sha256sum $(DIGESTS_DIR)/det_cutscene_branched.cross.amd64.f$$$$(($$S+1)).txt | awk '{print $$1}'); \
-	    if [ "$$h1" != "$$h2" ] || [ "$$h1" != "$$h3" ] || [ "$$h1" != "$$h4" ]; then \
-	        echo "S=$$S DIGEST 4-WAY FAIL"; fail=$$((fail+1)); continue; \
-	    fi; \
-	    suffix=$$(tail -n +$$$$(($$S+2)) $(DCB_FULL_ARM64) | sha256sum | awk '{print $$1}'); \
-	    if [ "$$h1" != "$$suffix" ]; then \
-	        echo "S=$$S SUFFIX MISMATCH"; fail=$$((fail+1)); continue; \
-	    fi; \
-	    printf "S=$$S "; \
-	done; \
-	echo; \
-	[ $$fail -eq 0 ] && echo "STAGE 2 PASS — $$(($(NFRAMES)-1)) save-frames × 4 directions byte-identical" || \
-	  { echo "STAGE 2 FAIL — $$fail divergences"; exit 1; }
-
-.PHONY: stage-2
 stage-2: stage-2-sweep
 	@echo "=== Spike M — Stage 2 PASS ==="
+
+# ─── Stage 3: multi-script + entity-handle pattern ──────────────────────────
+
+.PHONY: stage-3 stage-3-two-scripts stage-3-with-entities stage-3-destroy stage-3-short
+
+stage-3-two-scripts: docker-build-arm64 docker-build-amd64 | $(BUFFERS_DIR) $(DIGESTS_DIR)
+	./scripts/run-sweep.sh det_two_scripts 1 $(S_MAX)
+
+stage-3-with-entities: docker-build-arm64 docker-build-amd64 | $(BUFFERS_DIR) $(DIGESTS_DIR)
+	./scripts/run-sweep.sh det_scripts_with_entities 1 $(S_MAX)
+
+stage-3-destroy: docker-build-arm64 docker-build-amd64 | $(BUFFERS_DIR) $(DIGESTS_DIR)
+	./scripts/run-sweep.sh det_two_scripts_destroy 1 $(S_MAX)
+
+stage-3-short: docker-build-arm64 docker-build-amd64 | $(BUFFERS_DIR) $(DIGESTS_DIR)
+	./scripts/run-sweep.sh det_short_script 1 $(S_MAX)
+
+stage-3: stage-3-two-scripts stage-3-with-entities stage-3-destroy stage-3-short
+	@echo "=== Spike M — Stage 3 PASS ==="
+
+# ─── Stage 4: constrained-shape flattener cross-host ────────────────────────
+
+.PHONY: stage-4
+stage-4: docker-build-arm64 docker-build-amd64 | $(BUFFERS_DIR) $(DIGESTS_DIR)
+	./scripts/run-sweep.sh det_table_shapes 1 $(S_MAX)
+	@echo "=== Spike M — Stage 4 PASS ==="
+
+# ─── Stage 5: transient-coroutine boundary throw ────────────────────────────
+
+.PHONY: stage-5
+stage-5: docker-build-arm64 docker-build-amd64 | $(BUFFERS_DIR) $(DIGESTS_DIR)
+	./scripts/run-transient-negative.sh
+	@echo "=== Spike M — Stage 5 PASS ==="
+
+# ─── Stage 6: negative tests (mechanism error paths) ────────────────────────
+
+.PHONY: stage-6
+stage-6: docker-build-arm64 | $(BUFFERS_DIR) $(DIGESTS_DIR)
+	./scripts/run-negative-tests.sh
+	@echo "=== Spike M — Stage 6 PASS ==="
 
 # ─── full / clean ───────────────────────────────────────────────────────────
 
 .PHONY: all
-all: stage-1 stage-2
-	@echo "=== Spike M — wired stages PASS ==="
+all: stage-1 stage-2 stage-3 stage-4 stage-5 stage-6
+	@echo "=== Spike M — Stages 1–6 PASS ==="
 
 .PHONY: clean
 clean:

@@ -1161,6 +1161,20 @@ Spikes J, M.
 
 ## Spike M — Managed Lua coroutine save/restore end-to-end
 
+**Status:** PASS. Implementation in
+[`spikes/spike-m/`](../../spikes/spike-m/); results in
+[`spike-m-results.md`](spike-m-results.md). All six stages PASS:
+eight workloads × 29 save frames × 4 cross-host directions = 928
+cross-host runs, byte-identical save buffers and continuation
+digest streams matching the same-host straight-through suffix; the
+transient negative test additionally produces a 4-way byte-equal
+STDERR + DIGEST at S=5; three Stage 6 negative tests confirm the
+mechanism error paths (slot overflow, ctx-with-function,
+slot-blob bit-flip) all surface canonical `BLYT_ERR_*` strings
+without crashing.  ADR-0012 amended (2026-05-06) with the
+single-function `create(function(ctx), seed?)` shape, the
+constrained `ctx` shape, and the load-resume idiom contract.
+
 **The question:** Can a real algorithm — say a multi-step cutscene, an
 AI behaviour tree, or an asynchronous loader — written using
 `blyt32.coroutine.create{start, save, restore}` (ADR-0012) be
