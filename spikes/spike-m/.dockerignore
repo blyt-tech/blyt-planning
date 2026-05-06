@@ -1,0 +1,31 @@
+# Exclude host-side artefacts and symlinks that point outside the spike-M
+# tree.  The Dockerfile brings the symlink targets in via the spike-k
+# named build context.
+buffers
+digests
+elfs
+.dockerignore
+.git
+*.o
+*.elf
+
+# Symlinks resolve to ../../spike-k/cart_runtime/*; excluding them by
+# name keeps them out of the build context (Docker would error or
+# misresolve outside the context).
+cart_runtime/digest.c
+cart_runtime/digest.h
+cart_runtime/pcg32.c
+cart_runtime/pcg32.h
+cart_runtime/nan_canon.h
+cart_runtime/frame_state.h
+cart_runtime/save_state.c
+cart_runtime/save_state.h
+cart_runtime/runtime_tracked.c
+cart_runtime/runtime_tracked.h
+cart_runtime/region_frame_state.c
+cart_runtime/region_frame_state.h
+cart_runtime/save_io.c
+cart_runtime/save_io.h
+cart_runtime/cart_state_lua_simple.c
+cart_runtime/cart_state_lua_simple.h
+ports/rv32emu/include/math.h
