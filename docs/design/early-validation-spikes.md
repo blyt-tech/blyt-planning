@@ -920,7 +920,7 @@ the headline "edit-and-debug" workflow.
   correct source location on the libconsole side. Document the
   `qOffsets` / shared-library reporting protocol used.
 - A reload-while-debugging test for the DAP path. The spike does not
-  need full Spike M / K machinery — a *synthetic* reload (tear down
+  need full Spike N / K machinery — a *synthetic* reload (tear down
   the cart's `lua_State`, rebuild it from a modified Lua source, do
   not bother preserving game state) is sufficient to exercise the
   protocol. Procedure:
@@ -984,7 +984,7 @@ the headline "edit-and-debug" workflow.
   TCP from the dev-mode device image; that's a Spike H follow-up
   on real hardware, not this spike.
 - Does not validate the *full* hot-reload mechanics (snapshot,
-  state migration, native-cart restart). Those are Spike M's
+  state migration, native-cart restart). Those are Spike N's
   scope. J validates only the debugger-side protocol seam — the
   events, the re-binding, the no-UI-action contract — using a
   synthetic reload that throws away game state.
@@ -1159,7 +1159,147 @@ Spikes J, M.
 
 ---
 
-## Spike M — Hot-reload via save/restore (Lua and native paths)
+## Spike M — Managed Lua coroutine save/restore end-to-end
+
+**The question:** Can a real algorithm — say a multi-step cutscene, an
+AI behaviour tree, or an asynchronous loader — written using
+`blyt32.coroutine.create{start, save, restore}` (ADR-0012) be
+save-stated mid-yield, restored on a fresh runtime, and continue
+producing the same per-frame digest stream as a same-host
+straight-through run, with the property holding cross-host
+(linux/arm64 ↔ linux/amd64) byte-for-byte?
+
+**Why this is a risk:** Spike K validated the *byte transport* of a
+coroutine save blob — fixed POD per slot, written via
+`coroutine_blob_write()` and round-tripped through the registered
+region. The header of K's `det_cutscene_save.elf` is explicit about
+the limit: *"Simulates the production `blyt32.coroutine.create{start,
+save, restore}` pattern (ADR-0012) **without a Lua VM**"*. Five
+load-bearing questions sit downstream of that simplification, none of
+which any current spike has touched:
+
+1. **Is the `start / save / restore` author API actually expressible
+   as Lua and ergonomic for realistic patterns?** ADR-0012 specifies
+   the shape but does not show a working algorithm using it. What
+   does `start` get as its argument? How does the cart-author code
+   inside `start` invoke `coroutine.yield()` such that the runtime
+   can mark a resume point? What does `restore` need to return so the
+   runtime knows where in `start` to continue?
+2. **Does the runtime's wrapping of `coroutine.yield` compose with
+   branching cart code?** The cutscene example in ADR-0012 is
+   linear; real coroutines branch. If the resume marker is just a
+   yield count, branching that conditionally yields a different
+   number of times across save / restore breaks the model. The
+   alternative — capturing call-stack and instruction position — is
+   strictly more complex.
+3. **Does the `save` callback's table return cross-host round-trip
+   byte-equal?** ADR-0012 lets `save = function(ctx) return {...}`
+   return any Lua table; the runtime serializes it. Lua iteration
+   order, string interning, and hash slot assignment are all
+   non-deterministic in stock Lua. If the flatten path is not
+   cross-host bit-identical, ADR-0012 may need to constrain the
+   `save` return shape (ordered list, flat record, no nested
+   tables) before v1 ships — a spec-level revision, not just
+   engineering. This is the question Spike K explicitly deferred.
+4. **Is transient `coroutine.create()` detectable at save time
+   (must-throw rule), without false positives on managed
+   coroutines?** ADR-0012 mandates a runtime error when a
+   non-persistent coroutine survives save / restore. The Lua VM
+   exposes `lua_State` per coroutine but no first-class "this was
+   created by my managed wrapper" marker; the discrimination
+   mechanism — registry table? upvalue tag? `lua_setuservalue`? —
+   is unspecified. The open question is whether the Lua VM exposes
+   enough hooks to distinguish the two creation paths at save
+   time, or whether ADR-0012 needs to specify the discrimination
+   mechanism explicitly.
+5. **Do multiple persistent coroutines running concurrently survive
+   save / restore independently?** A single cutscene exercises the
+   slot-table accounting trivially; a cutscene plus an AI script
+   plus an asynchronous loader does not. Slot allocation, slot-
+   reuse-after-completion, and per-coroutine save-blob sizing all
+   need to round-trip when multiple slots are simultaneously active.
+
+**What to build:**
+
+- A real Lua coroutine workload — a 5-step cutscene with at least one
+  conditional branch (`if frame_count > 30 then yield_n_more(2) else
+  yield_n_more(5) end`) — wrapped in
+  `blyt32.coroutine.create{start, save, restore}`. Each yield encodes
+  the current step + a small payload (angle, position) into the
+  `save` return table; `restore` rebuilds local state from that
+  table.
+- A second Lua workload running *two* persistent coroutines
+  concurrently in the same cart: a cutscene as above, plus a tiny
+  AI behaviour script (alternating between "wander" and "chase"
+  states across yields). Different slot indices, different
+  save-blob shapes. Verify they round-trip independently.
+- Per-frame digest emission identical to Spike K (same FNV-1a-64
+  helper). For each workload: run frames 0–N straight through;
+  separately run frames 0–S, save, restart on a fresh runtime,
+  load, continue frames S+1–N; assert the digest streams match
+  byte-for-byte. Repeat for *every* save frame S in `[1, N-1]` so a
+  resume marker that only works at certain yield boundaries fails
+  loudly.
+- Cross-host validation: build the same Lua workloads on
+  linux/arm64 and linux/amd64 (Spike D's two-Docker-image setup,
+  inherited via Spike K's Dockerfile pattern). Save on host A,
+  load on host B; assert the `save` callback's flattened table
+  bytes are byte-equal pre-write, and the continuation digest
+  streams byte-equal post-load.
+- The transient-coroutine negative test: a small workload that
+  calls bare `coroutine.create()` (not the `blyt32` wrapper),
+  yields, takes a save, restores, and attempts to resume. Confirm
+  the runtime throws `RuntimeError: coroutine crossed a save/
+  restore boundary` (or whichever string ADR-0012 settles on) —
+  string-equality on stderr, same on both hosts.
+
+**Success criterion:**
+
+- The single-coroutine cutscene and the dual-coroutine workload
+  both have byte-equal continuation digest streams across every
+  save frame `S ∈ [1, N-1]`, on both linux/arm64 and linux/amd64,
+  cross-saved and cross-loaded in both directions. Failure at any
+  S is a real bug — either in the resume-marker mechanism or in
+  the table-flatten determinism.
+- The transient-coroutine negative test throws the specified
+  error, with byte-equal stderr on both hosts.
+- The implemented author API (the actual Lua signatures of
+  `start`, `save`, `restore`, and how `coroutine.yield` is used
+  inside `start`) is documented as a recommendation back into
+  ADR-0012, with any awkwardness or gaps identified.
+
+**What this spike does and does not decide:**
+
+- Decides whether `blyt32.coroutine.create{}` is implementable on
+  top of stock Lua's coroutine machinery without a Lua VM patch,
+  or whether the runtime needs to substitute its own coroutine
+  primitive.
+- Decides whether the `save` callback's free-form table return
+  cross-host round-trips byte-equal, or whether ADR-0012 needs a
+  shape constraint before v1 ships.
+- Decides whether the transient-coroutine must-throw rule is
+  enforceable with the Lua VM's existing introspection surface.
+- Pins down the author-facing API shape with a real working
+  algorithm — feeding back into ADR-0012's specification.
+- Does not address hot reload of the coroutine's source code
+  (function body changes mid-yield). That is Spike N's scope; M
+  proves the save/restore mechanism works against unchanged code
+  first, so N can isolate the change-related failures cleanly.
+- Does not address asset-only coroutine state (e.g. a coroutine
+  whose state references a sprite handle whose backing changed
+  out from under it). Same reasoning — N's territory once M's
+  base case is solid.
+
+**Dependency:** Spike K (save-state buffer + tracked-region
+registry — non-negotiable; M's coroutine save blob registers as a
+region exactly like K Stage 4's, but with a real Lua VM populating
+the bytes), Spike I (Lua cart pipeline — the workloads are Lua
+carts in the spike-I sense), Spike B (Lua VM availability inside
+the runtime). M can run in parallel with Spike L; N depends on M.
+
+---
+
+## Spike N — Hot-reload via save/restore (Lua and native paths)
 
 **The question:** Can a cart — Lua or native — be edited and reloaded
 mid-run such that POD state persists across the reload, the cart's
@@ -1253,45 +1393,24 @@ manifest entries.
   ships.
 - Decides whether the < 500 ms Lua-only latency target is reachable
   with the packer architecture from ADR-0088 in place.
-- **Inherits two follow-ups from Spike K** (see
-  `docs/design/spike-k-results.md` § "Open follow-ups"):
-  - **Cross-host bit-identity of recursive Lua-table flattening.**
-    ADR-0012's `save = function(ctx) return {...}` returns an
-    arbitrary Lua table that the runtime serializes.  Spike K
-    simplified this to fixed-size POD save structs; M's Lua suite
-    cases (iii)–(v) require the real flatten path to exist.  Run
-    M's coroutine cases through Spike K's two-Docker-image setup
-    (linux/arm64 + linux/amd64) as well as the same-host edit-save
-    loop, and confirm the flattened bytes are byte-equal across
-    hosts.  If they are not, the question is whether ADR-0012 needs
-    to constrain `save` return shape (ordered list / flat record
-    instead of free-form table) before v1 ships — a spec-level
-    revision, not just engineering.  Lua table iteration order,
-    string interning, and hash slot assignment are all known to be
-    non-deterministic in stock Lua; bring this risk in front of M's
-    gate, not after.
-  - **Transient-coroutine boundary detection.**  ADR-0012 mandates a
-    runtime error when a non-persistent `coroutine.create()` (as
-    opposed to `blyt32.coroutine.create{}`) survives a save/load.
-    Add a case to M's suite that creates a transient coroutine,
-    yields, takes a save, restores, attempts to resume, and confirm
-    the runtime throws `RuntimeError: coroutine crossed a save/
-    restore boundary` (string-equality on stderr; same on both
-    hosts).  The open question this answers: does the Lua VM expose
-    enough hooks to distinguish the two creation paths at save
-    time, or does ADR-0012 need to specify the discrimination
-    mechanism explicitly?
+- Does not re-validate the managed-coroutine save/restore mechanism
+  itself — that is Spike M's scope. N depends on M's mechanism
+  working against unchanged code so the Lua suite cases (iv) and
+  (v) can isolate failures attributable to the *code change*, not
+  to a flaw in the underlying coroutine save/restore.
 - Does not address asset-only hot reloads (sprite, palette, audio).
   Those are simpler than code reload; if code reload works, asset-
   only reload is a strict subset.
 
 **Dependency:** Spike K (save-state buffer is the migration vehicle —
-non-negotiable for both suites), Spike I (cart format and the case
-a/b/c/d binaries that supply the content under edit), ADR-0088
-(packer two-phase incremental build, to make the edit-save loop fast
-enough to be measurable). Can run in parallel with Spikes J, L; the
-native suite can run before the Lua suite, since the native path is
-a strict subset of the Lua path's mechanism.
+non-negotiable for both suites), Spike M (managed-coroutine save/
+restore mechanism — required for the Lua suite's coroutine edit
+cases), Spike I (cart format and the case a/b/c/d binaries that
+supply the content under edit), ADR-0088 (packer two-phase
+incremental build, to make the edit-save loop fast enough to be
+measurable). Can run in parallel with Spikes J, L; the native suite
+can run before the Lua suite, since the native path is a strict
+subset of the Lua path's mechanism and does not depend on M.
 
 ---
 
@@ -1313,8 +1432,15 @@ A (interpreter)
     │       │                                           round-trip
     │       └── L (libretro core adapter) ← consumes K's save-state
     │       │                               buffer for retro_serialize
-    │       └── M (hot-reload via save/restore) ← uses K's buffer as
-    │                                              the migration vehicle
+    │       └── M (managed Lua coroutine save/restore) ← exercises a
+    │           │                               real algorithm using
+    │           │                               blyt32.coroutine over
+    │           │                               K's save-state buffer
+    │           └── N (hot-reload via save/restore) ← uses K's buffer
+    │                                              as the migration
+    │                                              vehicle; depends on M
+    │                                              for the Lua suite's
+    │                                              coroutine-edit cases
     └── E (WASM, rv32emu+Lua) ← also uses D for comparison
         └── F (WASM, Lua-direct) ← contingent on E's miss; uses E's
             │                       harness and cross-stack baseline
@@ -1332,8 +1458,8 @@ I (cart format end-to-end) ← depends on ADR-0024/ADR-0025 and Spikes
                               makes the native-RISC-V dimension accessible
                               without physical hardware
                               ↑
-                              Spikes J, K, L, M consume Spike I's case
-                              binaries as their cart workloads
+                              Spikes J, K, L, M, N consume Spike I's
+                              case binaries as their cart workloads
 ```
 
 Spike C can begin as soon as A produces a working interpreter, since it
@@ -1349,13 +1475,196 @@ Accepted) and on the Lua-direct WASM path established by Spikes F and G;
 it can run in parallel with H and is the first end-to-end test of the
 cart format as a container rather than as individual harness components.
 
-Spikes J, K, L, M de-risk the architectural questions left after I lands.
-J answers whether `lua_sethook` can serve three concurrent consumers
-(budget, throttle, debugger) and whether GDB DWARF unwinding works through
-Spike I's PLT/GOT layout. K extends D's per-frame digest result to a
-serialise-on-A / deserialise-on-B / continue round-trip — the structural
-case D did not cover. L composes K's buffer with libretro's callback-pull
-inversion of the runtime's frontend-pulls model (ADR-0036). M reuses K's
-buffer as the migration vehicle for ADR-0045 hot reload. J, K, L, M can
-run in parallel with each other once their listed dependencies are met,
-and in parallel with H (which is gated on hardware, not on these).
+Spikes J, K, L, M, N de-risk the architectural questions left after I
+lands. J answers whether `lua_sethook` can serve three concurrent
+consumers (budget, throttle, debugger) and whether GDB DWARF unwinding
+works through Spike I's PLT/GOT layout. K extends D's per-frame digest
+result to a serialise-on-A / deserialise-on-B / continue round-trip —
+the structural case D did not cover. L composes K's buffer with
+libretro's callback-pull inversion of the runtime's frontend-pulls
+model (ADR-0036). M exercises a real `blyt32.coroutine.create{}`
+algorithm through K's save-state buffer — the question Spike K
+explicitly deferred when it simplified the coroutine save blob to fixed
+POD per slot. N reuses K's buffer (and M's coroutine machinery) as the
+migration vehicle for ADR-0045 hot reload. J, K, L can run in parallel
+with each other once their listed dependencies are met; M follows K
+and precedes N's Lua suite. All can run in parallel with H (which is
+gated on hardware, not on these).
+
+---
+
+## Followup status
+
+Spikes A through L have all been executed, but several have outstanding
+items that have not yet been closed — either because real hardware is
+not yet on hand, because a manual / visual gate has not yet been
+performed, or because a clearly-scoped piece of post-spike engineering
+has been logged for later. This section is the single-pane summary so
+deferrals do not get lost across 14 result documents. **Authoritative
+detail lives in each spike's `docs/design/spike-X-results.md` and
+`spikes/spike-X/TASKS.md`** — entries here are pointers, not the full
+record.
+
+### Status at a glance
+
+| Spike | Status   | Hardware             | Manual gate                      | Eng. followup | External blocker                              |
+|-------|----------|----------------------|----------------------------------|---------------|-----------------------------------------------|
+| A     | partial  | Pi Zero 2 W          | —                                | —             | —                                             |
+| B     | partial  | Pi Zero 2 W          | —                                | yes           | —                                             |
+| C     | done     | —                    | —                                | yes           | Debian rv32 multilib gap                      |
+| D     | done     | —                    | —                                | yes           | —                                             |
+| E     | partial  | mid-range Android    | phone perf run                   | yes           | —                                             |
+| F     | partial  | mid-range Android    | phone perf run                   | yes           | —                                             |
+| G     | partial  | mid-range Android, iPhone | —                           | yes           | iOS App Store forces JSC (no V8 path)         |
+| G.2   | failed   | —                    | —                                | superseded    | Chrome timer clamp (~100 µs, Spectre era)     |
+| G.3   | done     | —                    | confirm in real VS Code web view | yes           | —                                             |
+| H     | partial  | Milk-V Duo           | —                                | yes           | libseccomp `SCMP_ARCH_RISCV32` gap; Ubuntu kernel ILP32 compat |
+| I     | done     | —                    | —                                | yes           | —                                             |
+| J     | partial  | —                    | VS Code F5 recording             | yes           | —                                             |
+| K     | done     | —                    | —                                | yes           | rv32emu `syscall_read` overflow (upstream fix) |
+| L     | partial  | Linux+RetroArch host | RetroArch demo (5-behaviour gate) | yes          | —                                             |
+| M     | not started | —                 | —                                | —             | —                                             |
+| N     | not started | —                 | —                                | —             | —                                             |
+
+### Hardware-blocked items
+
+These spikes pass on their substitute platforms (Docker emulation,
+QEMU, headless drivers) but their headline numbers can only be
+finalised on real silicon.
+
+- **A, B — Pi Zero 2 W.** CoreMark / Embench MIPS measurement and the
+  realistic-cart frame-time check on Cortex-A53 @ 1 GHz. Replaces the
+  500 MIPS placeholder used as the cap throughout the rest of the
+  spike chain.
+- **E, F — mid-range Android (Snapdragon 7-class / Tensor G2-class).**
+  Chrome and Firefox WASM perf for the cart workloads; iPhone JSC for
+  the iOS path (V8 unavailable on iOS).
+- **H — Milk-V Duo (C906).** Replaces QEMU placeholder for the cgroups
+  v2 quota constants and confirms Stage 4's CPU-budget mechanism on
+  real silicon, not just a kernel that runs CONFIG_COMPAT.
+
+### Manual / visual gates pending
+
+Headless drivers exercise the same code paths but a few interactive
+gates need eyes on a real display.
+
+- **E, F — phone-on-LAN harness run** in Chrome and Firefox; numbers
+  posted back into the result docs.
+- **G.3 — confirm in actual VS Code web view.** Spike ran in
+  HeadlessChrome 147; cross-origin-isolation state in the live web
+  view may differ.
+- **J — VS Code F5 recording** using the launch configs in
+  `case_c_dbg/.vscode/launch.json` and `case_b/.vscode/launch.json`.
+- **L — RetroArch five-behaviour demo recording** on a Linux/amd64
+  host with X11 + audio: F2/F4 round-trip, ≥ 5 s rewind playback,
+  `retro_input_descriptor` rendering, no underruns over a 60 s run.
+
+### Post-spike engineering — short list
+
+Each entry below is a follow-up task that has been *logged* in the
+spike's results doc but *not yet started*. Cross-reference each
+spike's TASKS.md or "Next-step backlog" / "Open items" section for
+the full story.
+
+- **B:** GC tuning (`collectgarbage("setpause"/"setstepmul")`) and
+  mob-pool reuse if Pi worst-case tic exceeds 8 ms; replace stub
+  transcendentals with a real libm port; replace simplified `snprintf
+  %g` and free-list malloc.
+- **C:** Production rv32 libgcc multilib strategy; shared-heap
+  allocator across cart and library; symbol versioning / relro /
+  lazy-vs-eager binding; build tooling enforces `-no-pie` on cart
+  links.
+- **D:** Pin cross-compiler version explicitly in Dockerfile;
+  broaden NaN canonicalization to every state-buffer write site (not
+  just `frame_state_emit_digest`); coroutine / GC / audio /
+  input-event determinism extension.
+- **E:** Investigate whether rv32emu's JIT/T2C can be compiled to
+  WASM (currently `INTERPRETER_ONLY=y`); cross-stack determinism diff
+  vs Spike D digests on the WASM build.
+- **F:** Sandbox-model asymmetry writeup (RV32IMFC vs Lua-direct
+  WASM CPU/memory bounds); production `lua_init_libs.c` allowlist
+  trim from Spike B; replace naive `strtof` with correctly-rounded
+  parsing on both sides.
+- **G:** Runtime startup prewarming loop (~30 invisible tic calls
+  before first rendered frame); Tier 2 watchdog (`setTimeout` ~1s in
+  Web Worker calling `terminate()` for tight-loops with no function
+  calls).
+- **G.3:** Per-cart D calibration from cart's measured Lua-line
+  density (single fleet-wide D not viable); dev-UI Pi-parity feature
+  surrounding UX; throttle-off-while-stepping behaviour for
+  `LUA_MASKLINE × DAP` composition.
+- **H:** Production seccomp filter as raw BPF handling both
+  `AUDIT_ARCH_RISCV64` (LP64 launcher) and `AUDIT_ARCH_RISCV32`
+  (ILP32 cart); allowlist `riscv_flush_icache` for musl RV32
+  startup; confirm cart-spec `ilp32f` vs `ilp32d` builds used in
+  spike.
+- **I:** FlatBuffers parsing of `.cart.info` / `.cart.config`
+  (currently 4-byte magic stubs); production resource directory;
+  cart `EI_OSABI` identity check; real-time scheduler (currently
+  fixed 10-frame loop); `memory_fill` to upstream rv32emu API.
+- **J:** Patch rv32emu to register GDB stub's `cpu_ops` and call
+  `fc_gdb_stub_check_break(pc)` per dispatch; ECALL surface for
+  libconsolelua → rv32emu DAP IPC; run Spike G `doom_tick` bench
+  under each variant for real overhead numbers; concurrent DAP+GDB
+  attached to same runtime; transport choice (TCP localhost vs
+  ADR-0044 stdio).
+- **K:** Wrap Spike D Lua workloads in Stage 2 cart_state pattern;
+  on-disk container format (atomic write, checksumming,
+  cart-binary-hash tag from ADR-0013); cart-side `static`
+  mutable-state audit + static analyser pass; build-time
+  layout-mismatch test compiling two binaries with reordered fields;
+  enforcement of ADR-0079 standard-library allowlist. (Two further
+  K follow-ups — recursive Lua-table flattening, and the
+  transient-`coroutine.create()` must-throw rule from ADR-0012 —
+  were originally folded into Spike M's hot-reload scope per
+  47cbeb4; with the new Spike M (managed Lua coroutine save/restore)
+  taking the dedicated coroutine-mechanism slot, both follow-ups
+  now belong to the new M and are listed there.)
+- **L:** Wire `FACADE_MODE_RV32EMU` (production path) — extract
+  rv32emu `main()` into library entry point; add
+  `blyt_runtime_get_framebuffer` / `_get_palette` accessors to
+  libconsole; replace `fc_console_main`'s 10-iteration loop with
+  tick-driven `fc_console_tick(input_mask)`; add
+  `console_button(player, "A")` Lua accessor. Codify "shallow
+  restore" path in libblyt for carts with non-trivial `init`;
+  palette storage decision (XRGB8888 canonical vs per-frontend
+  conversion); codify slot-immutability constraint at libblyt level.
+
+### External blockers
+
+These are not fixable inside the project; each requires either an
+upstream patch, a vendor change, or a workaround we have shipped.
+
+- **C** — Debian's `gcc-13-riscv64-linux-gnu` ships only rv64 libgcc
+  multilib (no rv32). Workaround: divmod helpers shipped from cart
+  side. Production needs a real fix.
+- **G.2** — Chrome web-worker `performance.now()` clamped to ~100 µs
+  (post-Spectre security mitigation tied to cross-origin-isolation).
+  Fundamental Chrome behaviour, not a fixable bug. G.2 abandoned;
+  G.3 took its place.
+- **H** — `libseccomp` does not define `SCMP_ARCH_RISCV32`. Vendor
+  gap requiring custom raw-BPF workaround. Ubuntu kernel lacks ILP32
+  CONFIG_COMPAT (vendor choice, not bug); Fedora 42 kernel works.
+- **K** — Upstream rv32emu `syscall_read` writes to a fixed 4 KiB
+  host buffer without bounds-checking the cart-supplied count.
+  Worked around in spike by chunking reads to 4 KiB on cart side;
+  one-line upstream fix needed (`min(count, PREALLOC_SIZE)`).
+
+### Spikes M and N
+
+Neither has been implemented yet.
+
+- **Spike M (managed Lua coroutine save/restore).** Scope per §M of
+  this doc — exercise a real `blyt32.coroutine.create{start, save,
+  restore}` algorithm over Spike K's save-state buffer, single and
+  dual concurrent coroutines, cross-host. Inherits the two
+  coroutine-related K follow-ups (recursive Lua-table flattening
+  cross-host, transient-`coroutine.create()` must-throw rule).
+  Originally these were folded into the previous Spike M (hot
+  reload, now N) per 47cbeb4; carving them out into a dedicated
+  mechanism spike before the hot-reload spike depends on them
+  isolates failures cleanly. Depends on K (done), I (done), B
+  (partial — sufficient for spike work).
+- **Spike N (hot-reload via save/restore).** Scope per §N of this
+  doc — was the previous Spike M before this renumber. Depends on
+  K (done), M (not yet started), I (done), ADR-0088 packer.

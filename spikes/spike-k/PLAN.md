@@ -51,8 +51,13 @@ exercised end-to-end:
 K validates the **save-state buffer format** and the **restore
 semantics** for the four region kinds the v1 runtime tracks. L wraps
 this buffer in libretro `retro_serialize` / `retro_unserialize` (Spike
-L scope, building on K's format). M validates hot-reload composition
-over K (Spike M).
+L scope, building on K's format). M (Spike M) exercises a real
+managed-coroutine algorithm using K's buffer for the coroutine save
+blob. N validates hot-reload composition over K and M (Spike N).
+(Spikes M / N here are the post-renumber labels — until the
+managed-coroutine spike was carved out, the hot-reload spike held the
+M label; cross-references in older docs that say "Spike M" in the
+context of hot reload now mean "Spike N".)
 
 **Dependencies:**
 - Spike D (digest harness, the cart workloads, the FNV-1a-64 emitter,
@@ -329,8 +334,10 @@ stages will; the spike short-circuits there.
   spike does not call any libretro entry point.
 - **Rewind.** Per the spike doc: rewind is N consecutive save states.
   If one round-trip works, rewind is engineering on top.
-- **Hot reload.** Spike M's scope. K validates cross-host portability;
-  M validates same-host save → edit cart → restore-into-edited.
+- **Hot reload.** Spike N's scope (was Spike M before the renumber
+  that inserted the managed-coroutine spike at M). K validates
+  cross-host portability; N validates same-host save → edit cart →
+  restore-into-edited.
 - **Real x86-64 hardware.** Spike D's qemu-user-amd64-on-Apple-Silicon
   finding extends to Spike K. If Spike K passes in the two-Docker-image
   setup, a real-hardware run is a low-risk follow-up.

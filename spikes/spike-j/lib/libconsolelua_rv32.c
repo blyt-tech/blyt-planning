@@ -3,7 +3,9 @@
  * Extends Spike I's libconsolelua_rv32.c with:
  *  - master_hook installation at lua_State creation time
  *  - per-tic rearm at the top of each fc_cart_{init,update,draw}
- *  - synthetic_reload entry point for ADR-0045 / Spike M validation
+ *  - synthetic_reload entry point for ADR-0045 / Spike N validation
+ *    (was Spike M before the renumber that inserted the
+ *    managed-coroutine spike at M)
  *
  * Compile-time variants drive Stage 1 step 4 overhead measurement:
  *  -DMASTER_OFF              : all three flags off (no-hook baseline)
@@ -148,8 +150,9 @@ void fc_cart_draw(void) {
 }
 
 /* Synthetic reload — Stage 4. Tears down the lua_State and re-creates it
- * from new bytecode. State migration is explicitly skipped (Spike M's
- * scope). The DAP server's loadedSource emit happens after this returns,
+ * from new bytecode. State migration is explicitly skipped (Spike N's
+ * scope; was Spike M before the renumber). The DAP server's
+ * loadedSource emit happens after this returns,
  * sequenced *after* the new state is fully prepared and the master hook
  * is re-installed (avoids the race documented in the plan's risk notes). */
 void fc_consolelua_synthetic_reload(const uint8_t *new_bytecode,
