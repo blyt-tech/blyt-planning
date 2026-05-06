@@ -1,7 +1,9 @@
 # ADR-0083: Lua cart crash diagnostics — runtime-owned dump
 
 ## Status
-Accepted
+Accepted; **amended 2026-05-06** based on Spike N findings — hot-reload
+failure diagnostics added as a companion surface to crash diagnostics.
+See "Amendment — Spike N findings" at the bottom of this document.
 
 ## Context
 
@@ -99,3 +101,36 @@ and cannot be spoofed or suppressed by cart code.
   violations, where the author made a specific wrong call) and absent for
   the less actionable classes (watchdog, OOM, where the stack trace is less
   useful than the state dump anyway).
+
+## Amendment — Spike N findings (2026-05-06)
+
+Spike N validated a companion diagnostic surface for **hot-reload failures**
+that follows this ADR's runtime-owned dump principle.
+
+### Hot-reload failure diagnostics
+
+When a hot reload cannot restore state cleanly — specifically when an edit
+invalidates a live coroutine (renamed or deleted function body) — the runtime
+emits a fixed-format diagnostic without invoking any cart code.  The format
+is pinned for byte-for-byte cross-host comparability (confirmed by Spike N's
+148-run cross-host matrix):
+
+```
+hot_reload: failed to migrate slot <N> (persistent script)
+  body: cart.lua:<line> (old) -> cart.lua:??? (new)
+  reason: function '<name>' not found in new code
+  surfaced via: blyt32.on_hot_reload_failed(slot=<N>, reason=...)
+```
+
+For deleted functions, "not found in new code" is replaced by "was deleted
+from new code".
+
+This surface shares the same design principles as crash diagnostics:
+- The runtime owns the diagnostic — no cart code runs to produce it.
+- The format is fixed and platform-independent (no locale-sensitive strings).
+- Dev mode only; the production runtime rejects the reload silently (the cart
+  keeps running under the pre-edit code).
+
+The `blyt32.on_hot_reload_failed(slot, reason)` Lua hook is a notification
+point that fires after the diagnostic is emitted; it does not change the
+rejection outcome.  See ADR-0045's amendment for the full hook surface.

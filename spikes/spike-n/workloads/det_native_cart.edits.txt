@@ -1,0 +1,49 @@
+# Spike N — native cart edit sequence (n1-n6).
+#
+# Format: <edit_id> <expected_outcome> <description>
+#   expected_outcome:
+#     PASS                  — buffer+digest round-trip succeeds
+#     PASS-LATENCY          — as PASS but also gate on latency < 3000 ms
+#     FAIL-WITH-DIAGNOSTIC  — expected failure; stderr byte-equal
+#
+# Each edit is a PRE→POST pair:
+#   PRE  = save side ELF  (-DEDIT_SIDE=0)
+#   POST = load side ELF  (-DEDIT_SIDE=1)
+#
+# The harness runs:
+#   1. PRE ELF for S frames → BUFFER line
+#   2. POST ELF loads BUFFER → BUFFER (post-migration) + DIGEST stream
+#   3. Compare post-migration BUFFER cross-host (SHA-256 must match)
+#   4. Compare DIGEST stream cross-host (SHA-256 must match)
+#   5. Compare DIGEST stream to same-host POST full-run suffix from S+1
+#   6. Check runtime_ms + packer_ms < 3000
+
+n1  PASS  function-body change to mylib_value (frame*3 → frame*3+1); no schema change
+    expect: BUFFER pre/post byte-equal (POD unchanged); DIGEST diverges at frame S+1 (new formula)
+    pre_version:  0  post_version:  0
+    pre_edit_side: 0  post_edit_side: 1
+
+n2  PASS  add new function mylib_helper (called from update); no schema change
+    expect: BUFFER byte-equal; DIGEST diverges at frame S+1 (helper contributes to unused_count)
+    pre_version:  0  post_version:  0
+    pre_edit_side: 0  post_edit_side: 1
+
+n3  PASS  add new field last_score (v0 → v3); ADR-0045 default: new field zero-init
+    expect: post-migration BUFFER has last_score=0; cross-host BUFFER SHA-256 equal
+    pre_version:  0  post_version:  3
+    pre_edit_side: 0  post_edit_side: 1
+
+n4  PASS  remove field unused_count (v3 → v4); ADR-0045 default: drop silently
+    expect: post-migration BUFFER smaller; cross-host equal; DIGEST continues correctly
+    pre_version:  3  post_version:  4
+    pre_edit_side: 0  post_edit_side: 1
+
+n5  PASS  retype frame_count i32 → i64 (v4 → v5); on_retype fires (sign-extend)
+    expect: on_retype widens i32 → i64; post-migration BUFFER cross-host equal
+    pre_version:  4  post_version:  5
+    pre_edit_side: 0  post_edit_side: 1
+
+n6  PASS  reorder two struct fields (v5 → v6); name-based match
+    expect: migration matches by name regardless of offset; BUFFER bytes correct
+    pre_version:  5  post_version:  6
+    pre_edit_side: 0  post_edit_side: 1

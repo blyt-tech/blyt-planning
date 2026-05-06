@@ -1315,6 +1315,18 @@ the runtime). M can run in parallel with Spike L; N depends on M.
 
 ## Spike N — Hot-reload via save/restore (Lua and native paths)
 
+**Status:** PASS. Implementation in
+[`spikes/spike-n/`](../../spikes/spike-n/); results in
+[`spike-n-results.md`](spike-n-results.md). All six stages PASS: 6
+native edits (n1–n6) × 2 hosts, 10 Lua edits (l1–l10) × 2 hosts, and
+the l8 all-S sweep (29 frames × 4 cross-host directions = 116 runs) —
+148 cross-host runs total, all byte-identical save buffers and
+continuation digest streams; l6/l9/l10 clean-failure diagnostics
+byte-equal cross-host.  ADR-0045 and ADR-0083 both amended (2026-05-07)
+with the diagnostic format, rejected-reload-preserves-state rule,
+`blyt32.on_hot_reload_failed` hook surface, M↔N composition note, and
+`on_retype`-mandatory-for-retypes rule.
+
 **The question:** Can a cart — Lua or native — be edited and reloaded
 mid-run such that POD state persists across the reload, the cart's
 new code resumes from the prior state without observable break, and
@@ -1509,12 +1521,12 @@ gated on hardware, not on these).
 
 ## Followup status
 
-Spikes A through L have all been executed, but several have outstanding
+Spikes A through N have all been executed, but several have outstanding
 items that have not yet been closed — either because real hardware is
 not yet on hand, because a manual / visual gate has not yet been
 performed, or because a clearly-scoped piece of post-spike engineering
 has been logged for later. This section is the single-pane summary so
-deferrals do not get lost across 14 result documents. **Authoritative
+deferrals do not get lost across 16 result documents. **Authoritative
 detail lives in each spike's `docs/design/spike-X-results.md` and
 `spikes/spike-X/TASKS.md`** — entries here are pointers, not the full
 record.
@@ -1537,8 +1549,8 @@ record.
 | J     | partial  | —                    | VS Code F5 recording             | yes           | —                                             |
 | K     | done     | —                    | —                                | yes           | rv32emu `syscall_read` overflow (upstream fix) |
 | L     | partial  | Linux+RetroArch host | RetroArch demo (5-behaviour gate) | yes          | —                                             |
-| M     | not started | —                 | —                                | —             | —                                             |
-| N     | not started | —                 | —                                | —             | —                                             |
+| M     | done        | —                    | —                                | yes           | —                                             |
+| N     | done        | —                    | —                                | yes           | —                                             |
 
 ### Hardware-blocked items
 
@@ -1643,6 +1655,26 @@ the full story.
   restore" path in libblyt for carts with non-trivial `init`;
   palette storage decision (XRGB8888 canonical vs per-frontend
   conversion); codify slot-immutability constraint at libblyt level.
+- **M:** Per-resume dirty-bit flatten cache (required before netplay
+  — unconditional flatten per resume is too expensive at netplay
+  cadence); wrapper-managed transient ID list for boundary-cross
+  invalidation (spike's `mark_boundary_crossed` is a stand-in;
+  production needs the runtime to serialise and auto-mark); slot-keyed
+  body-id in slot bytes to simplify destroy/recreate cart topology
+  mirroring; manifest-declared dynamic slot-table cap (ADR-0009
+  coordination); wire Stages 3–5 sweeps into the top-level Makefile
+  (currently run inline; digests checked in as the PASS manifest).
+- **N:** Asset-only hot reload (validate "strict subset of code reload"
+  claim once the asset-transform pipeline exists); WASM module
+  re-instantiation reload path; QEMU native-cart reload harness; DAP-
+  side signal protocol composition with Spike J; reload-while-debugging
+  (N + J full composition); asset-manifest-moves test (struct-field
+  reorder n6 is the stand-in; tilemap-moved-between-manifest-entries
+  needs the asset-manifest layer); Lua-callback shape for `on_retype`
+  (N's callbacks are C functions; production Lua carts may need Lua-
+  side migration hooks); stub-packer latency measurements against a
+  representative asset set (current numbers are code-only; production
+  Phase 1 is asset-transform dominated).
 
 ### External blockers
 
@@ -1666,19 +1698,15 @@ upstream patch, a vendor change, or a workaround we have shipped.
 
 ### Spikes M and N
 
-Neither has been implemented yet.
+Both are complete.
 
-- **Spike M (managed Lua coroutine save/restore).** Scope per §M of
-  this doc — exercise a real `blyt32.coroutine.create{start, save,
-  restore}` algorithm over Spike K's save-state buffer, single and
-  dual concurrent coroutines, cross-host. Inherits the two
-  coroutine-related K follow-ups (recursive Lua-table flattening
-  cross-host, transient-`coroutine.create()` must-throw rule).
-  Originally these were folded into the previous Spike M (hot
-  reload, now N) per 47cbeb4; carving them out into a dedicated
-  mechanism spike before the hot-reload spike depends on them
-  isolates failures cleanly. Depends on K (done), I (done), B
-  (partial — sufficient for spike work).
-- **Spike N (hot-reload via save/restore).** Scope per §N of this
-  doc — was the previous Spike M before this renumber. Depends on
-  K (done), M (not yet started), I (done), ADR-0088 packer.
+- **Spike M (managed Lua coroutine save/restore) — PASS.** 928
+  cross-host runs byte-identical. ADR-0012 amended (2026-05-06) with
+  the single-function `create(function(ctx), seed?)` shape, constrained
+  `ctx` shape, and load-resume idiom contract. Post-spike engineering
+  follow-ups logged below.
+- **Spike N (hot-reload via save/restore) — PASS.** 148 cross-host
+  runs byte-identical; l6/l9/l10 clean-failure diagnostics byte-equal
+  cross-host; all latency gates pass (< 3 s native, < 500 ms Lua).
+  ADR-0045 and ADR-0083 both amended (2026-05-07). Post-spike
+  engineering follow-ups logged below.

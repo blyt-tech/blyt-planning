@@ -1,0 +1,43 @@
+# Exclude host-side artefacts and symlinks that point outside the spike-N
+# tree.  The Dockerfile brings the symlink targets in via named build contexts.
+buffers
+digests
+elfs
+.dockerignore
+.git
+*.o
+*.elf
+
+# Symlinks pointing to spike-k cart_runtime sources
+cart_runtime/save_state.c
+cart_runtime/save_state.h
+cart_runtime/runtime_tracked.c
+cart_runtime/runtime_tracked.h
+cart_runtime/region_frame_state.c
+cart_runtime/region_frame_state.h
+cart_runtime/save_io.c
+cart_runtime/save_io.h
+cart_runtime/cart_state_lua_simple.c
+cart_runtime/cart_state_lua_simple.h
+
+# Symlinks pointing to spike-d (via spike-m) sources
+cart_runtime/digest.c
+cart_runtime/digest.h
+cart_runtime/pcg32.c
+cart_runtime/pcg32.h
+cart_runtime/nan_canon.h
+cart_runtime/frame_state.h
+ports/rv32emu/include/math.h
+
+# Symlinks pointing to spike-m sources
+cart_runtime/region_persistent_scripts.c
+cart_runtime/region_persistent_scripts.h
+lib/lua_table_flatten.c
+lib/lua_table_flatten.h
+lib/blyt32_coroutine.lua
+
+# macOS / editor
+.DS_Store
+*.swp
+*.swo
+.idea/

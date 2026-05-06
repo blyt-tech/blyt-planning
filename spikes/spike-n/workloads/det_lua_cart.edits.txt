@@ -1,0 +1,29 @@
+# Spike N — Lua cart edit sequence (l1-l5).
+#
+# Same format as det_native_cart.edits.txt.
+# Latency gate: < 500 ms (ADR-0045 Lua target).
+
+l1  PASS  body change to score_for_combo (combo*25 → combo*50); no schema change
+    expect: BUFFER byte-equal; DIGEST diverges at frame S+1 (new score formula)
+    lua_state_version_pre: 0   lua_state_version_post: 0
+    pre_src:  det_lua_cart_pre       post_src: det_lua_cart_l1_post
+
+l2  PASS  add bonus field to POD buffer (v0 → v2); zero-init on load
+    expect: post-migration BUFFER has bonus=0; cross-host BUFFER SHA-256 equal
+    lua_state_version_pre: 0   lua_state_version_post: 2
+    pre_src:  det_lua_cart_l1_post   post_src: det_lua_cart_l2_post
+
+l3  PASS  remove bonus field (v2 → v3); drop on load
+    expect: post-migration BUFFER smaller; cross-host equal
+    lua_state_version_pre: 2   lua_state_version_post: 3
+    pre_src:  det_lua_cart_l2_post   post_src: det_lua_cart_l3_post
+
+l4  PASS  retype combo i32 → combo_mult f32 (v3 → v4); on_retype fires (cast+scale)
+    expect: on_retype maps combo*0.1f; BUFFER cross-host equal; on_retype PASS
+    lua_state_version_pre: 3   lua_state_version_post: 4
+    pre_src:  det_lua_cart_l3_post   post_src: det_lua_cart_l4_post
+
+l5  PASS  function-body change to score_for_combo (table lookup); no schema change; case (i)
+    expect: no schema migration; BUFFER byte-equal; DIGEST diverges at S+1 (new formula)
+    lua_state_version_pre: 4   lua_state_version_post: 4
+    pre_src:  det_lua_cart_l4_post   post_src: det_lua_cart_l5_post
