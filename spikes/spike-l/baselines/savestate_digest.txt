@@ -1,0 +1,6 @@
+continuous_digest=2ce68a445369bf25
+restored_digest  =2ce68a445369bf25
+saved_size_bytes =196
+save_frame       =100
+continue_frames  =100
+verdict          =PASS

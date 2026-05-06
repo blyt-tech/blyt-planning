@@ -1,0 +1,6 @@
+serialize_upper_bound_bytes=196
+buffer_size_bytes=10485760
+declared_fps=60
+capacity_frames=53498
+capacity_seconds=891.63
+verdict=PASS

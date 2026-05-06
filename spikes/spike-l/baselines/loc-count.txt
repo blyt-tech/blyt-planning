@@ -1,0 +1,5 @@
+      43 host/audio_push.c
+      55 host/input_map.c
+      29 host/palette.c
+     346 host/retro_core.c
+     473 total

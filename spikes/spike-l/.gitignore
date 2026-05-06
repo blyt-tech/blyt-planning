@@ -1,0 +1,6 @@
+build/
+host/__pycache__/
+*.pyc
+*.dylib
+recordings/*.webm
+recordings/*.mp4

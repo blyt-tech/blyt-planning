@@ -1,0 +1,8 @@
+metric,value
+frames,3600
+sample_rate,48000
+fps,60
+ideal_samples,2880000
+actual_samples,2880000
+drift_samples,0
+verdict,PASS
