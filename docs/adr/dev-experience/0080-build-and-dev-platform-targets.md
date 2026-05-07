@@ -13,8 +13,9 @@ iterate). These have different requirements and different support tiers.
 
 ### Build platforms
 
-**A build platform is any host capable of running the Rust-based packer and
-a Luac compiler, plus a cross-compiler targeting RV32IMFC.**
+**A build platform is any host capable of running the Rust-based packer, the
+fc32 emulator (used to run the RV32IMFC-native luac at build time — see
+ADR-0109), and a cross-compiler targeting RV32IMFC.**
 
 No display is required. The packer is a CLI tool; the runtime is not
 invoked during a build. This means:

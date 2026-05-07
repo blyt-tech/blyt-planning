@@ -1,7 +1,8 @@
 # ADR-0067: Lua release builds ship bytecode
 
 ## Status
-Accepted
+Accepted — amended by ADR-0109 (luac runs in the fc32 emulator; compilation
+runs for both debug and release builds).
 
 ## Context
 
@@ -41,6 +42,13 @@ backwards compatibility addressed at that time.
 and source context. The DAP debugger (ADR-0045) attaches to the Lua source
 for step-debugging. The `debug` flag in `cart.info` is set to `true` by the
 packer (see ADR-0073).
+
+**luac invocation (amendment — ADR-0109):** standard `luac` produces bytecode
+for the architecture it runs on; it cannot cross-compile for RV32IMFC. The
+packer runs the fc32-native `luac` binary inside the fc32 emulator as a build
+step. Compilation runs for both debug and release builds — debug carts ship
+source text, but the compilation step still validates the source. The emulator
+is therefore a build-time dependency for any cart with Lua source.
 
 **Obfuscation:** bytecode is not an intentional obfuscation mechanism.
 Decompilers exist. Authors who need source protection should use native carts.
