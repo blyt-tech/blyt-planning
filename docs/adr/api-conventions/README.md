@@ -20,3 +20,4 @@ names), and the performance strategy that informs API shape decisions.
 | [0085](0085-ecall-calling-convention.md) | ECALL calling convention and number space |
 | [0086](0086-api-surface-shape.md) | API surface shape — getter/setter convention and complete module map |
 | [0087](0087-cart-lifecycle-entry-points.md) | Cart lifecycle entry points, reset, and autosave |
+| [0108](0108-rust-as-a-first-class-cart-language.md) | Rust as a first-class cart language — SDK shape, error model, Stage integration |

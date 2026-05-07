@@ -162,13 +162,16 @@ mutable_tilemaps:
 
 Read directly by the packer as YAML. Never compiled into the cart artifact.
 
-**`cart.build.yaml` is optional for simple projects.** The packer applies
-defaults before reading it:
-- Source files: all `*.lua` under `src/` (Lua carts) or the single native
-  ELF if pre-compiled.
+**`cart.build.yaml` is optional for Lua carts.** When absent, the packer
+assumes `language: lua` and applies the following defaults:
+- Source files: all `*.lua` under `src/`.
 - Assets: all files under `assets/`, resource type inferred from file
   extension (`.png` → sprite, `.xm`/`.it` → music, `.wav`/`.ogg` → sfx,
   `.tmx`/`.ldtk` → tilemap, `.fnt` → font, etc.).
+
+When `cart.build.yaml` is present, a language declaration is required —
+the packer does not infer language from file contents. Other settings
+continue to use the defaults above unless overridden.
 
 `cart.build.yaml` overrides these defaults and adds build-only settings:
 compiler flags for native carts, Rhubarb configuration, font rasterization
@@ -176,9 +179,54 @@ sizes for TTF/OTF inputs, locale source files, build hooks. Assets can be
 listed explicitly, matched by glob, or excluded — any of which override the
 default scan for that category.
 
+### Language declaration
+
+The `language` key declares the primary implementation language and enables
+packer-generated constants for it. The `languages` map is used when multiple
+languages are present and per-language codegen control is needed.
+
+**Single primary language (common case):**
+
+```yaml
+language: rust   # or: lua, c
+```
+
+The packer generates compile-time constants (ADR-0059) for the declared
+language only. If `cart.build.yaml` is present but contains no language
+declaration, the packer errors rather than guessing.
+
+**Multiple languages with independent codegen control:**
+
+```yaml
+languages:
+  rust:
+    codegen: true    # generate Rust constant modules (resources.rs, state.rs, …)
+  c:
+    codegen: false   # build and link C code, but suppress constant generation
+    sources:
+      - vendor/physics.c
+      - vendor/lz4.c
+```
+
+`codegen` must be stated explicitly for every entry in the `languages` map —
+there is no default. This makes the intent unambiguous: a C library linked
+into a Rust cart almost never needs packer-generated entity constants, and
+requiring the author to say so prevents silent over-generation.
+
+**What `codegen: false` suppresses:** only the packer's constant-file
+emission step for that language (no `cart_resources.h`, no `cart_state.h`,
+etc.). Building and linking of the declared sources is unaffected. A
+`codegen: false` language's sources may be compiled independently and handed
+to the packer as a pre-built object or archive — the common case for
+third-party C libraries.
+
+**`cart.build.yaml` full example:**
+
 ```yaml
 # yaml-language-server: $schema=.console/schemas/cart.build.json
 # cart.build.yaml is optional — only needed when overriding defaults
+
+language: lua
 
 # override default src/ scan:
 sources:
