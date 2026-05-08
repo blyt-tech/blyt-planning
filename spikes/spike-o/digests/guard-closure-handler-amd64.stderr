@@ -1,0 +1,38 @@
+     Locking 1 package to latest compatible version
+   Compiling compiler_builtins v0.1.160 (/root/.rustup/toolchains/nightly-2025-08-01-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/compiler-builtins/compiler-builtins)
+   Compiling core v0.0.0 (/root/.rustup/toolchains/nightly-2025-08-01-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core)
+   Compiling panic_abort v0.0.0 (/root/.rustup/toolchains/nightly-2025-08-01-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/panic_abort)
+   Compiling blyt32 v0.1.0 (/spike-o/sdk/blyt32)
+warning: unstable feature specified for `-Ctarget-feature`: `f`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: unstable feature specified for `-Ctarget-feature`: `d`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: `blyt32` (lib) generated 2 warnings
+   Compiling guard_closure_handler v0.1.0 (/spike-o/guard_closure_handler)
+error[E0308]: mismatched types
+  --> src/lib.rs:32:42
+   |
+32 |     blyt32::register_handler(HANDLER_AI, |ctx| { ctx + captured });
+   |     ------------------------             ^^^^^^^^^^^^^^^^^^^^^^^^ expected fn pointer, found closure
+   |     |
+   |     arguments to this function are incorrect
+   |
+   = note: expected fn pointer `fn(u32) -> u32`
+                 found closure `{closure@src/lib.rs:32:42: 32:47}`
+note: closures can only be coerced to `fn` types if they do not capture any variables
+  --> src/lib.rs:32:56
+   |
+32 |     blyt32::register_handler(HANDLER_AI, |ctx| { ctx + captured });
+   |                                                        ^^^^^^^^ `captured` captured here
+note: function defined here
+  --> /spike-o/sdk/blyt32/src/lib.rs:56:8
+   |
+56 | pub fn register_handler(handle: HandlerHandle, handler: fn(u32) -> u32) {
+   |        ^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `guard_closure_handler` (lib) due to 1 previous error

@@ -1440,6 +1440,114 @@ subset of the Lua path's mechanism and does not depend on M.
 
 ---
 
+## Spike O — Rust cart end-to-end
+
+**Status:** results in [`spike-o-results.md`](spike-o-results.md). All five
+stages PASS on both arm64 and amd64 (`make all` exits 0). ADR-0108 design
+confirmed; no amendments required. Eight numbered findings recorded; none
+are design flaws (four are confirmations, four are production follow-ups).
+
+**The question:** Can a Rust cart compile to `riscv32imafc-unknown-none-elf`,
+link against `libblyt32`, pack through the existing cart pipeline, and run
+inside rv32emu producing a per-frame digest stream identical to an equivalent
+C cart — and do the ADR-0108 ergonomic guarantees (typed `FieldHandle<B>`,
+`fn`-enforced handler purity, two-tier error model) actually surface as
+described in practice?
+
+**Why this is a risk:** ADR-0108 is design-only; nothing has been built.
+Three distinct risks sit underneath the design:
+
+1. **Toolchain.** The `riscv32imfc-unknown-none-elf` target is supported in
+   upstream Rust but bare-metal RISC-V with `no_std` and no allocator is
+   an unusual configuration. ISA flag alignment (`+f`, `-d`, soft-float ABI
+   vs hard-float) must match `libblyt32`'s compilation flags exactly or
+   `extern "C"` calls will corrupt floating-point arguments silently. This
+   is the same class of ABI hazard that caused Spike C's shared-library
+   positioning requirement; Rust hides it behind Cargo target strings.
+
+2. **Packer–Cargo integration.** The `OUT_DIR` codegen path (packer emits
+   `resources.rs`, `state.rs` etc.; cart's `build.rs` invokes packer and
+   points Cargo at the output) is the proposed mechanism but has never been
+   exercised. Whether packer invocation can be folded into the existing
+   `cart.build.yaml`-driven build or requires separate orchestration is
+   unknown.
+
+3. **SDK ergonomics vs design.** ADR-0108's typed `FieldHandle<B>` phantom
+   type, `#[repr(transparent)]` newtypes, and `fn`-only handler registration
+   are well-motivated on paper. A working cart will either confirm them or
+   reveal friction the design did not anticipate — places where the Rust
+   borrow checker, orphan rules, or `no_std` constraints push back against
+   the proposed shape.
+
+If any of these is a fundamental mismatch, it is far cheaper to discover it
+before the C API hardens than after. ADR-0108 explicitly calls for future
+API decisions to treat Rust as a first-class consumer alongside C and Lua;
+that is only possible if real Rust cart code is exercised while the API is
+still fluid.
+
+**What to build:**
+
+- **Minimal Rust SDK crate** (`blyt32-sys` + `blyt32`): `extern "C"`
+  declarations for the functions the toy cart calls (image load/blit, one
+  audio SFX play/stop, state buffer get/set for one field); one
+  `#[repr(transparent)]` newtype per used handle type; method wrappers on
+  those newtypes; one `FieldHandle<B>` definition with the `PhantomData`
+  type parameter; `fn`-typed handler registration stub. No allocation.
+  `no_std`.
+
+- **Packer stub** that generates `resources.rs` and `state.rs` into
+  `$OUT_DIR`. Content can be hardcoded constants matching the toy cart's
+  asset declarations — the goal is to prove the `include!(concat!(
+  env!("OUT_DIR"), "/resources.rs"))` integration, not to implement a
+  production packer.
+
+- **Toy cart in Rust** that:
+  - Loads one image resource and blits it each frame
+  - Plays one SFX on a trigger input
+  - Reads and writes one state buffer field (`S_COUNTER: FieldHandle<MainBuffer>`)
+  - Registers one handler via the `fn`-typed API
+  - Emits the same per-frame determinism digest as the Spike D/K harness
+
+- **Equivalent C cart** (can reuse a Spike I case) exercising the same
+  operations, so the two digest streams can be compared byte-for-byte.
+
+- **Compile-time guard tests** (not run, just compiled):
+  - A version that passes `FieldHandle<EnemiesBuffer>` where
+    `FieldHandle<MainBuffer>` is expected — must be a compile error.
+  - A version that attempts to register a closure (capturing an upvalue)
+    as a handler — must be a compile error.
+
+- **Cart build integration**: `cart.build.yaml` with `language: rust`,
+  `build.rs` invoking the packer stub and declaring `cargo:rerun-if-changed`
+  correctly, Makefile target wiring.
+
+**Success criterion:**
+
+- Rust cart compiles to RV32IMFC ELF with ISA flags matching `libblyt32`;
+  no link errors or ABI warnings.
+- Cart packs through the existing packer pipeline and runs to completion
+  inside rv32emu.
+- Per-frame digest stream matches the equivalent C cart byte-for-byte
+  across 29 save frames on the same host.
+- Both compile-time guard tests fail to compile with a type error on the
+  relevant line (no `unsafe` workaround needed).
+- Toolchain setup (rustup target add, Cargo config, cross-compilation) is
+  documented in `spikes/spike-o/README.md` and reproduces from scratch in
+  a clean Docker environment with the same base image as Spike I.
+
+**Secondary output:** Any API shape that is ergonomically awkward in
+practice — handle granularity, output parameter ordering, missing derives —
+is recorded as a numbered finding in the results doc, with a proposed C API
+amendment where applicable. These findings become the first concrete
+Rust-side input to in-flight API ADRs.
+
+**Dependencies:** Spike I (cart format and packing pipeline), Spike C
+(shared library ABI and link model), Spike H (native RISC-V execution
+substrate). Spike O is independent of M and N and can run in parallel with
+any outstanding M/N follow-up work.
+
+---
+
 ## Ordering
 
 A → B → C and D and E and F (B is the dependency for C, D, and E; F
@@ -1486,6 +1594,11 @@ I (cart format end-to-end) ← depends on ADR-0024/ADR-0025 and Spikes
                               ↑
                               Spikes J, K, L, M, N consume Spike I's
                               case binaries as their cart workloads
+
+O (Rust cart end-to-end) ← depends on I (cart format + packing
+                            pipeline), C (shared-lib ABI), H (native
+                            RV32 execution); independent of M and N;
+                            can run in parallel with M/N follow-ups
 ```
 
 Spike C can begin as soon as A produces a working interpreter, since it
@@ -1517,11 +1630,18 @@ with each other once their listed dependencies are met; M follows K
 and precedes N's Lua suite. All can run in parallel with H (which is
 gated on hardware, not on these).
 
+Spike O de-risks Rust as a first-class cart language (ADR-0108). It
+depends on I (cart format and packing pipeline), C (shared-library ABI
+and link model), and H (native RV32 execution substrate), and is
+independent of M and N. Its secondary output — numbered API findings
+from real Rust cart code — feeds directly into any in-flight API ADRs,
+making it most valuable while those decisions are still open.
+
 ---
 
 ## Followup status
 
-Spikes A through N have all been executed, but several have outstanding
+Spikes A through O have all been executed. Several have outstanding
 items that have not yet been closed — either because real hardware is
 not yet on hand, because a manual / visual gate has not yet been
 performed, or because a clearly-scoped piece of post-spike engineering
@@ -1551,6 +1671,7 @@ record.
 | L     | partial  | Linux+RetroArch host | RetroArch demo (5-behaviour gate) | yes          | —                                             |
 | M     | done        | —                    | —                                | yes           | —                                             |
 | N     | done        | —                    | —                                | yes           | —                                             |
+| O     | done        | —                    | —                                | yes           | —                                             |
 
 ### Hardware-blocked items
 
@@ -1675,6 +1796,15 @@ the full story.
   side migration hooks); stub-packer latency measurements against a
   representative asset set (current numbers are code-only; production
   Phase 1 is asset-transform dominated).
+- **O:** Production `blyt32` SDK crate (full handle set, full error
+  surface, `bitflags!` for flag parameters, `blyt32-sys` / `blyt32`
+  crate split); full packer Rust codegen (parse `cart.build.yaml`,
+  emit typed constants for all fields and assets); `cart.build.yaml`
+  language-dispatch integration (ADR-0073 `language: rust` path);
+  cross-language carts (Rust + C library); Milk-V Duo native target;
+  WASM target; `blyt_last_error()` heap-clone path; deep state-buffer
+  proxy (`players[slot].x` pattern, deferred by ADR-0108 to post-v1);
+  sequence API (`SeqStep`, `sequence!` macro).
 
 ### External blockers
 
@@ -1710,3 +1840,11 @@ Both are complete.
   cross-host; all latency gates pass (< 3 s native, < 500 ms Lua).
   ADR-0045 and ADR-0083 both amended (2026-05-07). Post-spike
   engineering follow-ups logged below.
+- **Spike O (Rust cart end-to-end) — PASS.** Four-way digest equality
+  A=B=C=D (Rust arm64 = Rust amd64 = C arm64 = C amd64); float ABI
+  witness `vol=3f000000` on both hosts; both compile-fail guards reject
+  with the expected type errors (2026-05-08). ADR-0108 confirmed
+  as written; no amendments. Eight findings recorded (four confirmations,
+  four production follow-ups). Post-spike follow-ups: full `blyt32`
+  crate, full packer Rust codegen, `cart.build.yaml` language-dispatch
+  integration, Milk-V Duo native target.

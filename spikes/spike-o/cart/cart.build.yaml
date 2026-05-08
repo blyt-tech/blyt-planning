@@ -1,0 +1,30 @@
+# Spike O toy cart manifest — stub for ADR-0073 language: rust dispatch.
+# The stub packer reads this file and emits resources.rs / state.rs /
+# handlers.rs into $OUT_DIR.  The cargo:rerun-if-changed sentinel ensures
+# Cargo re-runs build.rs whenever this file changes (incremental build gate).
+language: rust
+name: toy_rust_cart
+version: "0.1.0"
+
+resources:
+  - id: 1
+    name: R_HERO
+    type: image
+    src: assets/hero.png   # stub: file need not exist; packer hardcodes the ID
+
+  - id: 2
+    name: V_SFX
+    type: audio
+    src: assets/sfx.wav    # stub
+
+state_buffers:
+  - name: MainBuffer
+    fields:
+      - name: S_CTR
+        type: u32
+        # raw field handle encoding: high 16 bits = buffer ID, low 16 bits = field index
+        raw: 0x00010001
+
+handlers:
+  - id: 1
+    name: HANDLER_AI

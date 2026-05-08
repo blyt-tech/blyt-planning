@@ -1,0 +1,10 @@
+[build]
+target = "riscv32imafc-unknown-none-elf"
+
+[target.riscv32imafc-unknown-none-elf]
+# ilp32f: hard-float single-precision ABI, matching libblyt32.so's
+# -march=rv32imfc_zicsr -mabi=ilp32f compilation flags (Spike I).
+rustflags = [
+    "-C", "target-cpu=generic-rv32",
+    "-C", "target-feature=+f,-d",
+]

@@ -1,0 +1,1 @@
+SET_VOL voice=00000000 vol=3f000000
