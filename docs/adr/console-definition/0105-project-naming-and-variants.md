@@ -29,7 +29,7 @@ Two facts shaped the resolution.
 distributed native player are all presented to users as "Blyt".
 
 **The console is not one console.** During design, three sibling consoles
-emerged that share most of the runtime (RV32IMFC ISA, Lua, state
+emerged that share most of the runtime (RV32IMAFC ISA, Lua, state
 management, audio, fixed-timestep update/draw lifecycle — i.e. everything
 that preserves rewind / save / netplay) and diverge only in graphics and
 input. Rather than picking one and treating the others as future work that
@@ -67,7 +67,7 @@ because that's what end users see ("this is a Blyt32 console game"). The
 two words refer to the same thing; the distinction is purely about
 audience.
 
-Three variants share the runtime infrastructure (RV32IMFC, Lua, state,
+Three variants share the runtime infrastructure (RV32IMAFC, Lua, state,
 audio, lifecycle). They differ in graphics and input:
 
 | Variant  | Display              | Input                          | Status        |

@@ -26,7 +26,7 @@ arbitrary dynamic linking.
 
 ## Decision
 
-**All carts are standard RISC-V ELF binaries** (RV32IMFC, little-endian),
+**All carts are standard RISC-V ELF binaries** (RV32IMAFC, little-endian),
 regardless of implementation language. One format, one loader, one
 distribution story.
 
@@ -57,12 +57,12 @@ library at load time based on `.cart.info`. The library behaves differently
 depending on execution context:
 
 - **On emulated platforms:** the variant library (e.g. `libblyt32.so`) is an
-  RV32IMFC shared library pre-mapped into the cart's guest address space by
+  RV32IMAFC shared library pre-mapped into the cart's guest address space by
   the emulator before execution begins. Its function bodies are thin stubs
   that issue ECALLs to the emulator's internal dispatch table (see ADR-0085).
   PLT/GOT entries for console API symbols are resolved in guest space before
   the cart entry point is called. This is the same dynamic-loader path
-  established by Spike C (which validated pre-mapping a RV32IMFC shared
+  established by Spike C (which validated pre-mapping a RV32IMAFC shared
   library into guest memory).
 - **On native RISC-V hardware:** the variant library is a real implementation
   library mapped into the cart process by the runtime before execution
@@ -85,7 +85,7 @@ is parsed:
 - `e_ident[EI_DATA]` = `ELFDATA2LSB` — little-endian.
 - `e_machine` = `EM_RISCV` (0xF3) — RISC-V ISA.
 - `e_flags` = `EF_RISCV_RVC | EF_RISCV_FLOAT_ABI_SINGLE` — confirms the
-  RV32IMFC profile; a runtime built for a different subset rejects here.
+  RV32IMAFC profile; a runtime built for a different subset rejects here.
 - `e_ident[EI_OSABI]` — set to `0x42` ('B' for Blyt) to distinguish carts
   from arbitrary RISC-V ELF binaries. Value sits in the OS-specific range
   (64–127). If the project later registers a formal value with the RISC-V
@@ -203,7 +203,7 @@ directory.
   function symbols in `libblyt32.so`, not as opaque ECALL numbers.
 - Resources in ELF sections enable zero-copy mmap on hardware — a real
   performance and simplicity win.
-- Language extensibility is natural: any language targeting RV32IMFC ELF is
+- Language extensibility is natural: any language targeting RV32IMAFC ELF is
   a first-class cart format without special handling.
 - One format simplifies the packer, the runtime loader, and authoring
   documentation.

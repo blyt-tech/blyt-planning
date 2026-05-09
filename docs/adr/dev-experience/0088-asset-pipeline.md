@@ -104,13 +104,13 @@ tool dependency surface small.
 |---|---|---|
 | TTF/OTF → BMFont | `fontbm` | No mature Rust BMFont generator |
 | WAV → lip sync JSON | `rhubarb` | C++ tool, no Rust equivalent |
-| Lua source → bytecode | `luac` (Lua 5.4, matching runtime version) run inside the fc32 emulator | Standard luac cannot cross-compile for RV32IMFC; running in-emulator guarantees compatibility (ADR-0109) |
+| Lua source → bytecode | `luac` (Lua 5.4, matching runtime version) run inside the fc32 emulator | Standard luac cannot cross-compile for RV32IMAFC; running in-emulator guarantees compatibility (ADR-0109) |
 
 **Forked (user-installed):**
 
 | Transform | Tool |
 |---|---|
-| C/Rust/Zig → RV32IMFC | Platform compiler toolchain |
+| C/Rust/Zig → RV32IMAFC | Platform compiler toolchain |
 
 **Rust crates (no fork):**
 

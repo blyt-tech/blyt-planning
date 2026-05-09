@@ -1443,9 +1443,12 @@ subset of the Lua path's mechanism and does not depend on M.
 ## Spike O — Rust cart end-to-end
 
 **Status:** results in [`spike-o-results.md`](spike-o-results.md). All five
-stages PASS on both arm64 and amd64 (`make all` exits 0). ADR-0108 design
-confirmed; no amendments required. Eight numbered findings recorded; none
-are design flaws (four are confirmations, four are production follow-ups).
+stages PASS on both arm64 and amd64 (`make all` exits 0). Eight numbered
+findings recorded; none are design flaws (four are confirmations, four are
+production follow-ups). Finding O-1 (target name correction) acted on:
+ADR-0001 amended to add the A extension (RV32IMFC → RV32IMAFC) and
+ADR-0108 amended with the corrected target string, primary-language status,
+and A-extension rationale.
 
 **The question:** Can a Rust cart compile to `riscv32imafc-unknown-none-elf`,
 link against `libblyt32`, pack through the existing cart pipeline, and run
@@ -1548,6 +1551,128 @@ any outstanding M/N follow-up work.
 
 ---
 
+## Spike P — Rust heap allocator, atomics, and on_load contract
+
+**The question:** Does a manifest-declared heap region wired up as a Rust
+`#[global_allocator]` let `Vec`, `Arc`, and other `alloc` types work
+correctly in a `no_std` Rust cart? Do `AtomicU32` and `Once` emit
+A-extension instructions that rv32emu executes correctly? And does the
+`on_load` hook correctly separate resource-derived heap data (which
+survives rewind intact) from state-derived heap data (which `on_load`
+refreshes)?
+
+**Why this is a risk:** Three distinct unknowns sit under the design
+established during Spike O and the subsequent ADR-0108/ADR-0087 updates:
+
+1. **Atomics execution.** Spike O's Rust cart compiled with the `A`
+   extension ELF flag (`rv32i2p1_m2p0_a2p1_f2p2_c2p0`) but never actually
+   called code that emitted LR/SC or AMO instructions — no `AtomicU32`,
+   no `Once`, no `Arc` reference count. rv32emu's A-extension support is
+   therefore untested in practice; a silent fall-through or illegal-
+   instruction trap would not have surfaced.
+
+2. **Heap allocator.** The ADR-0108 heap allocator design — `heap_size`
+   manifest field, SDK `#[global_allocator]` implementation, runtime
+   carving out and exposing the heap region via a well-known symbol — is
+   fully design-only. Whether a simple embedded allocator works correctly
+   in the `no_std` cart context under rv32emu, and whether `Vec`/`Arc`
+   built on top of it behave as expected, is unknown.
+
+3. **`on_load` heap contract.** ADR-0087's rewind model divides heap data
+   into two categories: resource-derived (set up in `init`, survives
+   rewind) and state-derived (rebuilt in `on_load`). This distinction has
+   never been demonstrated in a working cart. Whether `on_load` is
+   sufficient as the single rebuild hook — or whether there are heap data
+   patterns that do not fit neatly into either category — is unknown.
+
+**What to build:**
+
+- **Atomics smoke test.** A Rust cart (reusing the Spike O harness) that
+  calls `AtomicU32::fetch_add` in a loop and reads the result via
+  `Once::call_once` on first frame, embedding the output in the per-frame
+  FNV-1a-64 digest. The point is to force actual LR/SC or AMO opcode
+  emission and confirm rv32emu executes them; the digest confirms the
+  result is deterministic across arm64 and amd64.
+
+- **SDK `#[global_allocator]`.** A minimal allocator implementation in
+  the `blyt32` SDK crate, backed by a static byte array sized by a
+  `heap_size` build-time constant derived from `cart.build.yaml`. The
+  runtime exposes the region's base address via a well-known linker
+  symbol (`__blyt_heap_base`, `__blyt_heap_size`); the allocator
+  initialises itself against that region on first use. Carts opt in via:
+  ```yaml
+  heap_size: 65536
+  ```
+  Carts that omit `heap_size` (or set it to zero) link the no-op
+  allocator stub and get a clear link error if they accidentally import
+  `alloc`.
+
+- **`alloc` cart.** A Rust cart (separate from the atomics test) that:
+  - Declares `heap_size: 65536` in `cart.build.yaml`
+  - Builds a `Vec<u32>` in `init` from resource-derived data (a fixed
+    lookup table read from a stub resource — not from a state buffer)
+  - Builds an `Arc<u32>` counter and clones it across two notional
+    "owners"; increments it each frame
+  - Reads and writes a state buffer field alongside the heap allocations
+  - Emits a per-frame digest covering the `Vec` length, the `Arc`
+    reference count, and the state buffer value
+
+- **Two-category `on_load` demonstration.** Extend the `alloc` cart with
+  a simulated save/restore cycle (same mechanism as Spike K's
+  save-restore harness). The cart's state buffers are saved, a field is
+  mutated, then the save is restored and `on_load` fires:
+  - **Resource-derived heap data** (`Vec` built from the stub resource in
+    `init`): must be unchanged after restore — `on_load` does not touch
+    it.
+  - **State-derived heap data** (a second `Vec<u32>` built from the state
+    buffer field values in `on_load`): must reflect the restored field
+    values after `on_load` fires.
+  - Per-frame digest must be byte-identical to the equivalent run that
+    never took a save/restore detour.
+
+- **Cross-host validation.** The same two-Docker-image setup as Spike O
+  (linux/arm64, linux/amd64). Save on arm64, restore on amd64; digest
+  streams byte-equal post-load.
+
+**Success criterion:**
+
+- `AtomicU32::fetch_add` and `Once::call_once` produce correct, byte-
+  deterministic results across arm64 and amd64; no illegal-instruction
+  trap in rv32emu.
+- `Vec<u32>` and `Arc<u32>` construct, mutate, and drop without
+  segfaults or allocator panics under rv32emu.
+- The two-category `on_load` demonstration confirms the design: resource-
+  derived `Vec` is byte-identical before and after restore; state-derived
+  `Vec` reflects restored state buffer values; digest streams match the
+  no-restore baseline.
+- Cross-host save/restore: digest streams byte-equal after loading on the
+  opposite host.
+- All cases reproduce from scratch in a clean Docker environment based on
+  the Spike O image.
+
+**What this spike does and does not decide:**
+
+- Decides whether rv32emu's A-extension implementation is correct for the
+  instructions Rust's standard library actually emits (`LR.W`/`SC.W` for
+  `AtomicU32`, `AMOSWAP` or similar for `Arc` reference counts).
+- Decides whether the SDK `#[global_allocator]` design (linker-symbol
+  heap region, `heap_size` manifest field) is viable or needs revision.
+- Pins down the `on_load` contract with a working demonstration, feeding
+  back into ADR-0087 and ADR-0108 if any gap is found.
+- Does not implement the production `blyt32` SDK crate — the allocator
+  built here is spike-quality; production hardening (allocator algorithm
+  choice, OOM handling, allocator stats API) is a post-spike follow-up.
+- Does not address `Arc` in the context of `no_std` + `alloc` crate
+  availability on older nightly toolchains — uses Rust nightly-2025-08-01
+  as established by Spike O.
+- Does not measure allocator performance overhead on the MIPS budget —
+  that is a production concern once the allocator is known to be correct.
+
+**Dependency:** Spike O (Rust cart pipeline, Docker image, digest harness).
+Can run immediately; no other spikes are blocking.
+
+---
+
 ## Ordering
 
 A → B → C and D and E and F (B is the dependency for C, D, and E; F
@@ -1599,6 +1724,9 @@ O (Rust cart end-to-end) ← depends on I (cart format + packing
                             pipeline), C (shared-lib ABI), H (native
                             RV32 execution); independent of M and N;
                             can run in parallel with M/N follow-ups
+                            ↑
+P (Rust heap + atomics + on_load) ← depends on O only; can run
+                                     immediately
 ```
 
 Spike C can begin as soon as A produces a working interpreter, since it
@@ -1637,19 +1765,22 @@ independent of M and N. Its secondary output — numbered API findings
 from real Rust cart code — feeds directly into any in-flight API ADRs,
 making it most valuable while those decisions are still open.
 
+Spike P de-risks the Rust heap allocator and atomics (ADR-0108) and
+validates the `on_load` rewind contract (ADR-0087). It depends only on
+Spike O and has now been executed.
+
 ---
 
 ## Followup status
 
-Spikes A through O have all been executed. Several have outstanding
-items that have not yet been closed — either because real hardware is
-not yet on hand, because a manual / visual gate has not yet been
-performed, or because a clearly-scoped piece of post-spike engineering
-has been logged for later. This section is the single-pane summary so
-deferrals do not get lost across 16 result documents. **Authoritative
-detail lives in each spike's `docs/design/spike-X-results.md` and
-`spikes/spike-X/TASKS.md`** — entries here are pointers, not the full
-record.
+Spikes A through P have all been executed. Several spikes have outstanding items that have not yet
+been closed — either because real hardware is not yet on hand, because
+a manual / visual gate has not yet been performed, or because a clearly-
+scoped piece of post-spike engineering has been logged for later. This
+section is the single-pane summary so deferrals do not get lost across
+result documents. **Authoritative detail lives in each spike's
+`docs/design/spike-X-results.md` and `spikes/spike-X/TASKS.md`** —
+entries here are pointers, not the full record.
 
 ### Status at a glance
 
@@ -1669,9 +1800,10 @@ record.
 | J     | partial  | —                    | VS Code F5 recording             | yes           | —                                             |
 | K     | done     | —                    | —                                | yes           | rv32emu `syscall_read` overflow (upstream fix) |
 | L     | partial  | Linux+RetroArch host | RetroArch demo (5-behaviour gate) | yes          | —                                             |
-| M     | done        | —                    | —                                | yes           | —                                             |
-| N     | done        | —                    | —                                | yes           | —                                             |
-| O     | done        | —                    | —                                | yes           | —                                             |
+| M     | done     | —                    | —                                | yes           | —                                             |
+| N     | done     | —                    | —                                | yes           | —                                             |
+| O     | done     | —                    | —                                | yes           | —                                             |
+| P     | done     | —                    | —                                | yes           | —                                             |
 
 ### Hardware-blocked items
 
@@ -1805,6 +1937,20 @@ the full story.
   WASM target; `blyt_last_error()` heap-clone path; deep state-buffer
   proxy (`players[slot].x` pattern, deferred by ADR-0108 to post-v1);
   sequence API (`SeqStep`, `sequence!` macro).
+- **P:** Enable `CONFIG_EXT_A=y` in the base spike-a rv32emu config
+  (currently off; Spike P rebuilds inline — production images should
+  enable it as baseline). `#[global_allocator]` declaration: blytbuild
+  Rust codegen must emit the allocator declaration in the generated
+  cart preamble for `heap_size > 0` carts (can't live in the SDK rlib).
+  Production allocator hardening: OOM strategy (graceful `Result`-
+  returning surface rather than panic), TLSF or buddy allocator
+  evaluation for fragmentation. `spin::Once` or `once_cell` for mutable
+  statics (replace `SyncCell<UnsafeCell<Option<T>>>` pattern). ADR-0087
+  amendment: clarify `init → state restored → on_load` as the correct
+  sequence for all load scenarios including fresh-process restore; note
+  `on_start` split as a candidate follow-up once real-cart complexity
+  warrants it. ADR-0108 amendment: document `#[global_allocator]`
+  placement constraint and blytbuild codegen responsibility.
 
 ### External blockers
 
@@ -1843,8 +1989,31 @@ Both are complete.
 - **Spike O (Rust cart end-to-end) — PASS.** Four-way digest equality
   A=B=C=D (Rust arm64 = Rust amd64 = C arm64 = C amd64); float ABI
   witness `vol=3f000000` on both hosts; both compile-fail guards reject
-  with the expected type errors (2026-05-08). ADR-0108 confirmed
-  as written; no amendments. Eight findings recorded (four confirmations,
-  four production follow-ups). Post-spike follow-ups: full `blyt32`
-  crate, full packer Rust codegen, `cart.build.yaml` language-dispatch
-  integration, Milk-V Duo native target.
+  with the expected type errors (2026-05-08). Eight findings recorded
+  (four confirmations, four production follow-ups). ADR-0108 amended
+  (2026-05-09): target corrected to `riscv32imafc-unknown-none-elf`
+  (Finding O-1), Rust elevated to primary native language alongside Lua,
+  single-threaded A-extension rationale added. ADR-0001 amended
+  (2026-05-09): A extension added to the ISA (RV32IMFC → RV32IMAFC).
+  Post-spike follow-ups: full `blyt32` crate, full packer Rust codegen,
+  `cart.build.yaml` language-dispatch integration, Milk-V Duo native
+  target.
+- **Spike P (Rust heap allocator, atomics, on_load contract) — PASS.**
+  All five stages and all digest gates pass on arm64 and amd64
+  (2026-05-09). Six findings recorded. Key results: (1) `linked_list_allocator`-backed
+  `#[global_allocator]` works correctly under rv32emu — `Vec`, `Arc`,
+  and the realloc growth path all execute without panics; 30-frame
+  cross-host digests are byte-equal. (2) `AtomicU32` on
+  `riscv32imafc-unknown-none-elf` uses LLVM single-threaded atomic
+  lowering (plain loads/stores, no AMO opcodes); explicit inline
+  assembly (`amoadd.w.aqrl`, `lr.w.aq`/`sc.w.rl`) is required to emit
+  A-extension instructions — rv32emu executes them correctly once
+  `CONFIG_EXT_A=y` is set (disabled by default in the spike-a image).
+  (3) The `on_load` two-category contract is confirmed: state-derived
+  heap data rebuilt from restored state buffer values; cross-host
+  arm64-save → amd64-load digest gate passes. Two design findings
+  require ADR follow-up: `#[global_allocator]` must be in the final
+  cart crate (not the SDK rlib), and the correct load sequence is
+  `init → state restored → on_load` (not bare `on_load` without prior
+  `init`). ADR-0087 and ADR-0108 amendments proposed in
+  `docs/design/spike-p-results.md`. Post-spike follow-ups logged below.

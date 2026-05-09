@@ -6,13 +6,13 @@ Accepted — amends ADR-0109 (TAP protocol confirmed; two-tier test execution mo
 
 ## Context
 
-ADR-0109 established that test binaries compile to RV32IMFC ELF and run inside
+ADR-0109 established that test binaries compile to RV32IMAFC ELF and run inside
 the fc32 emulator, with TAP output left as "TBD". The testing frameworks for
 each cart language, the blyt API mock surface, and the relationship between
 emulator-based and host-based test execution were left unspecified.
 
 Cart code is written in C, Lua, and Rust. Each language has its own testing
-conventions, and the RV32IMFC target constrains which frameworks can run on
+conventions, and the RV32IMAFC target constrains which frameworks can run on
 the device. The three languages have meaningfully different answers.
 
 ## Decision
@@ -22,7 +22,7 @@ the device. The three languages have meaningfully different answers.
 Tests run in two modes:
 
 **Emulator mode** (`blytbuild test`) — the authoritative tier. Test binaries
-compile to RV32IMFC ELF and execute inside the fc32 emulator. Results reflect
+compile to RV32IMAFC ELF and execute inside the fc32 emulator. Results reflect
 the real target environment: ABI, integer sizes, emulator bugs, and blyt API
 behaviour are all as-shipped. This is the mode CI runs.
 
@@ -40,7 +40,7 @@ where.
 
 **Unity** is the unit testing framework for C cart code:
 
-- Single `.c` + `.h`, zero POSIX or heap dependencies — compiles to RV32IMFC
+- Single `.c` + `.h`, zero POSIX or heap dependencies — compiles to RV32IMAFC
   bare-metal without modification.
 - TAP output mode built in (confirms ADR-0109's protocol as TAP).
 - No test registration boilerplate: `TEST_CASE` macros are sufficient.
@@ -85,7 +85,7 @@ target-environment validation but are not the primary unit test path.
 `#[cfg(test)]` conditional implementations in the cart's own codebase.
 
 **Emulator**: the SDK ships a `blyt_test` crate providing a custom test
-harness for `no_std` RV32IMFC targets:
+harness for `no_std` RV32IMAFC targets:
 
 - `#[blyt_test::test]` proc macro attribute marks test functions.
 - Uses linker-section collection (via `linkme` or equivalent) — no unstable
@@ -306,7 +306,7 @@ same way.
 - Graphics unit testing is deliberately minimal; logic extraction is the
   preferred structural discipline.
 - `blyt_test` requires blytbuild to inject Cargo config at build time,
-  consistent with blytbuild's existing role managing the RV32IMFC toolchain
+  consistent with blytbuild's existing role managing the RV32IMAFC toolchain
   invocation.
 - Host tests that call real blyt functions fail to link — compile-time
   enforcement of the tier boundary with no runtime machinery needed.

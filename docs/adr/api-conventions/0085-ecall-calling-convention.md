@@ -131,7 +131,7 @@ ranges.
 
 ## Consequences
 
-- Any language that compiles to RV32IMFC uses this convention without
+- Any language that compiles to RV32IMAFC uses this convention without
   modification. The engine core for each language (`libblytcommonlua`,
   any future `libblytcommonpy`, `libblytcommonjs`) is variant-portable
   and includes `blyt.h`; per-variant binding shims (`libblyt32lua`,
@@ -154,7 +154,7 @@ item described the now-superseded host-embedded Lua architecture (the
 original approach considered and rejected in ADR-0025), in which Lua C API
 calls (`lua_pcall`, `lua_newstate`, etc.) crossed the ECALL boundary.
 
-Under the accepted ADR-0025 architecture (Lua compiled as an RV32IMFC
+Under the accepted ADR-0025 architecture (Lua compiled as an RV32IMAFC
 library), all Lua C API calls are in-VM function calls with no ECALL
 boundary. The ECALL surface is the console API described in this ADR, shared
 identically by Lua and native carts.

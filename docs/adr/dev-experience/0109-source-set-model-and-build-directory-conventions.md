@@ -71,7 +71,7 @@ Test source sets live under `src/test/<name>` and build to
 | `src/test/c` | `build/test/c` |
 | `src/test/rust` | `build/test/rust` |
 
-Tests are compiled to RV32IMFC ELF and run inside the fc32 emulator (see
+Tests are compiled to RV32IMAFC ELF and run inside the fc32 emulator (see
 §Tests below).
 
 ### Generated API bindings
@@ -159,7 +159,7 @@ consequence of the "all lib headers visible to all game code" model.
 
 **Simple** (default for `src/game/c` and `src/lib/<name>`): the builder finds
 all `.c` files in the source directory recursively, compiles each to a `.o`
-in the corresponding build subdirectory using the RV32IMFC cross-compilation
+in the corresponding build subdirectory using the RV32IMAFC cross-compilation
 toolchain, then links into a static archive. Source sets may declare
 additional compiler flags; the cross-compilation flags are always present and
 cannot be overridden.
@@ -216,7 +216,7 @@ Lua source, not only a dev/run dependency.
 
 ### Tests under the emulator
 
-Test binaries are compiled for RV32IMFC using the same cross-compilation
+Test binaries are compiled for RV32IMAFC using the same cross-compilation
 toolchain as game code. The test runner:
 
 1. Builds the test binary.

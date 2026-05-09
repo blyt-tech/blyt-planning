@@ -14,8 +14,8 @@ iterate). These have different requirements and different support tiers.
 ### Build platforms
 
 **A build platform is any host capable of running the Rust-based packer, the
-fc32 emulator (used to run the RV32IMFC-native luac at build time — see
-ADR-0109), and a cross-compiler targeting RV32IMFC.**
+fc32 emulator (used to run the RV32IMAFC-native luac at build time — see
+ADR-0109), and a cross-compiler targeting RV32IMAFC.**
 
 No display is required. The packer is a CLI tool; the runtime is not
 invoked during a build. This means:
@@ -24,7 +24,7 @@ invoked during a build. This means:
   first-class build targets.
 - Servers and Chromebook/RPi devices in headless configurations can build
   carts without a desktop environment.
-- The cross-compilation toolchain (RISC-V GCC or Clang targeting RV32IMFC)
+- The cross-compilation toolchain (RISC-V GCC or Clang targeting RV32IMAFC)
   must be installable on the build platform; pre-built toolchain binaries
   are distributed for supported platforms.
 

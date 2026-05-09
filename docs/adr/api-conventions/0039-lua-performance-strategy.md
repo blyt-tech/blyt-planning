@@ -41,7 +41,7 @@ These cover ~80–90% of performance-sensitive hot paths in typical games.
 **Layer 2 (v2+, if real usage justifies): Inline native code in Lua carts.**
 
 The unified ELF format (ADR-0024) makes this natural: the packer accepts
-`.c`/`.rs`/`.zig` files alongside `.lua`, compiles them to RV32IMFC, links
+`.c`/`.rs`/`.zig` files alongside `.lua`, compiles them to RV32IMAFC, links
 them into the cart ELF with the shim, and generates Lua bindings.
 
 **API shape rules that enable both layers efficiently (enforced in v1 design):**

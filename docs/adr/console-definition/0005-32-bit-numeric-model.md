@@ -11,7 +11,7 @@ and cross-platform save state formats can diverge at the boundary between
 scripting language and native code. The console's save state and determinism
 requirements (ADR-0007) make numeric consistency load-bearing.
 
-The ISA is RV32IMFC (ADR-0001), which makes i32 and f32 natural first-class
+The ISA is RV32IMAFC (ADR-0001), which makes i32 and f32 natural first-class
 types. The question is whether to expose f64 and i64 as first-class or confine
 them to escape hatches.
 
@@ -19,7 +19,7 @@ them to escape hatches.
 
 **All first-class numerics in the console are i32 and f32.**
 
-- **Native carts (RV32IMFC):** i32 and f32 are first-class in the ISA.
+- **Native carts (RV32IMAFC):** i32 and f32 are first-class in the ISA.
 - **Lua:** built with `LUA_32BITS` (equivalent: `LUA_INT_TYPE=LUA_INT_INT`,
   `LUA_FLOAT_TYPE=LUA_FLOAT_FLOAT`). Lua numbers are i32 and f32.
 - **State buffers:** field types i8/u8/i16/u16/i32/u32/f32/bool plus

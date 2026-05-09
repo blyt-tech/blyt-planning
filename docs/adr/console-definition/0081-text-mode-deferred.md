@@ -162,7 +162,7 @@ silently providing a degraded experience.
 **Resolution: BlyTTY, the keyboard-primary sibling variant.** Rather than
 extending Blyt32 with an awkward keyboard-required mode, the sibling
 variant **BlyTTY** is the planned home for text mode (see ADR-0105 for the
-variant model). BlyTTY shares the runtime infrastructure (RV32IMFC ELF
+variant model). BlyTTY shares the runtime infrastructure (RV32IMAFC ELF
 cart format, Lua, save state, audio, lifecycle, `blytbuild` toolchain) but
 declares a keyboard-primary input contract. Text mode at 640×480 is its
 natural display mode rather than an optional extension. Carts for BlyTTY

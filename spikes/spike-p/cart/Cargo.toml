@@ -1,0 +1,26 @@
+[package]
+name = "cart"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+blyt32 = { path = "../sdk/blyt32" }
+# Embedded-friendly linked-list allocator for #[global_allocator] in alloc carts.
+# No use_spin feature — single-threaded cart; GlobalAlloc implemented manually.
+linked_list_allocator = { version = "0.10", default-features = false }
+
+[profile.release]
+opt-level = 2
+lto = false
+panic = "abort"
+
+[features]
+default = []
+# Stage 1: AtomicU32 + compare_exchange Once → LR/SC / AMO instruction gate
+atomics = []
+# Stage 2: allocator smoke test (Box alloc + dealloc, Vec growth)
+heap_smoke = []
+# default (no features): Stage 3/4 — Vec + Arc + on_load two-category demo

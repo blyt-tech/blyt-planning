@@ -44,7 +44,7 @@ for step-debugging. The `debug` flag in `cart.info` is set to `true` by the
 packer (see ADR-0073).
 
 **luac invocation (amendment — ADR-0109):** standard `luac` produces bytecode
-for the architecture it runs on; it cannot cross-compile for RV32IMFC. The
+for the architecture it runs on; it cannot cross-compile for RV32IMAFC. The
 packer runs the fc32-native `luac` binary inside the fc32 emulator as a build
 step. Compilation runs for both debug and release builds — debug carts ship
 source text, but the compilation step still validates the source. The emulator

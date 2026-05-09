@@ -106,6 +106,7 @@ cleared buffer and produce bit-identical output to the live render.
 ```
 Cart start:      zero state → init → update/draw loop
 Load save:       blyt_save_read → state restored → on_load → loop continues
+Rewind:          state restored from rewind snapshot → on_load → loop continues
 Reset:           (autosave written if slot set) → zero state → init → loop
 Credits:         on_credits → blyt_credits_done → runtime resumes
 Quit:            on_quit → blyt_quit_ready → cleanup → exit
@@ -117,6 +118,16 @@ state buffers and fires `on_load`; the `update`/`draw` loop then continues.
 `init` is not called again. Non-saveable state (resources, palette, Lua
 locals) was established by `init` at session start and carries through
 untouched — only tracked state buffers are overwritten by the restore.
+
+**Rewind uses the same `on_load` hook, with the same heap behaviour as
+save-load.** The runtime restores state buffers from the rewind snapshot and
+fires `on_load`; `init` is not called and the heap is not zeroed. Heap
+memory falls into two natural categories: resource-derived data set up in
+`init` (lookup tables, parsed resource structures) which remains valid
+across rewind since resources do not change; and state-derived data
+(entity lists, spatial indices) which may be stale relative to the restored
+state buffers and must be refreshed in `on_load`. Carts whose heap contains
+only resource-derived data need no `on_load` implementation.
 
 ### Reset — always present in the pause menu
 

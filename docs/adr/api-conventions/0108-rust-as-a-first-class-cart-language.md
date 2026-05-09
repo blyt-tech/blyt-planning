@@ -2,20 +2,31 @@
 
 ## Status
 
-Accepted — design intent established; implementation not targeted at a
-specific release. Future ADRs with API ergonomics implications should treat
-Rust as a first-class consumer alongside C and Lua.
+Accepted — confirmed end-to-end by Spike O (2026-05-08). All five
+load-bearing questions answered; no design amendments required. Rust is
+the primary native cart language alongside Lua. ADRs with API ergonomics
+implications should treat Rust as a first-class consumer alongside Lua;
+C is supported for interoperability and library bindings.
 
 ## Context
 
-The console supports two implementation paths for carts today: Lua (the
-primary scripting language, ADR-0066) and native C (compiled to RV32IMFC
-ELF). Rust compiles to `riscv32imfc-unknown-none-elf` and is a natural
-third option: it provides memory safety, a strong type system, and
-zero-cost abstractions without a runtime, all compatible with the console's
-constraints (no dynamic allocation, fixed timestep, POD state buffers).
+The console's authoring story is: **Lua** for approachable scripting,
+**Rust** as the primary native language, and **C** available when needed
+for interoperability with native libraries, language bindings, or low-level
+platform work. This positions the console for an audience of Rust developers
+— a large and growing community of systems programmers who want the
+correctness guarantees and ergonomics of Rust without writing C. The Rust
+ecosystem is substantial; games written in Rust are an established and
+growing category.
 
-Adding Rust raises design questions about how the existing C API shape
+Rust compiles to `riscv32imafc-unknown-none-elf` (the A extension is
+required by the target; there is no `riscv32imfc` Rust target in upstream
+nightly — see ADR-0001). Rust provides memory safety, a strong type system,
+and zero-cost abstractions without a runtime, all compatible with the
+console's constraints (no dynamic allocation required, fixed timestep, POD
+state buffers).
+
+Rust raises design questions about how the existing C API shape
 (opaque `uint32_t` handles, flat function naming, `blyt_result_t` error
 returns, `#define` constants) translates to idiomatic Rust, and whether
 any design choices should be revisited for Rust ergonomics. This ADR
@@ -263,7 +274,7 @@ language: rust
 The packer generates Rust constant modules into `OUT_DIR`. The cart's
 `build.rs` runs the packer (or the packer is run as a pre-build step) and
 tells Cargo where to find the output. Cargo compiles the Rust cart to an
-RV32IMFC ELF. The packer then packs that ELF with the cart's assets. The
+RV32IMAFC ELF. The packer then packs that ELF with the cart's assets. The
 `language: rust` declaration also suppresses the packer from generating
 C headers or Lua modules.
 
@@ -287,18 +298,77 @@ Carts run single-threaded on RV32. The Rust SDK marks handle types as
 `!Send + !Sync`. This removes the entire class of multi-threaded aliasing
 concerns from the SDK's design space and from cart authors' cognitive load.
 
+The ISA includes the A (atomics) extension (ADR-0001). In a single-threaded
+context LR/SC and AMO instructions always succeed on the first attempt, so
+they introduce no non-determinism. A is included because Rust's standard
+concurrency primitives — `AtomicU32`, `AtomicBool`, `Once`, and many
+ecosystem crates — use atomic operations for interior-mutability and
+one-time-init patterns even without threads. Excluding A would require
+patching or avoiding those primitives across Rust's `no_std` ecosystem,
+which is not a reasonable expectation for cart authors.
+
+### Heap allocator
+
+The `blyt32` SDK crate provides a `#[global_allocator]` implementation
+backed by a fixed-size heap region carved out of cart memory at load time.
+This unlocks the full `alloc` crate — `Arc`, `Vec`, `Box`, `String`, and
+any ecosystem crate that depends on allocation.
+
+Heap size is declared in `cart.build.yaml` (default: zero — carts that do
+not use `alloc` pay no overhead):
+
+```yaml
+heap_size: 65536   # bytes; omit or set to 0 for alloc-free carts
+```
+
+The runtime carves out the declared region beyond the save-state buffers
+and exposes it to the SDK crate via a well-known symbol or startup call;
+cart code never interacts with allocator setup directly.
+
+**The heap is not part of the save state.** Save state captures the
+declared POD state buffers only (ADR-0009/0010). The heap lives beyond
+the save-state region and is not captured on save, load, or rewind.
+
+The intended pattern is: state buffers are the source of truth; heap
+allocations are a derived cache layer built from state buffers and
+resources. Data derived from **resources** (sprite caches, physics
+material tables, etc.) is unaffected by rewind since resources don't
+change. Data derived from **state buffers** (entity lists, spatial
+indices, etc.) must be rebuilt when state is restored.
+
+The existing `blyt_cart_on_load` lifecycle hook (ADR-0087) fires after
+both save-load and rewind restores. The heap is not zeroed — `init`-time
+resource-derived heap data (lookup tables, parsed structures) remains valid
+since resources do not change. `on_load` is responsible only for refreshing
+state-derived heap data that is stale relative to the restored state buffers.
+The no-op default means carts whose heap contains only resource-derived or
+transient data need not implement it.
+
+Note that `Arc` vs `Rc`: in single-threaded cart code `Rc<T>` suffices
+for shared ownership and avoids the atomic overhead `Arc` carries.
+However, ecosystem crates frequently use `Arc` internally regardless, so
+both are supported. `Arc`-shared resource data requires no restore
+handling; `Arc`-shared data derived from state buffers must be rebuilt
+in `on_load`.
+
 ## Consequences
 
+- Spike O (2026-05-08) confirmed all five load-bearing questions: float ABI
+  correctness (`ilp32f` across arm64 and amd64), packer–Cargo integration,
+  compile-time guarantees (`FieldHandle<B>` cross-buffer rejection, closure
+  handler rejection), semantic transparency (four-way digest equality:
+  Rust/arm64 = Rust/amd64 = C/arm64 = C/amd64), and API findings (eight
+  findings; none require design changes, four are production follow-ups).
 - Rust cart authors get a native Rust experience: method dispatch,
   `Result` only where errors are genuinely expected, compile-time type
   safety on field handles, and `fn`-enforced handler purity.
 - The SDK crate is a one-time investment by the SDK team; it is not
   generated and does not change with each cart.
-- Future ADRs that make API design choices with ergonomics trade-offs
-  (e.g. output parameter style, error reporting granularity, handle type
-  granularity) should consider the Rust impact alongside C and Lua. A
-  choice that is ergonomic in C but forces unsafe or verbose patterns in
-  Rust is a cost worth naming even if the C decision stands.
+- ADRs that make API design choices with ergonomics trade-offs (e.g. output
+  parameter style, error reporting granularity, handle type granularity)
+  should consider the Rust impact alongside Lua. A choice that is ergonomic
+  in C but forces unsafe or verbose patterns in Rust is a cost worth naming
+  even if the C decision stands.
 - The deep state-buffer proxy pattern is deferred. If the shallow method
   style proves insufficient, a proxy approach can be revisited — it does
   not require changes to the C runtime API, only to the Rust SDK crate and

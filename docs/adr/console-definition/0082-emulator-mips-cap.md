@@ -21,7 +21,7 @@ authored that work everywhere the developer tests but fail on the declared
 minimum emulation host.
 
 The minimum emulation host is a Pi Zero 2 W class device (Cortex-A53 @ 1 GHz,
-ARMv8). The effective MIPS throughput of the RV32IMFC interpreter on this
+ARMv8). The effective MIPS throughput of the RV32IMAFC interpreter on this
 hardware is the real performance ceiling for any cart running under emulation.
 That ceiling applies whether the emulator is running on a Pi, a desktop, or
 in a browser — the cart cannot know or benefit from the faster host.

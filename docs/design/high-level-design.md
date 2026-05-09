@@ -4,8 +4,8 @@ A fantasy console aimed at the sweet spot for small-team game development:
 fidelity high enough to make genuinely nice-looking games, constrained
 enough that a solo creator or a small team can realistically ship one.
 Runs everywhere via libretro; runs natively on low-cost RISC-V hardware
-for those who want a physical console experience. Lua for approachable
-authoring, native code for performance-critical paths.
+for those who want a physical console experience. Write games in Lua or
+Rust; C is there when you need it.
 
 **Document status:** Design specification, not yet implemented. All
 architectural decisions have rationales inline. Sections numbered for
@@ -64,12 +64,27 @@ open question, set aside until foundational design is stable.
   RetroArch supports (Switch homebrew, every retro handheld, macOS via
   OpenEmu, Android, iOS, desktop, browser) without per-platform porting.
 
-### Design principle: scripting is optional
+### Design principle: Lua or Rust, with C available
 
-The native API is the primary contract. Lua is one consumer of the API;
-C, Rust, Zig, and other RISC-V-targeting languages are equally first-class.
-Approachable entry (Lua), professional ceiling (native). Same cart format,
-same API, same distribution regardless of language.
+The native API is the primary contract. The console targets two primary
+authoring paths: **Lua** for approachable scripting, and **Rust** as the
+primary native language. This is a deliberate positioning choice — the Rust
+developer community is large, systems-programming-capable, and looking for
+projects that suit their skills. A console that supports Rust natively,
+with a real SDK and a first-class toolchain story, is a meaningful hook for
+that audience.
+
+**C** is fully supported and will always be there: for calling into native
+libraries, for writing language bindings, for interoperability with
+C-only toolchains, or for authors who specifically want it. But it is not
+the expected native path for most games. Cart authors should reach for Lua
+(scripting, rapid iteration) or Rust (performance, type safety, ecosystem
+access) as their default choices.
+
+Zig and other RV32IMAFC-targeting languages work as-is; the format imposes
+no language restriction. Approachable entry (Lua), professional ceiling
+(Rust or C). Same cart format, same API, same distribution regardless of
+language.
 
 ### A note on era aesthetics
 
@@ -85,7 +100,7 @@ in as identity.
 
 ## 2. Hardware Target
 
-### Decision: RV32IMFC, little-endian, no D extension.
+### Decision: RV32IMAFC, little-endian, no D extension.
 
 **Rationale:**
 - RISC-V chosen for license cleanliness (vs. ARM's ambiguity — consequential
@@ -93,9 +108,14 @@ in as identity.
   hardware products around the console), first-class ISA restrictability,
   growing ecosystem with cheap available hardware, and momentum going
   into the late 2020s.
-- 32-bit integer base (I) plus multiply (M), single-precision FP (F), and
-  compressed instructions (C). Explicitly no D (double FP), no A (atomics
-  not needed for single-threaded carts), no V (vector — not in hardware floor).
+- 32-bit integer base (I) plus multiply (M), atomics (A), single-precision
+  FP (F), and compressed instructions (C). Explicitly no D (double FP), no
+  V (vector — not in hardware floor). A (atomics) is included: Rust's
+  standard `AtomicU32`, `Once`, and many ecosystem crates require A-extension
+  instructions even in single-threaded code; the correct Rust bare-metal
+  target is `riscv32imafc-unknown-none-elf` (no `imfc` variant exists); and
+  A is present in every shipping RISC-V SBC and is supported by rv32emu.
+  Excluding it served no purpose.
 - F included (not no-FP as originally considered) because the MCU-class
   hardware that motivated no-FP was dropped from the support matrix. At the
   SBC floor, FP is universally available; fixed-point-only would impose
@@ -281,7 +301,7 @@ zero-budget toolchain.
 
 ### Decision: i32 and f32 throughout the system.
 
-- **Native (RV32IMFC):** i32 and f32 first-class in the ISA.
+- **Native (RV32IMAFC):** i32 and f32 first-class in the ISA.
 - **Lua:** Built with `LUA_32BITS` (or equivalent: `LUA_INT_TYPE=LUA_INT_INT`,
   `LUA_FLOAT_TYPE=LUA_FLOAT_FLOAT`). Lua numbers are i32 and f32.
 - **State buffers:** Field types i8/u8/i16/u16/i32/u32/f32/bool plus
@@ -424,7 +444,7 @@ is handled as follows:**
 
 - **Hidden behind the API.** Cart code does not see byte order,
   pointer size, OS, hardware model, or any platform-specific detail.
-  The abstract machine (RV32IMFC + console API) is identical everywhere.
+  The abstract machine (RV32IMAFC + console API) is identical everywhere.
 
 ### Save state / hot reload
 
@@ -467,7 +487,7 @@ is handled as follows:**
 - **Cross-platform replay tests.** Record inputs on platform A,
   replay on platform B, verify end state matches.
 - **RISC-V conformance suite.** Interpreter passes all relevant
-  `riscv-tests` for RV32IMFC.
+  `riscv-tests` for RV32IMAFC.
 
 **Result:** save states, rewind, deterministic replay, and netplay
 all work correctly across platforms as a structural property.
@@ -1622,7 +1642,7 @@ one distribution story.
 
 **Properties:**
 - Single file (`.blyt`).
-- Standard ELF structure (RV32IMFC, little-endian, statically linked).
+- Standard ELF structure (RV32IMAFC, little-endian, statically linked).
 - Resources embedded in ELF sections under the `.blyt.*` namespace.
 - Metadata distributed across `.cart.info` (frontend-facing — title, author,
   API version, size class, etc.) and `.cart.config` (runtime-facing — state
@@ -1659,7 +1679,7 @@ one distribution story.
   documentation.
 - Resources in ELF sections enable zero-copy mmap on hardware — a real
   performance and simplicity win over a custom container format.
-- Language extensibility is natural: any language that targets RV32IMFC
+- Language extensibility is natural: any language that targets RV32IMAFC
   ELF can be a cart; there's no "Lua is special" in the format itself.
 
 ### Decision: Lua carts are ELF carts that use the runtime's Lua-host API.
@@ -3350,7 +3370,7 @@ CI runs. Integration tests validate save state cross-platform portability.
 ### Conformance
 
 RISC-V interpreter validated against upstream `riscv-tests` conformance
-suite for RV32IMFC. Determinism validated via cross-platform bit-identity
+suite for RV32IMAFC. Determinism validated via cross-platform bit-identity
 tests for representative cart workloads.
 
 ---
@@ -3502,7 +3522,7 @@ tests for representative cart workloads.
 
   This is now a concrete near-term goal, not a v2 abstraction. The project
   ships as **Blyt** with three planned variants sharing the runtime
-  infrastructure (RV32IMFC, Lua, state, audio, lifecycle) and varying only
+  infrastructure (RV32IMAFC, Lua, state, audio, lifecycle) and varying only
   in graphics and input (see ADR-0105):
 
   - **Blyt32** — initial focus. 320×240 paletted, dpad+4face+2shoulder
@@ -3564,7 +3584,7 @@ tests for representative cart workloads.
 ### Phase 3: Native Carts and Debugging (weeks 10-18)
 
 9. **RISC-V interpreter** embedded in core. Start simple (decode/dispatch
-    loop), validate against `riscv-tests`. Target RV32IMFC.
+    loop), validate against `riscv-tests`. Target RV32IMAFC.
 10. **Native cart SDK.** Compiler toolchain config, linker script with
     `.blyt.*` section conventions, API header for C/Rust/Zig cart
     authors, layout-declaration helpers (macros emitting `.cart.layouts`
@@ -3702,8 +3722,10 @@ case of the "scripting is optional" principle.
    tractable for a solo artist or small team at each tier, loose enough
    to build genuinely nice-looking games. Compatible with AI-assisted
    and library-sourced art pipelines.
-7. **Scripting is optional.** Native carts (C/Rust/Zig/etc.) are first-class;
-   Lua is the approachable default, not the only path.
+7. **Lua or Rust; C when you need it.** Two primary authoring paths: Lua
+   for scripting and rapid iteration, Rust for performance and type safety.
+   C is fully supported for interoperability but is not the expected default.
+   Same cart format and API regardless of language choice.
 8. **POD state, index references.** Data-oriented layouts enable save
    state by memcpy, migration on reload, cross-platform portability.
 9. **Leverage existing infrastructure.** Linux for drivers on hardware,

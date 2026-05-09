@@ -20,7 +20,7 @@ execution and security model from native carts, and requires the host process
 to embed and maintain a C library dependency.
 
 **Provide a runtime library that owns Lua entirely.** The runtime ships
-`libblyt32lua.so`, a versioned RV32IMFC shared library that exports the
+`libblyt32lua.so`, a versioned RV32IMAFC shared library that exports the
 standard cart entry points (`init`, `update`, `draw`, etc.) and that
 delegates the Lua lifecycle — VM creation, environment configuration,
 bytecode loading, callback dispatch — to the variant-portable Lua engine
@@ -39,7 +39,7 @@ the cart, because the cart has no reason to know about the Lua C API.
 
 **Lua is just another implementation language.** Each variant ships a
 matching Lua library — `libblyt32lua.so` for Blyt32, `libblyttylua.so`
-for BlyTTY, `libblyt3dlua.so` for Blyt3D — as a versioned RV32IMFC
+for BlyTTY, `libblyt3dlua.so` for Blyt3D — as a versioned RV32IMAFC
 shared library; everything runs inside the VM sandbox.
 
 **Engine core / variant binding split.** Each variant Lua library is a
