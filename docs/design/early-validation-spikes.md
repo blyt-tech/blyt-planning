@@ -1673,6 +1673,204 @@ Can run immediately; no other spikes are blocking.
 
 ---
 
+## Spike Q — Lua+Rust hybrid binding: rv32 path and WASM call-on-demand
+
+**The question:** Does the ADR-0111 Lua+Rust hybrid binding mechanism work
+end-to-end on both execution paths?
+
+- **rv32 path:** can `cart_lua_modules` be implemented in Rust, with Lua C
+  API symbols resolved against `libconsolelua.so`, and can Lua successfully
+  call Rust functions through the resulting bindings?
+- **WASM path:** can rv32emu be operated as a per-call "function server" —
+  initialised once, then invoked for individual guest functions with
+  register arguments supplied by the host and results read back — so that
+  the Lua-direct WASM host can call into it to execute Rust code without
+  running rv32emu to exit?
+
+**Why this is a risk:**
+
+The rv32 path is a straightforward extension of Spike I's case d (Lua +
+C userlib), but replacing C with Rust introduces two untested steps:
+`extern "C"` Lua C API calls from Rust resolving against
+`libconsolelua.so`, and Rust's `#[link_section]` mechanism emitting the
+`.lua_exports` ELF section with the right layout. Neither has been
+validated in the RV32IMAFC cart context.
+
+The WASM path is the novel risk. Spike I Stage 4 demonstrated rv32emu
+compiled to WASM running a full cart from `_start` to exit — but that
+model runs the entire cart (including the Lua VM) inside rv32emu, which
+Spike E confirmed is 7.4× over budget for Lua. ADR-0111's design for
+hybrid carts requires Lua to run outside rv32emu (Lua-direct, per
+Spike F) while Rust runs inside it, with per-call invocations crossing
+the boundary. rv32emu's current API has no "call guest function by
+address, pass register arguments, return when the function returns"
+interface — it only has "run from entry point until the cart calls
+exit". Whether such an interface can be added, and whether it works
+correctly for f32/i32 arguments and return values across the host/guest
+boundary, is unknown. This is the load-bearing question ADR-0111 rests
+on.
+
+There is also a structural question: a Lua+Rust hybrid cart on WASM
+requires both the Lua-direct module (from Spike F/I Stage 5) and an
+rv32emu instance (for the Rust code) in the same WASM page. Whether
+these can be initialised and interleaved — Lua-direct running the cart
+frame loop, calling into rv32emu for specific Rust functions — is
+unproven.
+
+**What to build:**
+
+**Stage 1 — rv32 path: Rust `cart_lua_modules`.**
+
+Extend Spike I case d, replacing the C userlib with a Rust static
+library. The Rust library exports:
+
+```rust
+#[no_mangle]
+pub extern "C" fn cart_lua_modules(L: *mut lua_State) { … }
+```
+
+and two Lua-callable functions with different primitive signatures:
+
+```rust
+// f32 args → f32
+extern "C" fn lua_fast_add(L: *mut lua_State) -> c_int { … }
+// i32 args → i32
+extern "C" fn lua_fast_mul(L: *mut lua_State) -> c_int { … }
+```
+
+`cart_lua_modules` registers both via `package.preload` using the Lua C
+API symbols resolved against `libconsolelua.so`. The Lua cart calls
+`require("mylib")`, invokes both functions, and includes their return
+values in the per-frame FNV-1a-64 digest.
+
+Success gate: digest streams byte-equal on arm64 and amd64. `mylib.fast_add(3.0, 4.0)` returns `7.0`; `mylib.fast_mul(3, 4)` returns `12`.
+
+Also validate the `.lua_exports` ELF section: the Rust library emits it
+via `#[link_section = ".lua_exports"]`. Use `objdump -s -j .lua_exports`
+to confirm the section is present in the cart ELF and the symbol
+address and type encoding fields are non-zero and sane. The section
+content need not be parsed by the runtime in this stage — presence and
+non-corruption is the gate.
+
+**Stage 2 — rv32emu call-on-demand API.**
+
+Add a `rv32emu_call_fn` interface to the rv32emu build used by the
+spike (minimal change, spike-quality):
+
+```c
+// Call guest function at sym_addr.
+// args[0..nargs-1] are placed in a0..a5.
+// ret receives the value of a0 when the function returns.
+// Returns 0 on success, non-zero if the guest faults or times out.
+int rv32emu_call_fn(rv32emu_t *emu, uint32_t sym_addr,
+                   const uint32_t args[], int nargs,
+                   uint32_t *ret);
+```
+
+Implementation: set PC to `sym_addr`, place args in a0–a5, place a
+sentinel address in `ra` (a guest address mapped to a dedicated "return
+stub" that executes ECALL 0 — the runtime detects ECALL 0 as the
+"function returned" signal), then run the interpreter loop until
+ECALL 0 fires. Read a0 as the return value.
+
+Validate with two guest functions compiled from C (not Rust yet —
+isolate the rv32emu API question from the Rust question):
+- `uint32_t add32(uint32_t a, uint32_t b)` — integer round-trip
+- `float addf(float a, float b)` — float round-trip (validates
+  the ilp32f ABI through the call-on-demand path)
+
+Run against the Stage 1 Docker images (arm64 and amd64). Emit the
+return value of each call as a `RESULT <name> <hex>` line; the gate is
+`add32(3, 4) = 0x00000007` and `addf(1.0f, 2.0f) = 0x40400000`
+(IEEE 754 for 3.0f) across both hosts.
+
+**Stage 3 — WASM: Lua-direct + rv32emu call-on-demand.**
+
+The key integration. Build a single Emscripten WASM module containing:
+- The Lua-direct runtime (from Spike I Stage 5 / Spike F) — Lua VM,
+  `libconsolelua_wasm.c`
+- rv32emu compiled to WASM with the Stage 2 call-on-demand patch,
+  with a minimal Rust cart ELF (providing `fast_add` and `fast_mul`)
+  embedded in its WASM filesystem
+
+At WASM module init:
+1. Boot rv32emu in "idle" mode: load the Rust cart ELF, resolve
+   symbols, but do not call `_start`. rv32emu sits ready to accept
+   `rv32emu_call_fn` invocations.
+2. Read the `.lua_exports` section from the cart ELF. For each entry,
+   register a host-side Lua C function (trampoline) with the
+   `lua_State`.
+3. The Lua cart calls `require("mylib")`, invokes `fast_add` and
+   `fast_mul`. Each trampoline call exercises:
+   - Lua stack → host register values (via `lua_tonumber`)
+   - `rv32emu_call_fn` with those register values
+   - rv32emu runs the Rust function inside the guest
+   - Return value in a0 → `lua_pushnumber` back to the Lua stack
+
+Emit results in the same `FRAME / SUMMARY` format as Spike F. Run
+under Node (headless); emit the function return values in the frame
+digest. Success gate: same results as Stage 1's rv32 path, byte-equal.
+
+Measure the per-call overhead of `rv32emu_call_fn` from within the
+WASM host. This is not a pass/fail gate — it is a data point for
+evaluating whether the ADR-0111 trampoline cost is acceptable in
+practice. Report the mean and p99 round-trip time for a single
+`fast_add` call (a no-work function that exercises only the call
+boundary).
+
+**Stage 4 — determinism cross-check.**
+
+Run Stage 1 (rv32, arm64 and amd64) and Stage 3 (WASM, Node) on the
+same Lua script. The per-frame digests must be byte-equal across all
+three runs. This confirms that f32 values crossing the rv32emu
+call-on-demand boundary on WASM produce the same bits as f32 values
+staying inside rv32emu on the native path.
+
+**Success criterion:**
+
+- Stage 1: `mylib.fast_add` and `mylib.fast_mul` produce correct
+  results; digest streams byte-equal arm64/amd64; `.lua_exports`
+  section present and non-corrupt in the cart ELF.
+- Stage 2: `add32` and `addf` return correct values via
+  `rv32emu_call_fn` on both hosts; float ABI confirmed correct
+  (addf result = 0x40400000).
+- Stage 3: Lua-direct WASM calls Rust functions inside rv32emu via
+  the trampoline; results match Stage 1 byte-for-byte.
+- Stage 4: digests byte-equal across rv32/arm64, rv32/amd64, WASM/Node.
+- Stage 3 per-call overhead measured and reported (informational, not
+  a pass/fail gate for this spike).
+
+**What this spike does and does not decide:**
+
+- Decides whether rv32emu can be operated as a call-on-demand function
+  server, and whether the host→guest register-argument ABI works for
+  f32 and i32 across the WASM boundary. If it does not, ADR-0111 needs
+  revision (the fallback being either dual-compilation of the Rust
+  binding layer to WASM, or restricting hybrid carts to rv32-only
+  targets with a different WASM story).
+- Decides whether `cart_lua_modules` in Rust resolves Lua C API symbols
+  correctly against `libconsolelua.so` in the RV32IMAFC guest.
+- Decides whether `.lua_exports` section emission from Rust via
+  `#[link_section]` survives the cart link and is correctly laid out.
+- Does not implement the `#[lua_export]` proc macro — Stage 1 uses
+  hand-written `#[link_section]` to emit the section data and
+  hand-written Lua C API glue to register functions. The proc macro
+  is an SDK engineering task once the mechanism is confirmed correct.
+- Does not measure the full per-frame budget impact of the call-on-demand
+  overhead for realistic workloads — Stage 3 measures a no-work
+  round-trip, which sets the floor. Real-workload amortisation is a
+  follow-up if the floor looks acceptable.
+- Does not address the `#[global_allocator]` placement question from
+  Spike P F3 for Lua+Rust hybrid carts — that is a follow-up once the
+  binding mechanism is proven.
+
+**Dependency:** Spike I (Lua-direct WASM path, `cart_lua_modules` for
+C, rv32emu multi-dynload patch). Spike O (Rust cart pipeline, Docker
+image). Spike P (Rust in rv32emu baseline). Can run in parallel with
+any remaining spikes that do not touch rv32emu's WASM build.
+
+---
+
 ## Ordering
 
 A → B → C and D and E and F (B is the dependency for C, D, and E; F
