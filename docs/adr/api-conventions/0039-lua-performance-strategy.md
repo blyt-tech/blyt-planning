@@ -1,7 +1,11 @@
 # ADR-0039: Lua performance strategy — rich native API primitives in v1, inline native deferred
 
 ## Status
-Accepted
+
+Accepted — amended by ADR-0111 (Lua+Rust hybrid binding layer: promoted
+to v1 for Rust; binding generation is via SDK proc macro, not the packer;
+WASM target uses a host-trampoline path rather than same-address-space
+Lua C API calls).
 
 ## Context
 
@@ -38,11 +42,21 @@ Deferred to v1.x (post-launch, if real usage justifies):
 
 These cover ~80–90% of performance-sensitive hot paths in typical games.
 
-**Layer 2 (v2+, if real usage justifies): Inline native code in Lua carts.**
+**Layer 2: Inline native code in Lua carts.**
 
-The unified ELF format (ADR-0024) makes this natural: the packer accepts
-`.c`/`.rs`/`.zig` files alongside `.lua`, compiles them to RV32IMAFC, links
-them into the cart ELF with the shim, and generates Lua bindings.
+For **Rust** this is a v1 capability, not v2-deferred, since Rust is a
+first-class cart language (ADR-0108). The binding mechanism is defined in
+ADR-0111: `#[lua_export]` annotations on individual Rust functions emit a
+`.lua_exports` ELF section; the SDK proc macro generates the Lua C API
+wrappers on rv32 targets and the runtime generates host-side trampolines
+from `.lua_exports` on the WASM target. The packer is not involved in
+binding generation.
+
+For **C and other languages** the v2 characterisation below still applies.
+The unified ELF format (ADR-0024) makes it natural: the packer accepts
+`.c`/`.zig` files alongside `.lua`, compiles them to RV32IMAFC, links them
+into the cart ELF, and generates Lua bindings (via the `cart_lua_modules`
+hook described in ADR-0025).
 
 **API shape rules that enable both layers efficiently (enforced in v1 design):**
 - Bulk operations on typed buffers, not per-element callbacks.
@@ -57,8 +71,9 @@ them into the cart ELF with the shim, and generates Lua bindings.
   aggressive enough.
 - The v1 API design (bulk ops, no per-element callbacks) sets up v2 inline
   native cleanly without retrofit.
-- v2 inline native requires packer changes (compile + link + bind) but no
-  runtime changes; the ELF format already supports it.
+- v2 inline native for C/Zig requires packer changes (compile + link) but
+  no runtime changes; the ELF format already supports it. For Rust, no
+  packer changes are required — the proc macro and runtime handle it (ADR-0111).
 - LuaJIT is not used. WASM portability requires a single Lua VM build
   (vanilla PUC Lua) that runs everywhere including browser. LuaJIT's WASM
   support is incomplete.
