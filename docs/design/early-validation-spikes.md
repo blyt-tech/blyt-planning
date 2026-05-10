@@ -1971,7 +1971,7 @@ Spike O and has now been executed.
 
 ## Followup status
 
-Spikes A through P have all been executed. Several spikes have outstanding items that have not yet
+Spikes A through Q have all been executed. Several spikes have outstanding items that have not yet
 been closed — either because real hardware is not yet on hand, because
 a manual / visual gate has not yet been performed, or because a clearly-
 scoped piece of post-spike engineering has been logged for later. This
@@ -2002,6 +2002,7 @@ entries here are pointers, not the full record.
 | N     | done     | —                    | —                                | yes           | —                                             |
 | O     | done     | —                    | —                                | yes           | —                                             |
 | P     | done     | —                    | —                                | yes           | —                                             |
+| Q     | done     | —                    | —                                | yes           | —                                             |
 
 ### Hardware-blocked items
 
@@ -2149,6 +2150,22 @@ the full story.
   `on_start` split as a candidate follow-up once real-cart complexity
   warrants it. ADR-0108 amendment: document `#[global_allocator]`
   placement constraint and blytbuild codegen responsibility.
+- **Q:** `__extendsfdf2` stub: libconsolelua.so's double-precision stubs return 0.0 (intentional for RV32IMAFC — no D extension). Lua's number-to-string path casts float→double via this stub, so float results display as "0.0". Workaround: fast_add pushes integer result; production fix is a correct bit-manipulation implementation. Also: `LUA_REGISTRYINDEX = -1001000` (not -16000), controlled by `LUAI_IS32INT` (whether int ≥ 32 bits = always true on RV32), not by `LUA_32BITS`.
+- **Q:** `#[lua_module]` / `#[lua_export]` proc macro (generates the
+  `#[link_section = ".lua_exports"]` static and Lua C API glue from function
+  signatures, including correct `sym_addr` references). Production
+  `rv32emu_call_fn` API: error classification, timeout handling, re-entrancy
+  analysis, debugger-hook integration (Spike J composition). Public
+  `rv_set_fpreg`/`rv_get_fpreg` accessors to replace direct `riscv_private.h`
+  struct access. Full `.lua_exports` parser (section integrity validation,
+  unknown type encodings). `FC32_SENTINEL_ADDR` reservation in the cart
+  memory map (ADR-0082 or equivalent). Per-frame budget analysis for realistic
+  Rust payloads (the Stage 3 measurement is a no-work floor). `#[global_allocator]`
+  placement in hybrid Rust+Lua carts (interaction with Spike P's allocator
+  when both the Lua VM heap and the Rust allocator share the guest address
+  space). Multi-module carts (multiple `#[lua_module]` instances). ADR-0111
+  amendment: note `sym_addr` generation responsibility (proc macro) and
+  `FC32_SENTINEL_ADDR` reservation requirement.
 
 ### External blockers
 
@@ -2215,3 +2232,25 @@ Both are complete.
   `init → state restored → on_load` (not bare `on_load` without prior
   `init`). ADR-0087 and ADR-0108 amendments proposed in
   `docs/design/spike-p-results.md`. Post-spike follow-ups logged below.
+- **Spike Q (Lua+Rust hybrid binding: rv32 path and WASM call-on-demand) — PASS.**
+  All four stages and all digest gates pass on arm64 and amd64, with the
+  WASM/Node path byte-equal to both rv32 paths (2026-05-09). Six findings
+  recorded. Key results: (1) `extern "C"` Lua C API calls from `no_std` Rust
+  resolve correctly against `libconsolelua.so` in the RV32IMAFC guest — the
+  Rust compiler emits the same `R_RISCV_CALL`/`R_RISCV_JUMP_SLOT` relocations
+  as C, and fc32_dynload resolves them identically. (2) `#[link_section =
+  ".lua_exports"]` with `#[used]` and `KEEP(*(.lua_exports))` in the linker
+  script correctly emits the 80-byte-per-entry section and survives gc-sections.
+  (3) rv32emu can be operated as a call-on-demand function server via a
+  sentinel-ECALL mechanism: `rv32emu_call_fn` sets PC to the target function,
+  places args in a0–a5 (integer) or fa0–fa5 (float), runs until ECALL 0xDEAD
+  fires, and reads the return from a0 or fa0. The ilp32f float register ABI
+  is confirmed (addf(1.0f, 2.0f) → 0x40400000 on both hosts). (4) A single
+  Emscripten WASM module can contain both the Lua-direct runtime and rv32emu
+  in call-on-demand mode; the trampoline layer correctly bridges the Lua stack
+  and the rv32emu register ABI. Determinism across all three paths is
+  byte-exact. Post-spike follow-ups: proc macro for `.lua_exports` and Lua C
+  API glue generation, production `rv32emu_call_fn` API (error classification,
+  timeout, re-entrancy), full `.lua_exports` parser, `rv_set_fpreg`/`rv_get_fpreg`
+  public API, sentinel-address reservation in the memory map, per-frame budget
+  analysis for realistic Rust payloads, heap allocation in hybrid carts.

@@ -1,0 +1,4 @@
+12:51:52 [32mINFO [0m [90msrc/riscv.c:637:[0m Log level: TRACE
+12:51:52 [32mINFO [0m [90msrc/riscv.c:650:[0m /spike-q/elfs/test_funcs.elf ELF loaded
+RESULT add32 00000007
+RESULT addf  40400000

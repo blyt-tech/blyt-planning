@@ -1,0 +1,4 @@
+*.elf
+*.a
+*.ld
+test_call_on_demand
