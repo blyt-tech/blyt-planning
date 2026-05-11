@@ -260,3 +260,5 @@ COPY --from=builder /spike-a/rv32emu/build/rv32emu            /spike-a/rv32emu/b
 COPY --from=builder /spike-i/lib/libconsole.so                /spike-i/lib/libconsole.so
 COPY --from=builder /spike-i/lib/libconsolelua.so             /spike-i/lib/libconsolelua.so
 COPY --from=builder /lib/ld-musl-riscv32.so.1                 /lib/ld-musl-riscv32.so.1
+# Lua source tree — used by Makefile Stage 3 WASM build (extracted from this image)
+COPY --from=builder /spike-i/lua/src/                         /spike-i/lua/src/

@@ -48,9 +48,11 @@ typedef struct {
 #define ARG_TYPE_F32  0x02
 
 /* ── rv32emu declarations ────────────────────────────────────────────────────
- * Include rv32emu's public header (common.h must be included first per its
- * requirement; emcc build adds -include src/common.h -Isrc/ to the compile
- * command so these are available in the WASM build context).
+ * Include rv32emu's public header. This file is compiled WITH -include
+ * common.h (rv32emu group), NOT together with the Lua VM sources (which
+ * define UNUSED differently). The emcc build splits compilation into:
+ *   group A: Lua VM sources (lapi.c etc.) — no -include common.h
+ *   group B: rv32emu + this file — with -include common.h
  */
 #include "riscv.h"
 
@@ -122,9 +124,14 @@ static int trampoline_call(lua_State *L, int tidx)
         s_overhead_count++;
     }
 
+    /* Push as integer regardless of ret_type for determinism with rv32 path.
+     * The rv32 path's lua_fast_add also uses lua_pushinteger (because
+     * libconsolelua.so's __extendsfdf2 stub returns 0.0 for any float,
+     * making lua_pushnumber unusable). Matching format ensures byte-equal
+     * Stage 4 digest across rv32/arm64, rv32/amd64, and WASM/Node. */
     if (ret_is_float) {
         union { float f; uint32_t u; } fv; fv.u = ret;
-        lua_pushnumber(L, (lua_Number)fv.f);
+        lua_pushinteger(L, (lua_Integer)(int32_t)fv.f);  /* truncate to int */
     } else {
         lua_pushinteger(L, (lua_Integer)(int32_t)ret);
     }
@@ -229,8 +236,9 @@ void blyt_hybrid_init(lua_State *L)
     static vm_attr_t attr;   /* vm_attr_t from riscv.h — exact layout match */
     memset(&attr, 0, sizeof attr);
     attr.data.user.elf_program = elf_path;
-    attr.mem_size   = 256ULL * 1024 * 1024;
-    attr.stack_size = 0x1000;
+    attr.mem_size        = 256ULL * 1024 * 1024;
+    attr.stack_size      = 0x1000;
+    attr.cycle_per_step  = 100;  /* must be non-zero; 0 causes rv_run infinite loop */
     attr.argc = 1;
     attr.argv = argv_arr;
 

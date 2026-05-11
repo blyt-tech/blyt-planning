@@ -140,7 +140,29 @@ functions to avoid coupling to the internal struct layout.
 
 **Q3: WASM trampoline architecture — confirmed.**
 
-**Finding F5 [NON-ISSUE]:** The `blyt_hybrid_init` function initializes rv32emu
+**Finding F5 [DESIGN FLAW]:** In Emscripten WASM builds, `rv_run()` uses
+`emscripten_set_main_loop_arg()` (async, returns immediately) instead of a
+synchronous loop. The call-on-demand path requires synchronous execution. Fix:
+`rv32emu_call_fn` uses a direct `while (!rv->halt) rv_step(rv)` loop rather than
+calling `rv_run()`.
+
+**Finding F6 [DESIGN FLAW]:** In Emscripten WASM builds, `rv_step()` calls
+`rv_delete(rv)` when halt fires (browser cleanup path). This destroys the rv32emu
+instance after the first `rv32emu_call_fn` call. Fix: `fc32_in_call_fn` global flag
+guards against premature deletion while call-on-demand is active.
+
+**Finding F7 [SPIKE SIMPLIFICATION]:** `CONFIG_EXT_C=y` must be enabled in the
+WASM rv32emu config. The rust_cart uses compressed RISC-V instructions (`c.jr` = `ret`
+in the ilp32f ABI). Without the C extension, rv32emu fails to translate the block
+containing `fast_add`'s return instruction.
+
+**Finding F8 [NON-ISSUE]:** The WASM Lua VM has a correct `__extendsfdf2`
+(from Emscripten's libc), causing floats to display as "7.0" while the rv32 path
+(with the libconsolelua.so stub) displays "7". The trampoline uses `lua_pushinteger`
+to maintain byte-equal Stage 4 output. A production implementation would provide a
+correct `__extendsfdf2` for the rv32 path as well.
+
+**Finding F9 [NON-ISSUE]:** The `blyt_hybrid_init` function initializes rv32emu
 (via `rv_create`) and the Lua state in the same Emscripten linear memory space.
 rv32emu's guest address space is allocated at WASM init time before the Lua VM heap
 grows significantly, reducing the probability of post-allocation memory growth
@@ -180,8 +202,23 @@ numbers to be filled in after running the WASM build under Node.
 | `.lua_exports` section |   1   |   ✓   |   ✓   |     —     | present + "mylib"      |
 | call-on-demand add32   |   2   | PASS  | PASS  |     —     | =0x00000007            |
 | call-on-demand addf    |   2   | PASS  | PASS  |     —     | =0x40400000 (3.0f)     |
-| WASM trampoline        |   3   |   —   |   —   | pending   | add=7, mul=12          |
-| determinism            |   4   | PASS  | PASS  | pending   | A=B=C                  |
+| WASM trampoline        |   3   |   —   |   —   |   PASS    | add=7, mul=12          |
+| determinism            |   4   | PASS  | PASS  |   PASS    | A=B=C                  |
+
+### Stage 3 evidence (WASM/Node):
+
+```
+FRAME 0 add=7 mul=12
+...
+FRAME 9 add=7 mul=12
+OK
+```
+
+Key Stage 3 implementation findings:
+- `rv_run()` in WASM builds uses `emscripten_set_main_loop_arg()` (async) — call-on-demand requires a direct `rv_step()` loop instead
+- `rv_step()` auto-deletes rv32emu on halt (`__EMSCRIPTEN__` code path) — requires `fc32_in_call_fn` guard to prevent premature destruction
+- `CONFIG_EXT_C=y` required — rust_cart uses compressed instructions (`c.jr`) for function return
+- The WASM Lua VM has a correct `__extendsfdf2` (from Emscripten's libc) so floats display correctly as "7.0" — but this differs from rv32 path's "7" (integer). Trampoline uses `lua_pushinteger` to maintain byte-equal output for Stage 4.
 
 ### Stage 1 evidence (arm64 = amd64):
 

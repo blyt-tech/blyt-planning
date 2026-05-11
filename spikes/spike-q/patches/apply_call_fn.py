@@ -53,6 +53,15 @@ else:
 CALL_FN_C = "src/call_fn.c"
 
 CALL_FN_IMPL = r"""/*
+ * fc32_in_call_fn — guard for WASM rv_step auto-delete.
+ *
+ * In EMSCRIPTEN builds, rv_step() calls rv_delete(rv) when it sees halt=true.
+ * This destroys the emulator instance after the first rv32emu_call_fn invocation.
+ * The guard prevents rv_delete from firing during call-on-demand execution.
+ */
+int fc32_in_call_fn = 0;
+
+/*
  * rv32emu_call_fn — Spike Q call-on-demand API for the Lua+Rust hybrid.
  *
  * Allows the host to invoke a single guest function at a given address,
@@ -148,7 +157,11 @@ int rv32emu_call_fn(riscv_t *rv,
                     uint32_t *ret,
                     int ret_is_float)
 {
+    extern int fc32_in_call_fn;
     rv32emu_call_fn_setup(rv);
+
+    /* Set guard: prevents WASM rv_step from auto-deleting rv when halt fires. */
+    fc32_in_call_fn = 1;
 
     /* Reset halt flag so rv_run() can enter the loop. */
     rv->halt = false;
@@ -181,6 +194,9 @@ int rv32emu_call_fn(riscv_t *rv,
 
     /* Run the interpreter until halt (sentinel ECALL fires or guest exits). */
     rv_run(rv);
+
+    /* Clear guard: WASM rv_step can auto-delete again after call-on-demand. */
+    fc32_in_call_fn = 0;
 
     /* Read the return value from the appropriate register. */
     if (ret) {
@@ -230,5 +246,50 @@ if "call_fn.o" not in mk_src:
     print("Makefile patched (call_fn.o added to OBJS).")
 else:
     print("Makefile already patched, skipping.")
+
+# ---------------------------------------------------------------------------
+# src/emulate.c — guard WASM rv_delete against call-on-demand active calls.
+#
+# In __EMSCRIPTEN__ builds, rv_step() auto-deletes rv when halt fires.
+# This destroys the rv32emu instance after the first rv32emu_call_fn call.
+# The fc32_in_call_fn guard prevents premature deletion.
+# Also adds an early return so the rv_run loop exits when halted.
+# ---------------------------------------------------------------------------
+
+EMULATE_C = "src/emulate.c"
+with open(EMULATE_C) as f:
+    emu_src = f.read()
+
+EMULATE_MARKER = "fc32 Spike Q: skip auto-delete"
+
+if EMULATE_MARKER not in emu_src:
+    OLD_HALT = """\
+    if (rv_has_halted(rv)) {
+        emscripten_cancel_main_loop();
+        rv_delete(rv); /* clean up and reuse memory */
+        rv_log_info("RISC-V emulator is destroyed");
+        enable_run_button();
+    }"""
+    NEW_HALT = """\
+    if (rv_has_halted(rv)) {
+        /* fc32 Spike Q: skip auto-delete when call-on-demand is active */
+        extern int fc32_in_call_fn;
+        if (!fc32_in_call_fn) {
+            emscripten_cancel_main_loop();
+            rv_delete(rv); /* clean up and reuse memory */
+            rv_log_info("RISC-V emulator is destroyed");
+            enable_run_button();
+        }
+        return;  /* halted: exit rv_step so rv_run loop can exit */
+    }"""
+    if OLD_HALT not in emu_src:
+        print("src/emulate.c: WASM halt block not found — skipping emulate.c patch.")
+    else:
+        emu_src = emu_src.replace(OLD_HALT, NEW_HALT, 1)
+        with open(EMULATE_C, "w") as f:
+            f.write(emu_src)
+        print("src/emulate.c patched (rv_delete guarded by fc32_in_call_fn).")
+else:
+    print("src/emulate.c already patched, skipping.")
 
 print("Done.  Build with: make OUT=build -j$(nproc)")
