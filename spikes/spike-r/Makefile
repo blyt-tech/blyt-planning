@@ -159,18 +159,92 @@ qemu-test-fedora-r: docker-build-r
 	fi
 
 # ── QEMU: Stage 3 strace allowlist derivation ────────────────────────────────
-# Runs derive_allowlist.sh inside the guest to produce a union syscall list
-# from rv32emu over each cart workload type.  Requires rv32emu and cart
-# binaries to be present in the guest (or passed via --rootfs).
+# Boots the Fedora 42 RISC-V guest, mounts the entire spikes/ directory via
+# 9p virtfs, and runs run-guest-stage3.sh which:
+#   1. Installs strace + gcc via dnf
+#   2. Builds rv32emu from spike-a source (CONFIG_EXT_A + multi-dynload patch)
+#   3. Runs strace over spike-i/q carts
+#   4. Outputs syscall union + allowlist suggestion to build/results/stage3-strace/
 #
-# Usage: make CART_DIR=/path/to/cart/blyt/files qemu-stage3-strace
+# Prerequisites:
+#   Stages 0-2 must have passed (make qemu-test-fedora-r).
+#   spike-i must have been staged: make -C ../spike-i qemu-fedora-stage
 
 .PHONY: qemu-stage3-strace
-qemu-stage3-strace: docker-build-r
-	@echo "Stage 3 strace: requires rv32emu + cart workloads in guest."
-	@echo "Run qemu-test-fedora-r first to verify Stages 0-2, then:"
-	@echo "  sudo bash /mnt/spikes/spike-r/derive_allowlist.sh <cart_dir>"
-	@echo "  inside the QEMU guest (via make qemu-test-fedora-r SSH session)."
+qemu-stage3-strace:
+	@if [ ! -f $(FEDORA_IMG) ]; then \
+	    echo "Fedora image not found — run: make -C ../spike-h fedora-image"; exit 1; \
+	fi
+	@if [ ! -f $(QEMU_FW) ]; then \
+	    echo "QEMU firmware not found at $(QEMU_FW)"; exit 1; \
+	fi
+	@if [ ! -d $(SPIKE_H_DIR)/../spike-i/build/guest-stage/cases ]; then \
+	    echo "spike-i guest-stage missing — run: make -C ../spike-i qemu-fedora-stage"; exit 1; \
+	fi
+	@mkdir -p $(BUILD)/results
+	@echo "Generating ephemeral SSH key..."
+	@rm -f $(FEDORA_KEY) $(FEDORA_KEY).pub
+	ssh-keygen -t ed25519 -f $(FEDORA_KEY) -N "" -q -C spike-r-stage3
+	@{ echo '#cloud-config'; \
+	   echo 'users:'; \
+	   echo '  - name: fedora'; \
+	   echo '    sudo: ALL=(ALL) NOPASSWD:ALL'; \
+	   echo '    ssh_authorized_keys:'; \
+	   printf '      - %s\n' "$$(cat $(FEDORA_KEY).pub)"; \
+	} > $(QEMU_DIR)/fedora-r-userdata
+	dd if=/dev/zero of=$(QEMU_DIR)/fedora-r-seed.img bs=1k count=1024 2>/dev/null
+	mformat -i $(QEMU_DIR)/fedora-r-seed.img -v CIDATA -F ::
+	mcopy -i $(QEMU_DIR)/fedora-r-seed.img $(QEMU_DIR)/fedora-r-userdata ::user-data
+	mcopy -i $(QEMU_DIR)/fedora-r-seed.img $(SPIKE_H_DIR)/qemu/cloud-init/meta-data ::meta-data
+	@echo "Creating fresh qcow2 overlay..."
+	qemu-img create -f qcow2 -b $(abspath $(FEDORA_IMG)) -F qcow2 \
+	    $(QEMU_DIR)/fedora-r-test.qcow2 2>/dev/null
+	@echo "Booting Fedora RISC-V (SSH on host:2222)..."
+	qemu-system-riscv64 \
+	    -machine virt -display none -m 4G -smp 4 \
+	    -bios $(QEMU_FW) \
+	    -kernel $(QEMU_UBOOT) \
+	    -serial file:$(QEMU_DIR)/fedora-r-console.log \
+	    -drive file=$(QEMU_DIR)/fedora-r-test.qcow2,format=qcow2,if=virtio \
+	    -drive file=$(QEMU_DIR)/fedora-r-seed.img,format=raw,if=virtio,readonly=on \
+	    -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+	    -device virtio-net-device,netdev=net0 \
+	    -virtfs local,path=$(CURDIR)/..,mount_tag=spikes,security_model=mapped-xattr,id=spikes \
+	    -daemonize -pidfile $(QEMU_DIR)/fedora-r-test.pid 2>/dev/null
+	@echo "Waiting for SSH daemon to be ready (up to 6 min)..."
+	@for i in $$(seq 1 180); do \
+	    ssh -i $(FEDORA_KEY) \
+	        -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+	        -o ConnectTimeout=3 -o BatchMode=yes -o IdentitiesOnly=yes \
+	        -p 2222 fedora@localhost true 2>/dev/null && break; \
+	    sleep 2; \
+	done
+	@echo "Running Stage 3 in guest (builds rv32emu + strace; ~10 min)..."
+	ssh -i $(FEDORA_KEY) \
+	    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+	    -o IdentitiesOnly=yes \
+	    -o ServerAliveInterval=60 -o ServerAliveCountMax=20 \
+	    -p 2222 fedora@localhost \
+	    'sudo mkdir -p /mnt/spikes && \
+	     sudo mount -t 9p -o trans=virtio,version=9p2000.L spikes /mnt/spikes 2>/dev/null; \
+	     sudo bash /mnt/spikes/spike-r/run-guest-stage3.sh' || true
+	@echo "Stopping QEMU..."
+	@kill $$(cat $(QEMU_DIR)/fedora-r-test.pid) 2>/dev/null || true
+	@rm -f $(QEMU_DIR)/fedora-r-test.qcow2 $(QEMU_DIR)/fedora-r-test.pid \
+	       $(QEMU_DIR)/fedora-r-seed.img $(QEMU_DIR)/fedora-r-userdata \
+	       $(FEDORA_KEY) $(FEDORA_KEY).pub
+	@echo ""
+	@echo "=== Stage 3 results ==="
+	@if [ -f $(BUILD)/results/stage3-build.log ]; then \
+	    grep -E "(PASS|FAIL|SKIP|SUMMARY|===|rv32emu:)" \
+	        $(BUILD)/results/stage3-build.log || true; \
+	else \
+	    echo "($(BUILD)/results/stage3-build.log not found — check $(QEMU_DIR)/fedora-r-console.log)"; \
+	fi
+	@if [ -f $(BUILD)/results/stage3-strace/syscall_names.txt ]; then \
+	    echo ""; echo "Observed syscall names:"; \
+	    cat $(BUILD)/results/stage3-strace/syscall_names.txt; \
+	fi
 
 # ── clean ─────────────────────────────────────────────────────────────────────
 

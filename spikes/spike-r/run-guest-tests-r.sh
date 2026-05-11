@@ -160,21 +160,28 @@ else
         STAGE2_OK=0
     fi
 
-    # Test: uname → exit 0 (seccomp allows this LP64 syscall)
-    # Key difference from Spike H: the unified filter includes uname(160).
-    # Spike H's libseccomp filter did not include uname on RISCV64 → killed.
+    # Test: uname → SIGSYS (blocked by production allowlist)
+    # Stage 3 finding: rv32emu interpreter does NOT call uname(160).
+    # uname was removed from the production allowlist (Stage 3 update).
+    # Both Spike H (libseccomp LP64 filter) and the production filter block
+    # uname — but for different reasons:
+    #   Spike H: libseccomp didn't include uname on RISCV64 (oversight)
+    #   Production: rv32emu genuinely doesn't need uname (correct omission)
+    # The Stage 2 mechanism test (filter can discriminate) is validated by the
+    # socket probe above.  Stage 4 (rv32emu end-to-end) tests the allowed path.
     "$LAUNCHER_R" -- "$ADVERSARY" uname 2>/dev/null
     RC=$?
-    if [ $RC -eq 0 ]; then
-        ok "launcher_r adversary uname → exit 0 — seccomp correctly allows uname"
+    if [ $RC -eq 159 ]; then
+        ok "launcher_r adversary uname → SIGSYS (rc=159) — uname correctly blocked (not in rv32emu allowlist)"
     else
-        err "launcher_r adversary uname → rc=$RC (expected 0; is uname(160) in allowlist?)"
+        err "launcher_r adversary uname → rc=$RC (expected 159=SIGSYS; uname should be blocked)"
         STAGE2_OK=0
     fi
 
     if [ $STAGE2_OK -eq 1 ]; then
-        ok "Stage 2: socket SIGSYS + uname exit-0 both correct"
+        ok "Stage 2: socket + uname both correctly blocked (production allowlist)"
         echo "  NOTE: open/execve/mprotect-exec isolation requires mount namespace or Option B"
+        echo "  NOTE: Stage 4 (rv32emu end-to-end) validates the allowed-syscall path"
     else
         err "Stage 2: one or more probes failed — see above"
     fi

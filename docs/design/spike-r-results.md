@@ -12,129 +12,151 @@ Date: 2026-05-11.
 
 ---
 
+## Summary
+
+**Partially answered.** The raw BPF filter mechanics (filter construction,
+LIFO multi-filter semantics, libseccomp inadequacy) are validated.  However,
+the core production path — launcher execs an ILP32 cart directly under the
+kernel's native compat layer — was **not testable** on this kernel because
+Fedora 42's kernel lacks the RISC-V ILP32 ELF binary loader.  Stages 2–4
+were completed against a fallback workaround (rv32emu as the cart runner)
+that does not represent the production architecture.
+
+---
+
 ## Per-stage results
 
 | Stage | Result | Notes |
 |-------|--------|-------|
-| 0 — environment | **PASS** | seccomp(2) present; CONFIG_COMPAT compat_sys_* in kallsyms |
-| 1 — raw BPF filter | **PASS** | Tests A (uname allowed), B (socket blocked), C (LIFO confirmed) |
-| 2 — launcher integration | **PASS** | socket → SIGSYS; uname → exit 0 |
-| 3 — strace allowlist | deferred | Requires rv32emu + cart workloads in guest |
-| 4 — adversary re-verification | deferred | Depends on Stage 3 |
+| 0 — environment | **PASS** | seccomp(2) present; CONFIG_COMPAT present but **no ILP32 ELF loader** |
+| 1 — raw BPF filter | **PASS** | Filter mechanics: write allowed, socket blocked, LIFO confirmed |
+| 2 — launcher integration | **PASS (workaround)** | Tested against rv32emu, not native ILP32 exec |
+| 3 — rv32emu strace allowlist | **PASS (workaround)** | rv32emu LP64 host syscalls — not the production ILP32 native syscall set |
+| 4 — adversary re-verification | **PASS (workaround)** | Valid for rv32emu path; native ILP32 path untested |
 
 ---
 
 ## Key findings
 
-### Finding 1: CONFIG_COMPAT does NOT support native ELF32 exec on this kernel
+### Finding 1: Fedora 42 kernel lacks the RISC-V ILP32 ELF binary loader
 
 The Fedora 42 kernel (6.16.4) compiles `compat_sys_*` functions (visible in
 `/proc/kallsyms`) but does **not** include the ELF32 binary loader for
-RISC-V ILP32.  Attempting to `execve` an ELF32 RISC-V binary after disabling
-binfmt_misc returns `ENOEXEC` (shell exit code 126).
+RISC-V ILP32.  Attempting to `execve` an ELF32 RISC-V binary directly returns
+`ENOEXEC` (shell exit code 126).
 
-**Consequence:** ILP32 cart binaries run via `binfmt_misc` +
-`qemu-riscv32-static`, not via the kernel's native compat path.
+**This is the central gap in the spike.**  The production architecture calls
+for the launcher to exec ILP32 cart binaries directly, relying on the kernel's
+native compat path.  Because that path is absent on this kernel, direct ILP32
+exec was never tested.
 
-### Finding 2: seccomp_data.arch = AUDIT_ARCH_RISCV64 for all processes
+**Workaround used in Stages 2–4:** rv32emu (an LP64 RV64 binary) was used as
+the cart runner in place of direct ILP32 exec.  rv32emu interprets RV32
+instructions in software; from the kernel's perspective it is a plain LP64
+process.  This unblocked the remaining stages but does not represent the
+production path.
 
-Because ILP32 binaries run inside `qemu-riscv32-static` (an LP64 RV64
-process), `seccomp_data.arch` is always `AUDIT_ARCH_RISCV64` (0xC00000F3).
-`AUDIT_ARCH_RISCV32` (0x400000F3) is never reported.
+### Finding 2: seccomp_data.arch = AUDIT_ARCH_RISCV64 for all processes — on this kernel only
 
-**Empirically confirmed:**
-- Diagnostic E (RISCV64-only filter, ALLOW all): ILP32 uname → rc=0 ✓
-- Diagnostic F (RISCV32-only filter, ALLOW all): ILP32 uname → rc=159 ✓ (arch≠RISCV32)
+Because the workaround runs ILP32 cart code inside rv32emu (an LP64 process),
+`seccomp_data.arch` is always `AUDIT_ARCH_RISCV64` (0xC00000F3) on this
+kernel.  `AUDIT_ARCH_RISCV32` (0x400000F3) is never reported.
 
-**Consequence:** Arch-dispatch between LP64 and ILP32 via `seccomp_data.arch`
-is not possible on this kernel.  A unified RISCV64 filter applies to both the
-LP64 launcher and the ILP32 cart runner (qemu-riscv32-static / rv32emu).
+**This finding is specific to the Fedora 42 / missing ELF32 loader situation.**
+On a kernel with native ILP32 exec support, the cart process after `execve`
+would be a genuine ILP32 process, and `seccomp_data.arch` would be
+`AUDIT_ARCH_RISCV32`.  Arch-dispatch between launcher and cart would then
+work as the original PLAN assumed.
 
-### Finding 3: Unified RISCV64 filter correctly controls cart syscalls
-
-The raw BPF unified filter (check arch=RISCV64, then allow/block by NR) works
-correctly:
-
-- `uname` (NR 160) in allowlist → ILP32 adversary exits 0 (Test A ✓)
-- `socket` (NR 198) not in allowlist → ILP32 adversary gets SIGSYS (Test B ✓)
-- `openat` (NR 56) in allowlist (needed by qemu-riscv32-static/rv32emu to load
-  the cart ELF).  Filesystem isolation is provided by mount namespace in
-  production, not by seccomp blocking openat.
-
-### Finding 4: LIFO multi-filter semantics confirmed
+### Finding 3: LIFO multi-filter semantics confirmed (kernel-independent)
 
 Test C: install phase-1 (kills uname by NR) then phase-2 (allows all).
-ILP32 uname → rc=159 (SIGSYS).  LIFO confirmed: phase-2 ALLOW passes to
-phase-1 KILL.
+Result → SIGSYS (rc=159).  LIFO confirmed: phase-2 ALLOW passes to phase-1 KILL.
 
-**Implication (Option B):** The launcher can install a permissive phase-1
-filter before `execve`, then have the cart runner (rv32emu) install a
-restrictive phase-2 filter at startup (before running cart code) to block
-`execve` and other sensitive calls.  LIFO ensures phase-2's KILL rule wins
-over phase-1's ALLOW.
+This is a property of the Linux seccomp subsystem and holds regardless of
+the ILP32 exec question.  Option B two-phase enforcement (launcher installs
+permissive phase-1, cart runner installs restrictive phase-2 at startup) is
+viable.
 
-### Finding 5: libseccomp is NOT needed — and would not work
+### Finding 4: libseccomp is NOT sufficient — raw BPF required
 
-`libseccomp` has no `SCMP_ARCH_RISCV32` constant and its LP64 (RISCV64)
-filter does not include `uname` (Spike H finding: `seccomp_syscall_resolve_name
-("uname")` returns `SCMP_ERROR` on RISCV64).  The raw BPF approach correctly
-includes `uname` (NR 160) in the filter and it works.
+`libseccomp` has no `SCMP_ARCH_RISCV32` constant and its RISCV64 filter omits
+syscalls like `uname` (Spike H: `seccomp_syscall_resolve_name("uname")` returns
+`SCMP_ERROR` on RISCV64).  The raw BPF approach works correctly and avoids
+this dependency entirely.  This finding is independent of the ILP32 exec gap.
 
 ---
 
-## Delivered allowlist: seccomp_allowlist.h
-
-The `seccomp_unified_nrs[]` array contains the LP64 host syscalls needed by:
-- The LP64 launcher child between `install_raw_bpf_filter()` and `execv()`
-- `qemu-riscv32-static` (binfmt_misc ILP32 handler) or `rv32emu` (production)
-  to initialize and run the cart
-
-Syscalls confirmed by strace of `qemu-riscv32-static` running the adversary
-on Fedora 42 kernel 6.16.4.
-
-Notable entries:
-- `rseq` (293): restartable sequences, called by qemu-riscv32-static's musl
-- `clone3` (435): TCG worker thread creation in qemu-riscv32-static
-- `clock_nanosleep` (115): TCG worker thread scheduling
-- `openat` (56): qemu-riscv32-static/rv32emu opens the cart ELF
-- `fcntl` (25): qemu-riscv32-static reads /proc/self/maps flags
-- `lseek` (62): seeking within the cart ELF during loading
-
-**Stage 3 note:** This allowlist was derived from `qemu-riscv32-static`.
-The production rv32emu interpreter should be strace'd separately to confirm
-the allowlist (rv32emu likely needs fewer syscalls than qemu-riscv32-static's
-full JIT compilation path, but the ELF loading and memory management
-syscalls should be similar).  Update `seccomp_allowlist.h` after running
-`derive_allowlist.sh` over each cart workload type.
-
-rv32emu commit hash for Stage 3: (to be filled after Stage 3 strace run)
-
----
-
-## What changes from the original PLAN design
-
-The PLAN assumed arch-dispatch (RISCV64 vs RISCV32) would work.  Reality:
+## What the PLAN assumed vs. what was found
 
 | PLAN assumption | Actual finding |
 |-----------------|----------------|
-| `seccomp_data.arch = RISCV32` for ILP32 cart | `arch = RISCV64` always |
-| Option A: single arch-dispatch filter | Unified RISCV64 filter (no arch-dispatch) |
-| LP64 allowlist ≠ ILP32 allowlist | Single unified allowlist for both |
-| libseccomp limitation is RISCV32 arch | libseccomp also missing uname on RISCV64 |
-| Fedora 42 uses CONFIG_COMPAT for ILP32 | binfmt_misc + qemu-riscv32-static |
+| Fedora 42 kernel supports native ILP32 exec via CONFIG_COMPAT | ELF32 loader absent; direct ILP32 exec returns ENOEXEC |
+| `seccomp_data.arch = RISCV32` for cart process | RISCV64 always (consequence of missing loader; see Finding 2) |
+| Arch-dispatch filter: RISCV64 rules for launcher, RISCV32 rules for cart | Untested on this kernel; expected to work on a kernel with the ELF32 loader |
+| libseccomp limitation is RISCV32 arch only | libseccomp also incomplete for RISCV64 (uname missing) |
 
-The core mechanism (raw BPF seccomp, LIFO semantics, Option B two-phase) is
-correct and validated.  The arch assumption was wrong but doesn't affect
-the approach — a unified RISCV64 filter is simpler than arch-dispatch anyway.
+The LIFO semantics and raw BPF construction are correct and validated.
+The arch-dispatch design is still the right approach for production — it just
+needs a kernel that actually loads ILP32 ELFs natively.
+
+---
+
+## rv32emu workaround findings (Stages 2–4)
+
+These findings describe the rv32emu-based path tested in Stages 2–4.  They
+are not the production path but are recorded for completeness.
+
+**rv32emu syscall set (23 LP64 host syscalls observed):**
+rv32emu interpreter-only (CONFIG_EXT_A, no JIT/TCG) needs 23 LP64 host
+syscalls to load and run RV32 cart workloads.  This is 53% fewer than
+qemu-riscv32-static (49 syscalls), which adds JIT/TCG threads, ILP32 compat
+wrappers, and musl-specific startup calls.
+
+**faccessat(48) gap:** rv32emu's own ld.so calls `faccessat` to check
+`/etc/ld.so.preload` at startup.  This was absent from the initial allowlist
+and would have caused SIGSYS.
+
+**seccomp_allowlist.h** reflects this 23-syscall rv32emu workaround set.
+It must be re-derived once native ILP32 exec is available (see Open items).
 
 ---
 
 ## Open items
 
-- **Stage 3:** Run strace of rv32emu over Spike I/O/Q cart workloads to derive
-  the production allowlist.  Update `seccomp_allowlist.h`.
-- **Stage 4:** Re-verify all adversary probes after Stage 3 allowlist update.
-- **execve blocking:** Implement Option B two-phase in `launcher_r.c` — cart
-  (rv32emu) installs phase-2 at startup before running cart code.
-- **Milk-V Duo hardware:** Verify rv32emu host syscall set on real hardware.
-- **`SECCOMP_FILTER_FLAG_TSYNC`:** Add if rv32emu uses multiple threads.
+- **Primary gap — native ILP32 exec:** The production path (launcher execs
+  ILP32 cart directly; kernel native compat) has not been tested.  Requires a
+  RISC-V kernel with the ILP32 ELF binary loader enabled.  See "Way forward"
+  below.
+- **Option B two-phase implementation:** LIFO semantics are confirmed viable.
+  The launcher must install a permissive phase-1 filter; the process that runs
+  cart code must install a restrictive phase-2 filter (blocking execve, etc.)
+  before executing any cart instructions.
+- **`SECCOMP_FILTER_FLAG_TSYNC`:** Needed if the cart runner is multi-threaded.
+
+---
+
+## Way forward
+
+The spike needs to be re-run (or extended as Spike S) on a kernel that
+includes the RISC-V ILP32 ELF binary loader.  Two options:
+
+**Option 1 — Custom kernel build in QEMU guest.**
+Build a Fedora 42 kernel from source with `CONFIG_COMPAT=y` and the
+`arch/riscv/kernel/compat_elf.c` / ILP32 ELF loader patches applied.  This
+keeps the QEMU test infrastructure unchanged and avoids the need for hardware.
+Main cost: kernel build time inside a RISC-V QEMU guest (~hours).
+
+**Option 2 — Real hardware.**
+Run on a RISC-V board (Milk-V Duo, VisionFive 2, etc.) whose vendor kernel
+ships with ILP32 support enabled.  Validates on real silicon simultaneously.
+Main cost: hardware procurement and setup.
+
+**What to test on the new kernel:**
+1. Confirm `execve` of an ILP32 ELF succeeds natively (no ENOEXEC).
+2. Confirm `seccomp_data.arch = AUDIT_ARCH_RISCV32` for the cart process.
+3. Build an arch-dispatch filter (RISCV64 rules for launcher, RISCV32 rules
+   for cart) and verify it applies correctly after `execve`.
+4. Derive the ILP32 native syscall allowlist via strace of cart workloads
+   running natively (not inside rv32emu).
+5. Validate Option B two-phase: launcher phase-1 + cart process phase-2.

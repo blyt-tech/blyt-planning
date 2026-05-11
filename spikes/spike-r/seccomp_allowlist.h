@@ -16,7 +16,22 @@
  *   startup that shadows the phase-1 ALLOW with a KILL for execve.  This
  *   is a follow-on implementation item; see docs/design/spike-r-results.md.
  *
- * rv32emu commit: (to be filled after Stage 3 strace run)
+ * Stage 3 update (2026-05-11, Fedora 42 kernel 6.16.4):
+ *   Allowlist rebuilt from strace of rv32emu (spike-a source, CONFIG_EXT_A,
+ *   multi-dynload patch, interpreter-only) over spike-i (C, Lua), spike-q
+ *   (Rust), and spike-h adversary cart workloads.  22 syscalls observed.
+ *
+ *   Previous qemu-riscv32-static-derived entries removed:
+ *     clone3(435), clock_nanosleep(115), nanosleep(101), sysinfo(179),
+ *     madvise(233), futex(98), futex_time64(422), clock_gettime(113),
+ *     clock_gettime64(403), mmap2(192), fstat64(325), fstatat64(327),
+ *     riscv_flush_icache(258/259), uname(160), mremap(216), statx(291),
+ *     fcntl(25), readlinkat(78), writev(66), pread64(67), rt_sigprocmask(135),
+ *     getuid(174), geteuid(175), getgid(176), getegid(177), gettid(178).
+ *   All were qemu-riscv32-static JIT/TCG or ILP32-musl-specific syscalls
+ *   not needed by rv32emu's interpreter path.
+ *
+ *   New entry added: faccessat(48) — rv32emu's ld.so checks /etc/ld.so.preload.
  */
 
 #ifndef SECCOMP_ALLOWLIST_H
@@ -50,84 +65,53 @@
 #define SECCOMP_MAX_INSNS 512
 
 /* --------------------------------------------------------------------------
- * Unified allowlist: syscalls needed by both the RV64 launcher (post-filter)
- * and the RV32 cart (ILP32 compat process).
+ * Unified allowlist: syscalls made by rv32emu (interpreter-only, no JIT)
+ * running RV32 cart workloads on Fedora 42 kernel 6.16.4.
  *
- * Because seccomp_data.arch = RISCV64 for all processes on this kernel,
- * a single RISCV64 filter covers everything.
+ * Derived from strace of rv32emu over:
+ *   - spike-h adversary (static RV32, baseline)
+ *   - spike-i case_a (C cart + libconsole.so)
+ *   - spike-i case_b (Lua cart + libconsole.so + libconsolelua.so)
+ *   - spike-q rust_cart.elf (Rust cart)
+ * All using spike-a rv32emu source with CONFIG_EXT_A=y and multi-dynload
+ * patch; -L flag for shared library path.
  *
- * Numbers annotated [compat] are 32-bit-only compat wrapper syscall numbers
- * that appear under the same asm-generic table on RISC-V but are handled
- * via compat wrappers internally.
+ * execve (221) is in this list for the launcher→cart exec.  The cart
+ * (rv32emu) can also call execve; use Option B two-phase filter or
+ * mount-namespace isolation to prevent arbitrary cart exec.
  *
- * execve (221) is in this list for the launcher→cart exec.  The ILP32 cart
- * can also call execve; use mount-namespace isolation (empty rootfs) or the
- * two-phase Option B approach to prevent arbitrary cart exec.
- *
- * Stage 3 update: add any additional syscalls that strace reveals from
- * rv32emu running real cart workloads.
+ * openat (56) allows rv32emu to open the cart ELF and shared libs.
+ * The mount namespace limits which paths are accessible in production.
  * -------------------------------------------------------------------------- */
 static const unsigned int seccomp_unified_nrs[] = {
-    221, /* execve:           launcher→cart exec; also used by cart (see note above) */
-     94, /* exit_group        */
-     93, /* exit              */
-     64, /* write             */
-    139, /* rt_sigreturn      */
-    135, /* rt_sigprocmask    */
-    134, /* rt_sigaction      */
-    214, /* brk               */
-    222, /* mmap              */
-    192, /* mmap2             [compat: 32-bit mmap with page-offset] */
-    215, /* munmap            */
-    216, /* mremap            */
-     66, /* writev            */
-     63, /* read              */
-     57, /* close             */
-     80, /* fstat             */
-     79, /* newfstatat        */
-    325, /* fstat64           [compat] */
-    327, /* fstatat64         [compat] */
-    291, /* statx             */
-     25, /* fcntl: file control ops (F_GETFL on /proc/self/maps) */
-     29, /* ioctl             (musl probes isatty(stdout)) */
-     78, /* readlinkat        (musl TLS/AUXV init)         */
-     96, /* set_tid_address   (musl thread init)           */
-     99, /* set_robust_list   (musl thread init)           */
-     98, /* futex             */
-    422, /* futex_time64      [compat] */
-    113, /* clock_gettime     */
-    403, /* clock_gettime64   [compat] */
-    278, /* getrandom         (musl __init_libc via AT_RANDOM) */
-    261, /* prlimit64         (musl stack-size probe)          */
-    160, /* uname             (musl __init_libc)               */
-    226, /* mprotect          (PROT_EXEC blocked by other policy) */
-    174, /* getuid            (musl __init_libc privilege check)    */
-    175, /* geteuid           (musl __init_libc privilege check)    */
-    176, /* getgid            (musl __init_libc privilege check)    */
-    177, /* getegid           (musl __init_libc privilege check)    */
-    178, /* gettid            (musl thread self-identification)     */
-    258, /* riscv_flush_icache (musl RV32 startup; Spike H finding) */
-    259, /* riscv_flush_icache (libseccomp resolves to 259; both needed) */
+    /* ── Startup / ELF loading (rv32emu + its ld.so) ── */
+    221, /* execve:      launcher→cart exec (rv32emu process start)        */
+     48, /* faccessat:   ld.so checks /etc/ld.so.preload on startup        */
+     56, /* openat:      rv32emu opens cart ELF, shared libs, ld.so.cache  */
+     57, /* close:       after ELF/lib load                                */
+     63, /* read:        ELF header and section reads                      */
+     62, /* lseek:       ELF file seeking during cart/lib load             */
+     80, /* fstat:       ELF file size before mmap                         */
+     79, /* newfstatat:  ld.so stat checks for lib paths                   */
+    222, /* mmap:        ELF PT_LOAD segment mapping + heap                */
+    226, /* mprotect:    ELF segment permissions after mmap                */
+    215, /* munmap:      unmap ld.so.cache and temp mappings               */
+    214, /* brk:         rv32emu and libm/libc heap growth                 */
 
-    /* Syscalls needed by qemu-riscv32-static (binfmt_misc ELF32 handler)
-     * and expected to also be needed by rv32emu (the production cart runner).
-     *
-     * NOTE: openat (56) is needed for the ELF loader to open the cart binary.
-     * In production, the mount namespace limits which paths are accessible;
-     * seccomp alone cannot distinguish "rv32emu opening the cart ELF" from
-     * "cart code opening /etc/passwd" (both appear as host openat).  The mount
-     * namespace provides the filesystem isolation; seccomp blocks syscalls that
-     * rv32emu genuinely doesn't need (socket, etc.).
-     */
-     56, /* openat: cart ELF loader (rv32emu open of cart binary)   */
-     62, /* lseek: ELF file seeking during adversary/cart ELF load */
-     67, /* pread64: ELF segment reading (mmap offset reads)        */
-    101, /* nanosleep: thread sleep / scheduler yield               */
-    115, /* clock_nanosleep: TCG worker thread scheduling sleep     */
-    179, /* sysinfo: qemu-riscv32-static memory sizing              */
-    233, /* madvise: memory hints (MADV_FREE/DONTNEED for JIT pages) */
-    293, /* rseq: restartable sequences (musl/glibc TLS)            */
-    435, /* clone3: qemu TCG worker thread creation                  */
+    /* ── rv32emu process init (libc/musl via rv32emu's own ld.so) ── */
+     96, /* set_tid_address: libc thread init (TLS self-pointer)           */
+     99, /* set_robust_list: libc futex list init (even without threading) */
+    293, /* rseq:        restartable sequences (libc TLS init)             */
+    278, /* getrandom:   libc random init (AT_RANDOM seed)                 */
+    261, /* prlimit64:   libc stack-size probe                             */
+    134, /* rt_sigaction: rv32emu installs SIGFPE/SIGILL handlers          */
+    139, /* rt_sigreturn: return from signal handler                       */
+
+    /* ── Normal execution / output ── */
+     29, /* ioctl:       libc probes isatty(stdout) on first write         */
+     64, /* write:       rv32emu cart output to stdout/stderr              */
+     94, /* exit_group:  normal cart exit                                  */
+     93, /* exit:        single-thread exit (e.g. atexit handler threads)  */
 };
 #define SECCOMP_UNIFIED_N ((int)(sizeof(seccomp_unified_nrs)/sizeof(seccomp_unified_nrs[0])))
 

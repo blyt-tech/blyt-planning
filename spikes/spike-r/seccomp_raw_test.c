@@ -21,19 +21,22 @@
  *
  * Three sub-tests:
  *
- *   A  Unified RISCV64 filter; ILP32 uname (160) is allowlisted.
- *      → adversary exits 0  (uname allowed; qemu-riscv32-static runs the
- *        adversary which calls uname via LP64 host syscall translation)
+ *   A  Unified RISCV64 filter; write(64) is allowlisted.
+ *      → child can call write (exits 0 = filter correctly allows write)
+ *      NOTE: uname(160) was removed from the production allowlist in Stage 3
+ *      (rv32emu interpreter does not call uname).  Test A now validates the
+ *      allow path using write(64) which IS in the production allowlist.
  *
  *   B  Unified RISCV64 filter; socket (198) is NOT allowlisted.
  *      → adversary exits 159  (SIGSYS — default-deny works)
- *      NOTE: "open" probe is now also allowlisted (openat=56 needed by
- *      qemu-riscv32-static to load the adversary ELF); filesystem isolation
- *      is provided by mount namespace in production.
+ *      NOTE: openat(56) IS in allowlist (needed by rv32emu for ELF loading);
+ *      filesystem isolation is provided by mount namespace in production.
  *
  *   C  Multi-filter LIFO: phase-1 kills uname by NR; phase-2 ALLOWs all.
  *      → adversary exits 159  (SIGSYS — LIFO confirmed; phase-2 ALLOW passes
  *        to phase-1 KILL; Option B two-phase approach is viable)
+ *      NOTE: uname (160) is used here only as a convenient NR to trigger the
+ *      phase-1 KILL; it is not in the production allowlist.
  */
 
 #define _GNU_SOURCE
@@ -42,6 +45,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/prctl.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -149,18 +153,29 @@ int main(int argc, char **argv)
 
     int pass = 0, fail = 0;
 
-    /* ---- Test A ---- */
-    printf("\n=== Test A: unified RISCV64 filter — ILP32 uname (expect rc=0) ===\n");
+    /* ---- Test A: unified filter allows write(64) ---- */
+    printf("\n=== Test A: unified RISCV64 filter — write(64) allowlisted (expect rc=0) ===\n");
     printf("  [arch=RISCV64 for all processes; binfmt_misc+qemu-riscv32-static]\n");
+    printf("  [uname(160) removed from production allowlist in Stage 3; write(64) used instead]\n");
     {
-        struct sock_filter *fs[] = { f_unified };
-        int lens[] = { f_unified_len };
-        int rc = run_probe(adversary, "uname", fs, lens, 1);
+        pid_t pid = fork();
+        if (pid < 0) { perror("fork"); return 1; }
+        if (pid == 0) {
+            if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) _exit(127);
+            if (seccomp_install_filter(f_unified, f_unified_len) != 0) _exit(127);
+            /* write(64) is in the production allowlist — should succeed */
+            long rc = syscall(SYS_write, 2 /*stderr*/, "", 0 /*zero bytes*/);
+            _exit(rc == 0 ? 0 : 1);
+        }
+        int status = 0;
+        waitpid(pid, &status, 0);
+        int rc = WIFEXITED(status) ? WEXITSTATUS(status) :
+                 (WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS ? 159 : 127);
         if (rc == 0) {
-            printf("  PASS A: uname rc=0 (ILP32 uname(160) allowed by unified filter)\n");
+            printf("  PASS A: write(64) rc=0 (allowed by unified filter)\n");
             pass++;
         } else {
-            printf("  FAIL A: uname rc=%d (expected 0)\n", rc);
+            printf("  FAIL A: write(64) rc=%d (expected 0; is write(64) in allowlist?)\n", rc);
             fail++;
         }
     }

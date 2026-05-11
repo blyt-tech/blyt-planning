@@ -1,13 +1,13 @@
 Spike R — in-guest test run
-Date:   2026-05-11T09:01:55Z
+Date:   2026-05-11T13:43:26Z
 Kernel: 6.16.4-200.0.riscv64.fc42.riscv64
 Arch:   riscv64
 
 === Stage 0: environment ===
   PASS: seccomp syscall present in /proc/kallsyms
   PASS: CONFIG_COMPAT: compat_sys_* present in /proc/kallsyms (compiled in)
-  PASS: binary present: /tmp/seccomp_raw_test (RISC-V, RVC, double-float ABI, version 1 (SYSV), statically linked, BuildID[sha1]=d8c3b62d9e121d20571eb42fe1add46c21601e1c, for GNU/Linux 4.15.0, not stripped)
-  PASS: binary present: /tmp/launcher_r (RISC-V, RVC, double-float ABI, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-riscv64-lp64d.so.1, BuildID[sha1]=7dfe04477c83ed4a98761d2b8af21ec3319059b0, for GNU/Linux 4.15.0, not stripped)
+  PASS: binary present: /tmp/seccomp_raw_test (RISC-V, RVC, double-float ABI, version 1 (SYSV), statically linked, BuildID[sha1]=14d45a00003513c50aa7344d9fea3cf8ff9649c4, for GNU/Linux 4.15.0, not stripped)
+  PASS: binary present: /tmp/launcher_r (RISC-V, RVC, double-float ABI, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-riscv64-lp64d.so.1, BuildID[sha1]=708eb0843676796ffbaadf4ad527e32b95c33e34, for GNU/Linux 4.15.0, not stripped)
 
 === Stage 1: raw BPF arch-dispatch filter (seccomp_raw_test) ===
   [finding] ILP32 binaries run via binfmt_misc+qemu-riscv32-static on this kernel.
@@ -16,12 +16,11 @@ Arch:   riscv64
   ILP32 adversary uname (no filter): rc=0
   PASS: ILP32 adversary runs without seccomp (via binfmt_misc+qemu-riscv32-static)
   Running seccomp_raw_test...
-probe_uname: returned 0 errno=0
-probe uname: NOT killed (rc=0) — filter leak!
 
-=== Test A: unified RISCV64 filter — ILP32 uname (expect rc=0) ===
+=== Test A: unified RISCV64 filter — write(64) allowlisted (expect rc=0) ===
   [arch=RISCV64 for all processes; binfmt_misc+qemu-riscv32-static]
-  PASS A: uname rc=0 (ILP32 uname(160) allowed by unified filter)
+  [uname(160) removed from production allowlist in Stage 3; write(64) used instead]
+  PASS A: write(64) rc=0 (allowed by unified filter)
 
 === Test B: unified RISCV64 filter — socket (198) not allowlisted (expect rc=159) ===
   [openat(56) is in allowlist for ELF loading; socket(198) is not]
@@ -43,9 +42,10 @@ Stage 1: PASS
 
 === Stage 2: launcher_r adversary probes ===
   PASS: launcher_r adversary socket → SIGSYS (rc=159) — seccomp correctly blocks socket
-  PASS: launcher_r adversary uname → exit 0 — seccomp correctly allows uname
-  PASS: Stage 2: socket SIGSYS + uname exit-0 both correct
+  PASS: launcher_r adversary uname → SIGSYS (rc=159) — uname correctly blocked (not in rv32emu allowlist)
+  PASS: Stage 2: socket + uname both correctly blocked (production allowlist)
   NOTE: open/execve/mprotect-exec isolation requires mount namespace or Option B
+  NOTE: Stage 4 (rv32emu end-to-end) validates the allowed-syscall path
 
 ==========================================
 Spike R guest run complete (Stages 0-2)
