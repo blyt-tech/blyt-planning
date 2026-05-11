@@ -1,0 +1,59 @@
+Spike R — in-guest test run
+Date:   2026-05-11T09:01:55Z
+Kernel: 6.16.4-200.0.riscv64.fc42.riscv64
+Arch:   riscv64
+
+=== Stage 0: environment ===
+  PASS: seccomp syscall present in /proc/kallsyms
+  PASS: CONFIG_COMPAT: compat_sys_* present in /proc/kallsyms (compiled in)
+  PASS: binary present: /tmp/seccomp_raw_test (RISC-V, RVC, double-float ABI, version 1 (SYSV), statically linked, BuildID[sha1]=d8c3b62d9e121d20571eb42fe1add46c21601e1c, for GNU/Linux 4.15.0, not stripped)
+  PASS: binary present: /tmp/launcher_r (RISC-V, RVC, double-float ABI, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-riscv64-lp64d.so.1, BuildID[sha1]=7dfe04477c83ed4a98761d2b8af21ec3319059b0, for GNU/Linux 4.15.0, not stripped)
+
+=== Stage 1: raw BPF arch-dispatch filter (seccomp_raw_test) ===
+  [finding] ILP32 binaries run via binfmt_misc+qemu-riscv32-static on this kernel.
+  [finding] arch=RISCV64 in seccomp_data for all processes (confirmed by test).
+  [finding] Seccomp filter applies to qemu-riscv32-static/rv32emu LP64 host calls.
+  ILP32 adversary uname (no filter): rc=0
+  PASS: ILP32 adversary runs without seccomp (via binfmt_misc+qemu-riscv32-static)
+  Running seccomp_raw_test...
+probe_uname: returned 0 errno=0
+probe uname: NOT killed (rc=0) — filter leak!
+
+=== Test A: unified RISCV64 filter — ILP32 uname (expect rc=0) ===
+  [arch=RISCV64 for all processes; binfmt_misc+qemu-riscv32-static]
+  PASS A: uname rc=0 (ILP32 uname(160) allowed by unified filter)
+
+=== Test B: unified RISCV64 filter — socket (198) not allowlisted (expect rc=159) ===
+  [openat(56) is in allowlist for ELF loading; socket(198) is not]
+  PASS B: socket rc=159 SIGSYS (socket not in allowlist — default-deny works)
+
+=== Test C: multi-filter LIFO semantics (expect rc=159 SIGSYS) ===
+  phase-1 (installed first, evaluated LAST):  nr==160 → KILL, else ALLOW
+  phase-2 (installed second, evaluated FIRST): ALLOW everything
+  LIFO: phase-2 ALLOW(uname) → continue to phase-1 → KILL(uname)
+  PASS C: uname rc=159 SIGSYS (LIFO confirmed: phase-2 ALLOW passes to phase-1 KILL)
+          → Option B two-phase approach is viable.
+
+==========================================
+Stage 1 results: PASS=3  FAIL=0
+Stage 1: PASS
+  Unified RISCV64 filter works for ILP32 compat syscalls.
+  LIFO semantics confirmed; Option B two-phase approach viable.
+  PASS: Stage 1: seccomp_raw_test PASS (all 3 sub-tests: A, B, C)
+
+=== Stage 2: launcher_r adversary probes ===
+  PASS: launcher_r adversary socket → SIGSYS (rc=159) — seccomp correctly blocks socket
+  PASS: launcher_r adversary uname → exit 0 — seccomp correctly allows uname
+  PASS: Stage 2: socket SIGSYS + uname exit-0 both correct
+  NOTE: open/execve/mprotect-exec isolation requires mount namespace or Option B
+
+==========================================
+Spike R guest run complete (Stages 0-2)
+PASS: 9    FAIL: 0
+Log: /mnt/spikes/spike-r/build/results/guest-run-r.log
+==========================================
+
+--- Stage 3 (strace allowlist derivation) ---
+Run inside the guest (with rv32emu + cart workloads available):
+  sudo bash /mnt/spikes/spike-r/derive_allowlist.sh <cart_dir>
+
