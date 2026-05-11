@@ -129,6 +129,15 @@ supported major version. A cart's declared `api_version` field (from
 occupy numbers in the 1000+ range or fill headroom in existing subsystem
 ranges.
 
+## Amendment (ADR-0114, 2026-05-11)
+
+ADR-0114 specifies the argument validation policy that every ECALL handler
+must implement: range checks on all integers, overflow-safe combined-range
+checks, unknown-flags rejection, enum allowlists with default-reject, a
+single shared `copy_from_guest` helper for string arguments, and
+out-parameter pointer validation. These rules apply uniformly to every
+ECALL entry in the number space defined here.
+
 ## Consequences
 
 - Any language that compiles to RV32IMAFC uses this convention without

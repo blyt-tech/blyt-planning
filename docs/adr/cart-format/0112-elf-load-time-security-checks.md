@@ -1,0 +1,144 @@
+# ADR-0112: ELF load-time security checks
+
+## Status
+
+Accepted
+
+## Context
+
+ADR-0024 specifies the ELF identity checks (magic, class, endianness,
+machine, e_flags, EI_OSABI) and the DT_NEEDED allowlist performed before
+any cart section is parsed. Those checks are fast rejection points on the
+ELF header; they do not cover the structural security properties of the
+binary's full layout, the contents of its executable sections, or the
+integrity of its custom sections (`.cart.info`, `.cart.config`,
+`.cart.resources`, `.lua_exports`).
+
+Because a cart binary may be hand-assembled by a hostile actor, no
+metadata or layout property supplied by the binary can be taken on trust.
+Every security-relevant fact must be derived and verified by the host.
+
+## Decision
+
+The following checks are performed by the runtime's loader on every cart
+binary before any guest code executes. All checks apply equally to the
+ELF file and to the directory-container dev-mode equivalent (where the
+corresponding serialised bytes are read from the staging directory).
+
+### Segment layout
+
+- Reject any LOAD segment that has both `PF_W` and `PF_X` set. No
+  writable-executable mapping under any circumstances.
+- Reject any two LOAD segments whose file-offset ranges overlap.
+- Reject any two LOAD segments whose virtual-address ranges overlap.
+- Reject any LOAD segment whose `p_offset + p_filesz` would exceed the
+  file size. All size and offset arithmetic uses overflow-checked
+  unsigned arithmetic; integer overflow in any computation is treated as
+  a rejection.
+- Reject if `e_entry` does not fall within a LOAD segment that has `PF_X`
+  set. The cart's entry point must be inside an executable region.
+- Reject if a `PT_GNU_STACK` segment is present with `PF_X` set. Absence
+  of `PT_GNU_STACK` is permitted (the runtime defaults to a non-executable
+  stack).
+
+### Dynamic section
+
+The DT_NEEDED allowlist is specified in ADR-0024. Additionally:
+
+- Reject if a `PT_INTERP` segment is present. The runtime is the loader;
+  the OS dynamic linker must not be involved.
+
+### Opcode scan
+
+Walk every byte of every LOAD segment with `PF_X` set, checking at both
+4-byte-aligned and 2-byte-aligned offsets to cover RVC 16-bit encodings
+as well as 32-bit instructions:
+
+- Reject if the byte pattern `0x73 0x00 0x00 0x00` (`ecall`) appears at
+  any 4-byte-aligned position.
+- Reject if the byte pattern `0x73 0x00 0x10 0x00` (`ebreak`) appears at
+  any 4-byte-aligned position.
+- Reject if either pattern appears at any 2-byte-aligned position (a
+  compressed instruction could be followed by these bytes which, when
+  decoded as a 32-bit instruction, would match).
+- Reject any instruction encoding that is reserved or illegal under the
+  supported RV32IMAFC subset.
+
+False positives — data bytes that happen to match these patterns — are
+acceptable. A cart that is rejected for this reason must be rebuilt.
+False negatives are not acceptable.
+
+The rationale: on emulated platforms, `ecall` is the internal mechanism
+of the runtime-provided `libblyt32.so`; it must not appear in cart code.
+On native RISC-V, cart code calls into `libblyt32.so` via the PLT; `ecall`
+in cart code would reach the Linux kernel's syscall interface, bypassing
+the console API boundary entirely. The static check is belt-and-braces
+alongside the runtime's ecall trap (ADR-0115).
+
+### `.cart.info` and `.cart.config` sections (FlatBuffers)
+
+These sections contain FlatBuffers-encoded metadata. The parser must:
+
+- Verify the FlatBuffers root offset is within section bounds before any
+  field access.
+- Bounds-check every table offset, vector length, and string length read
+  from the binary.
+- Cap maximum vector element count at a reasonable limit to prevent
+  degenerate inputs from causing unbounded work.
+- Reject if `api_version` in `.cart.info` is outside the runtime's
+  supported range (from the runtime's compiled-in minimum to the
+  runtime's own API version).
+
+### `.cart.resources` section
+
+- Bounds-check every resource entry's `offset` and `size` field against
+  the section bounds, with overflow-safe arithmetic.
+- Reject any resource entry where `offset + size` would exceed the
+  section length.
+- Reject any two resource entries whose byte ranges overlap within the
+  section.
+- Reject duplicate resource IDs.
+- Cap the maximum resource count.
+
+### `.lua_exports` section (WASM target)
+
+On the WASM target the host reads this section at load time to register
+Lua–Rust trampoline functions. On rv32emu targets the section is present
+in the ELF but the runtime uses the `cart_lua_modules` path instead;
+the section is still structurally validated.
+
+- Bounds-check the entire section length before iterating entries.
+  Each entry is a fixed-size record; reject if section length is not a
+  multiple of the entry size.
+- Cap the maximum entry count.
+- For each entry's `sym_addr` field: reject if zero, if outside the
+  cart's guest address space, if not within a LOAD segment that has
+  `PF_X` set, or if equal to the sentinel address (`FC32_SENTINEL_ADDR`
+  from the memory-map ADR).
+- For each string field (module name, function name): the stored offset
+  must be within the section; the string must be null-terminated within
+  the section bounds; length must not exceed 256 bytes; characters must
+  be printable ASCII (0x20–0x7E plus 0x00 terminator).
+- Each type-signature field value must be within the defined type enum;
+  unknown values are rejected.
+- Reject duplicate `(module_name, function_name)` pairs.
+
+## Consequences
+
+- The loader's rejection surface is well-defined and auditable. A
+  hostile ELF that passes all checks is structurally constrained to the
+  layout the runtime expects.
+- The opcode scan rejects binaries with `ecall`/`ebreak` in cart code.
+  Combined with the runtime's ecall trap (ADR-0115) this is belt-and-
+  braces: the static check catches the binary before load; the runtime
+  trap catches any scanner bug at run time.
+- `.lua_exports` validation ensures that `sym_addr` values fed to
+  `rv32emu_call_fn` on the WASM target are valid guest addresses. An
+  adversarial `sym_addr` pointing to data (not code) still stays within
+  the guest sandbox; this check prevents out-of-bounds values entirely.
+- The checks add overhead only to the load path, not to the run-time
+  hot path. Load-time cost is proportional to cart size, which is bounded
+  by the cart's declared size class (ADR-0030).
+- FlatBuffers parser hardening and resource-bundle bounds-checking
+  eliminate a class of host-crash bugs that hostile carts could otherwise
+  trigger before any guest code runs.

@@ -55,6 +55,29 @@ can see within the VM). A native cart is sandboxed only at the RISC-V level,
 which is sufficient. The RISC-V boundary is the single consistent host-level
 security perimeter for all carts.
 
+## Amendment (ADR-0115, ADR-0116, ADR-0118, 2026-05-11)
+
+**Layer 1 on emulated platforms (ADR-0115):** The ECALL dispatch
+bounds-check and the `mprotect`-enforced memory protection (no guest page
+carries `PROT_EXEC` on interpreter deployments) are the two concrete
+mechanisms that enforce Layer 1. ADR-0115 specifies both, along with the
+EBREAK trap that is belt-and-braces for the static opcode scan.
+
+**OS-level sandbox for standalone deployment (ADR-0116):** The description
+of "Linux process isolation" in the Consequences section is now specified
+as a two-phase seccomp filter (raw BPF, pending Spike R), user/mount/pid/
+net namespace isolation, cgroups v2 cpu.max throttling, and rlimits. The
+libretro deployment is explicitly documented as suitable for trusted and
+curated content only; it does not claim OS-level hostile-input containment.
+
+**Layer 2 scope for hybrid carts (ADR-0118):** Layer 2 (Lua environment
+sandbox) applies as a security boundary only to the scripted Lua portions
+of a cart. For hybrid carts, the native Rust code has access to Lua C API
+symbols in the guest and can manipulate Lua VM state. Layer 2 is not a
+security boundary for the native portions of a hybrid cart. Layer 1
+(ECALL dispatch) remains the complete perimeter for all cart code
+regardless of language.
+
 ## Consequences
 
 - Carts can be distributed and run without trust in the author.

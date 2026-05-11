@@ -32,3 +32,5 @@ work as structural properties of the system rather than bolt-ons.
 | [0083](0083-lua-cart-crash-diagnostics.md) | Lua cart crash diagnostics — runtime-owned dump |
 | [0105](0105-project-naming-and-variants.md) | Project naming (Blyt) and console variants (Blyt32 / BlyTTY / Blyt3D) |
 | [0106](0106-audio-voice-end-events-as-frame-inputs.md) | Audio voice-end events recorded as frame inputs (supersedes ADR-0006) |
+| [0115](0115-emulator-wx-and-ecall-trap.md) | Memory protection, W^X enforcement, and ecall trap |
+| [0116](0116-standalone-os-sandbox.md) | OS-level sandbox for the standalone deployment |

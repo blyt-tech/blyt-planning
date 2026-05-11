@@ -195,6 +195,18 @@ container. The runtime's loader presents an identical interface to the rest of
 the system regardless of whether the backing store is an ELF file or a
 directory.
 
+## Amendment (ADR-0112, 2026-05-11)
+
+ADR-0112 specifies the complete set of structural security checks
+performed at load time, extending the fast-rejection identity checks
+described here. ADR-0112 covers: segment layout (no W+X, no overlap, no
+EOF overrun, entry-point validation), opcode scanning for `ecall` /
+`ebreak` and reserved encodings in all executable segments, FlatBuffers
+parser hardening for `.cart.info` and `.cart.config`, resource bundle
+bounds-checking, and `.lua_exports` section validation. The checks in
+ADR-0112 are performed immediately after the identity and DT_NEEDED
+checks described above.
+
 ## Consequences
 
 - ELF is battle-tested with mature tooling (binutils, objcopy, linker scripts)

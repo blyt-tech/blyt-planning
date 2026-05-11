@@ -1871,6 +1871,120 @@ any remaining spikes that do not touch rv32emu's WASM build.
 
 ---
 
+## Spike R — Two-phase seccomp with raw BPF for RV32 ILP32
+
+**The question:** Can a hand-written raw BPF seccomp filter correctly
+implement two-phase enforcement for a fork/exec launcher where the
+launcher process is LP64 (`AUDIT_ARCH_RISCV64`) and the cart process
+after exec is ILP32 (`AUDIT_ARCH_RISCV32`), given that `libseccomp` does
+not define `SCMP_ARCH_RISCV32`?
+
+**Why this is a risk:**
+
+Spike H Stage 3 proved that seccomp-bpf kills forbidden syscalls
+correctly on Fedora 42. However, all seccomp filters in Spike H were
+built with libseccomp, which has no `SCMP_ARCH_RISCV32` constant. The
+Spike H uname probe failed because the BPF arch-check path silently
+killed all ILP32 syscalls (including the wanted `uname`) rather than
+matching the ILP32 arch explicitly. The production deployment needs a
+filter that:
+
+1. Handles two architecture constants in a single BPF program:
+   `AUDIT_ARCH_RISCV64` for the LP64 launcher and
+   `AUDIT_ARCH_RISCV32` for the ILP32 cart after exec.
+2. Implements two phases: phase 1 (pre-exec) allows `execve`; phase 2
+   (post-exec, tighter) blocks `execve` and permits only the syscalls
+   the cart runner actually needs.
+3. Produces the correct production syscall allowlist derived from real
+   cart workloads, not just the minimal bootstrap set used in Spike H.
+
+Using libseccomp for either phase is not viable without the arch
+constant. The production filter must be written as raw BPF
+(`struct sock_filter[]` loaded via `seccomp(SECCOMP_SET_MODE_FILTER,
+0, &prog)`).
+
+**What to build:**
+
+**Stage 1 — Raw BPF arch-dispatch filter.**
+
+Write a `struct sock_filter[]` BPF program that:
+- Loads `seccomp_data.arch` and branches on both
+  `AUDIT_ARCH_RISCV64` (0xC00000F3) and `AUDIT_ARCH_RISCV32`
+  (0x40000F3). Any other arch → `SECCOMP_RET_KILL_PROCESS`.
+- For the matching arch, loads `seccomp_data.nr` and allows the
+  Spike H allowlist (plus `uname`).
+- All other syscalls → `SECCOMP_RET_KILL_PROCESS`.
+
+Validate on Fedora 42 QEMU (same environment as Spike H). Re-run the
+Spike H adversary probes: `open`, `socket`, `execve`, `mprotect-exec`
+must produce SIGSYS; `uname` must return 0. This gate confirms the
+arch-dispatch path works for both architecture constants.
+
+**Stage 2 — Two-phase transition.**
+
+Extend Stage 1 to implement two phases:
+
+- Phase 1 filter: loaded in the child after fork, before `execve`.
+  Allows `execve`. Installed via `PR_SET_SECCOMP` /
+  `seccomp(SECCOMP_SET_MODE_FILTER, ...)`.
+- Phase 2 filter: loaded by the cart runner on startup (before any
+  cart code), using `SECCOMP_FILTER_FLAG_NEW_LISTENER` if available
+  or a plain second `seccomp()` call. Removes `execve`; adds
+  `SECCOMP_FILTER_FLAG_TSYNC` to cover all threads.
+
+Verify: after exec, a `execve` probe produces SIGSYS. The legitimate
+cart syscalls (mmap, read, write, exit) are not blocked.
+
+**Stage 3 — Production allowlist derivation.**
+
+Run rv32emu on a representative set of cart workloads (the Spike I case
+binaries — native C cart, Lua cart, Rust cart — and the Spike Q
+Lua+Rust hybrid) under `strace -f` on Fedora 42. Collect the full
+syscall set for each workload. Cull to the union, then remove any
+syscall that is required only for the launcher phase or that can be
+handled by a namespace/rlimit instead.
+
+Produce a C header `seccomp_allowlist.h` containing the raw BPF
+`sock_filter[]` for both phases. Commit this as the canonical phase 2
+filter; it replaces the Spike H `seccomp_filter.c`.
+
+**Stage 4 — Adversary re-verification.**
+
+Run all four Spike H adversary probes (`open`, `socket`, `execve`,
+`mprotect-exec`) against the Stage 3 phase 2 filter with a real
+rv32emu+cart workload running in the background. All four must
+produce SIGSYS. The cart workload must complete a full run without
+any unexpected SIGSYS under the phase 2 filter.
+
+**Success criterion:**
+
+- Stage 1: `uname` allowed; all four Spike H adversary probes blocked
+  by raw BPF; both `AUDIT_ARCH_RISCV64` and `AUDIT_ARCH_RISCV32` paths
+  tested.
+- Stage 2: two-phase transition works; phase 2 blocks `execve`; no
+  legitimate syscall is blocked by phase 2.
+- Stage 3: production allowlist header committed; covers all four cart
+  workload types; no syscall present that could be used for host escape.
+- Stage 4: adversary probes blocked; rv32emu cart workload runs cleanly
+  under the production filter.
+
+**What this spike does and does not decide:**
+
+- Decides the implementation mechanism for the two-phase seccomp filter
+  in ADR-0116. If raw BPF is insufficient or unacceptably complex, the
+  fallback is a Rust-based BPF assembler (e.g. `seccompiler` crate) that
+  handles the RISCV32 arch constant gap via numeric literal.
+- Decides the production syscall allowlist for the standalone deployment.
+- Does not address the libretro deployment (which uses inline instruction-
+  budget enforcement rather than seccomp; see ADR-0116).
+- Does not address the Milk-V Duo hardware calibration (a Spike H
+  hardware follow-up).
+
+**Dependency:** Spike H (mechanism validated; gap identified). Can run
+immediately; does not depend on any pending spike.
+
+---
+
 ## Ordering
 
 A → B → C and D and E and F (B is the dependency for C, D, and E; F
@@ -1909,6 +2023,9 @@ A (interpreter)
                                                     G + G.3 + DAP
 
 H (native RISC-V sandbox) ← independent; requires Milk-V Duo hardware
+└── R (two-phase seccomp raw BPF) ← depends on H (gap identified); can
+                                     run immediately on QEMU without
+                                     hardware
 
 I (cart format end-to-end) ← depends on ADR-0024/ADR-0025 and Spikes
                               C, F, G; can run in parallel with H; QEMU
@@ -1967,6 +2084,13 @@ Spike P de-risks the Rust heap allocator and atomics (ADR-0108) and
 validates the `on_load` rewind contract (ADR-0087). It depends only on
 Spike O and has now been executed.
 
+Spike R de-risks the two-phase seccomp design in ADR-0116. It depends on
+Spike H having identified the `libseccomp`/`SCMP_ARCH_RISCV32` gap and
+does not require hardware — the same Fedora 42 QEMU environment used in
+Spike H is sufficient. Its output (a committed `seccomp_allowlist.h`
+and a proven two-phase filter mechanism) unblocks the production
+implementation of the standalone OS sandbox.
+
 ---
 
 ## Followup status
@@ -2003,6 +2127,7 @@ entries here are pointers, not the full record.
 | O     | done     | —                    | —                                | yes           | —                                             |
 | P     | done     | —                    | —                                | yes           | —                                             |
 | Q     | done     | —                    | —                                | yes           | —                                             |
+| R     | pending  | —                    | —                                | —             | —                                             |
 
 ### Hardware-blocked items
 
@@ -2179,9 +2304,10 @@ upstream patch, a vendor change, or a workaround we have shipped.
   (post-Spectre security mitigation tied to cross-origin-isolation).
   Fundamental Chrome behaviour, not a fixable bug. G.2 abandoned;
   G.3 took its place.
-- **H** — `libseccomp` does not define `SCMP_ARCH_RISCV32`. Vendor
-  gap requiring custom raw-BPF workaround. Ubuntu kernel lacks ILP32
-  CONFIG_COMPAT (vendor choice, not bug); Fedora 42 kernel works.
+- **H / R** — `libseccomp` does not define `SCMP_ARCH_RISCV32`. Vendor
+  gap requiring custom raw-BPF workaround (the subject of Spike R).
+  Ubuntu kernel lacks ILP32 CONFIG_COMPAT (vendor choice, not bug);
+  Fedora 42 kernel works.
 - **K** — Upstream rv32emu `syscall_read` writes to a fixed 4 KiB
   host buffer without bounds-checking the cart-supplied count.
   Worked around in spike by chunking reads to 4 KiB on cart side;

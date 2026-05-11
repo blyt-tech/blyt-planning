@@ -12,3 +12,4 @@ runtime's internal formats.
 | [0026](0026-per-resource-zstd-compression.md) | Per-resource zstd compression with packer-driven selection |
 | [0040](0040-resource-names-in-source-ids-at-runtime.md) | Resource addressing — names in source, compile-time constants, IDs at runtime |
 | [0073](0073-three-manifest-files.md) | Three manifest files — cart.info, cart.config, cart.build |
+| [0112](0112-elf-load-time-security-checks.md) | ELF load-time security checks — segment layout, opcode scan, parser hardening |

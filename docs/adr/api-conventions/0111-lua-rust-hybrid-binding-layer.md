@@ -206,6 +206,24 @@ The `DT_NEEDED` list in the resulting cart ELF must include
 exports `cart_lua_modules` for the rv32 target path. The packer validates
 this as it does for any Lua cart.
 
+## Amendment (ADR-0118, 2026-05-11)
+
+**Layer 2 scope:** Rust code in a hybrid cart has access to Lua C API
+symbols via `libblyt32lua.so` and can manipulate the Lua VM arbitrarily.
+The Layer 2 Lua environment sandbox is not a security boundary for the
+native portions of a hybrid cart. Layer 1 (ECALL dispatch) is the complete
+security perimeter. See ADR-0118 for the full security analysis and the
+restricted export surface defined for `libblyt32lua.so`.
+
+**`.lua_exports` validation on WASM target:** The host-side parse of the
+`.lua_exports` section must satisfy the structural security checks
+specified in ADR-0112, including `sym_addr` validation against executable
+LOAD segments and string-field bounds checking.
+
+**`rv32emu_call_fn` step limit:** The call-on-demand mechanism must enforce
+a maximum instruction count per invocation to prevent infinite-loop guest
+code from hanging the WASM host. See ADR-0115.
+
 ## Consequences
 
 - Rust code stays inside the rv32emu sandbox on all targets, including

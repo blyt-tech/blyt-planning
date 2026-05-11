@@ -21,3 +21,7 @@ names), and the performance strategy that informs API shape decisions.
 | [0086](0086-api-surface-shape.md) | API surface shape — getter/setter convention and complete module map |
 | [0087](0087-cart-lifecycle-entry-points.md) | Cart lifecycle entry points, reset, and autosave |
 | [0108](0108-rust-as-a-first-class-cart-language.md) | Rust as a first-class cart language — SDK shape, error model, Stage integration |
+| [0111](0111-lua-rust-hybrid-binding-layer.md) | Lua–Rust hybrid binding layer and cross-target calling convention |
+| [0113](0113-runtime-handle-validation.md) | Runtime handle validation — range checks, generation counters, type confusion prevention |
+| [0114](0114-ecall-argument-validation.md) | ECALL argument validation policy — integers, flags, enums, strings, out-params |
+| [0118](0118-lua-interface-security.md) | Lua interface security for hybrid carts — Layer 2 scope, export surface, WASM parsing |

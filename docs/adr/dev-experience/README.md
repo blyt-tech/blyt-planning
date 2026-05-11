@@ -15,3 +15,4 @@ dev-mode instrumentation that compiles away to nothing in release builds.
 | [0103](0103-dev-mode-pi-parity-feedback.md) | Dev-mode Pi-parity feedback — throttle vs projection (Proposed) |
 | [0104](0104-vscode-dev-shell-runtime-architecture.md) | VS Code dev shell — renderer-side runtime with Node bridge (Proposed) |
 | [0107](0107-dev-mode-draw-step-inspector.md) | Dev-mode draw step inspector — pause and inspect the framebuffer mid-frame |
+| [0117](0117-adversarial-testing-strategy.md) | Adversarial testing strategy — fuzzing harnesses, corpus, sanitisers, upstream monitoring |
