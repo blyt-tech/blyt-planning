@@ -48,6 +48,38 @@ The DT_NEEDED allowlist is specified in ADR-0024. Additionally:
 - Reject if a `PT_INTERP` segment is present. The runtime is the loader;
   the OS dynamic linker must not be involved.
 
+### Symbol import allowlist
+
+Every entry in the cart's dynamic symbol table (`.dynsym`) that has
+`STB_GLOBAL` binding and `SHN_UNDEF` section (i.e. an imported symbol)
+must appear on an explicit runtime-maintained allowlist of permitted
+symbols. The allowlist is the union of public exported symbols from the
+DT_NEEDED-permitted libraries (`libblyt32.so`, `libblyt32lua.so`,
+`libblytc.so`). Any cart that imports a symbol not on this list is
+rejected at load time.
+
+Internal symbols in runtime libraries — such as `blytc_arena_init` in
+`libblytc.so` — are marked `visibility("hidden")` and are absent from
+those libraries' `.dynsym` tables. They therefore cannot appear on the
+allowlist and cannot be imported by a cart.
+
+This check applies on both loading paths: the custom loader inspects the
+cart's `.dynsym` directly; the trusted native-exec path enforces it at
+pack time (the packer validates the cart ELF before it is installed) and
+the custom loader enforces it again at runtime.
+
+### RELRO and BIND_NOW
+
+- Reject if `PT_GNU_RELRO` is absent. All cart binaries must be linked
+  with `-z relro -z now`. The packer enforces this at pack time.
+- After all PLT/GOT relocations are resolved at load time (eagerly, per
+  BIND_NOW semantics), the GOT pages are remapped read-only via
+  `mprotect(PROT_READ)` before the cart entry point is called. This
+  prevents runtime GOT modification.
+- On the trusted native-exec path, ld.so handles RELRO+BIND_NOW via the
+  standard mechanism. On the custom-loader path, the runtime performs the
+  final `mprotect` after resolving all relocations.
+
 ### Opcode scan
 
 Walk every byte of every LOAD segment with `PF_X` set, checking at both

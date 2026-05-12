@@ -80,6 +80,17 @@ This call is made on all paths: before the rv32emu guest starts on
 emulated targets, and from libblyt32.so's constructor before cart entry
 on the hardware trusted-exec path.
 
+**Symbol protection:** `blytc_arena_init` and all other internal
+libblytc.so functions are marked `visibility("hidden")` and are absent
+from libblytc.so's `.dynsym`. A cart cannot import them via PLT, and the
+load-time symbol import allowlist (ADR-0112) rejects any cart that
+attempts to do so. The GOT is remapped read-only before cart entry
+(RELRO+BIND_NOW, ADR-0112), preventing runtime symbol dispatch
+modification. Even if a cart circumvented all of the above and called
+`blytc_arena_init` directly, it cannot escape the process sandbox: the
+security floor is seccomp + no-ecall (ADR-0112/ADR-0119), not the arena
+allocator.
+
 The `heap_size` field previously described in ADR-0108 is removed. No
 per-cart heap declaration exists; the 16 MB budget is the only limit.
 
