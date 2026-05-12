@@ -55,14 +55,33 @@ library mechanism:
 - **WASM:** same as rv32emu — the library is loaded into the rv32emu
   guest that runs inside the WASM host. No change to the WASM host layer.
 
+### Heap limit enforcement
+
+Cart memory limits are enforced inside libblytc.so's malloc implementation.
+The allocator tracks total live heap bytes and refuses allocations that
+would exceed a per-cart limit, returning NULL (C) or triggering
+out-of-memory handling (Rust alloc).
+
+The limit value is declared by the cart as `heap_size` in
+`cart.build.yaml`; the packer writes it into the `.cart.info` FlatBuffers
+section. The runtime reads it at load time and calls a libblytc.so
+initialisation symbol (`blytc_heap_init(size_t limit)`) before jumping
+to the cart entry point. This call is made on all paths: before the rv32emu
+guest starts on emulated targets, and from libblyt32.so's constructor on
+the hardware trusted-exec path.
+
+`heap_size` in `cart.build.yaml` is therefore retained (not removed).
+What changes from ADR-0108 is the enforcement mechanism: previously a
+fixed address-space region was reserved; now the limit is a soft cap
+inside the allocator, and the heap grows lazily via brk/mmap up to that
+cap. Carts that omit `heap_size` (or set it to zero) get no heap; linking
+libblytc.so without declaring a heap_size is a packer error.
+
 ### Rust global_allocator
 
 The `blyt32` SDK crate's `#[global_allocator]` is backed by
-`libblytc.so`'s `malloc`/`free`. This replaces the fixed-size heap model
-from ADR-0108 (the `heap_size` field in `cart.build.yaml` is removed).
-
-Rust carts that want `alloc` (Vec, String, Box, etc.) enable the SDK
-crate's `alloc` feature, which:
+`libblytc.so`'s `malloc`/`free`. Rust carts that want `alloc` (Vec,
+String, Box, etc.) enable the SDK crate's `alloc` feature, which:
 1. Declares a DT_NEEDED dependency on `libblytc.so` in the cart ELF.
 2. Registers the `#[global_allocator]` that forwards to libblytc's malloc.
 
@@ -91,8 +110,9 @@ and are not embedded in any binary.
 
 - Cart distributables are smaller: libc code is shared across all carts
   instead of statically linked per cart.
-- The `heap_size: N` declaration in `cart.build.yaml` is removed. Heap
-  is managed by libblytc.so's allocator; no reservation is required.
+- `heap_size` in `cart.build.yaml` is retained and written into
+  `.cart.info`. The enforcement mechanism changes from address-space
+  reservation to a soft cap inside libblytc.so's allocator.
 - `libblytc.so` must be built as part of the runtime toolchain alongside
   `libblyt32.so`. It is a build-time dependency of the SDK crate's
   `alloc` feature.
