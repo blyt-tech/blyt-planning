@@ -1985,6 +1985,97 @@ immediately; does not depend on any pending spike.
 
 ---
 
+## Spike S — Hardware trusted native-exec seccomp path
+
+**The question:** Does the hardware trusted native-exec path (ADR-0119)
+work in practice? Specifically: can a LP64 launcher exec an ILP32 cart
+natively, produce a cart process with `seccomp_data.arch =
+AUDIT_ARCH_RISCV32`, enforce an arch-dispatch filter across the exec
+boundary, and have `libblyt32.so`'s constructor install a restrictive
+phase-2 filter before any cart code runs?
+
+**Why this is a risk:**
+
+Spike R validated the seccomp mechanism for emulated targets (rv32emu
+on desktop, Pi, and WASM). On those targets `seccomp_data.arch` is
+always `AUDIT_ARCH_RISCV64` because carts run inside rv32emu (an LP64
+process). The hardware trusted-exec path is architecturally different:
+the cart process is exec'd directly as ILP32 by the OS, and
+`seccomp_data.arch = AUDIT_ARCH_RISCV32` is expected for it.
+
+Three things are unvalidated:
+
+1. **The ILP32 ELF loader.** The Fedora 42 QEMU kernel used in Spike R
+   lacks the RISC-V ILP32 ELF binary loader. A patched kernel (or a
+   board with vendor ILP32 support) is required before native exec can
+   be tested at all.
+
+2. **Arch-dispatch across exec.** The phase-1 filter is installed by
+   the LP64 launcher; after exec the process is ILP32. The filter is
+   inherited across exec per `seccomp(2)`, but the interaction of a
+   pre-exec RISCV64 filter installation with a post-exec RISCV32 process
+   needs empirical confirmation.
+
+3. **Phase-2 constructor timing.** `libblyt32.so`'s constructor must
+   install the phase-2 filter before any cart-code constructors run.
+   Constructor ordering within a process depends on the ELF DT_NEEDED
+   graph; the expected ordering (library before binary) needs
+   verification.
+
+**What to build:**
+
+**Stage 0 — Environment: ILP32 kernel.**
+Obtain or build a RISC-V kernel with the ILP32 ELF binary loader.
+Cross-compile on the Apple Silicon host (faster than in-guest).
+Confirm `execve` of the static ILP32 spike-h adversary succeeds.
+Confirm `seccomp_data.arch = AUDIT_ARCH_RISCV32` via a minimal test.
+
+**Stage 1 — Arch-dispatch filter across exec.**
+Build `seccomp_raw_test_s.c` (LP64). Install a single arch-dispatch
+filter; fork + exec the static ILP32 adversary. Verify: RISCV32 socket
+→ SIGSYS; RISCV32 write → rc=0; RISCV32 execve → SIGSYS. Also verify
+the RISCV64 rules apply to the launcher before exec.
+
+**Stage 2 — ld.so startup syscall set (phase-1 scope).**
+Build a minimal ILP32 stub `libblyt32.so` and a dynamically-linked ILP32
+test binary. Run under strace from exec through `main()`. Capture the
+syscalls ld.so makes during ILP32 dynamic-library resolution. These
+define the RISCV32 ld.so-phase rules in the phase-1 filter.
+
+**Stage 3 — ILP32 native cart syscall allowlist (phase-2 scope).**
+Run spike-i and spike-q cart workloads natively (using the stub
+`libblyt32.so`) under strace. Subtract the Stage 2 ld.so-phase syscalls.
+The remainder is the phase-2 allowlist. Verify empirically that
+RISC-V ILP32 uses the same syscall NRs as LP64 (unified table; no
+`mmap2`, `clock_gettime64` etc.). Produce `seccomp_allowlist_s.h`.
+
+**Stage 4 — Option B end-to-end.**
+Update the stub `libblyt32.so` to install the phase-2 RISCV32 filter
+in its constructor. Build `launcher_s.c` (LP64) that installs phase-1
+and exec's the cart. Verify: adversary socket → SIGSYS; execve →
+SIGSYS; write → rc=0; full spike-i cart runs without SIGSYS. Commit
+`seccomp_allowlist_s.h`.
+
+**Success criterion:**
+
+- Stage 0: `execve` of static ILP32 ELF succeeds; RISCV32 arch
+  confirmed in seccomp_data.
+- Stage 1: arch-dispatch filter correctly applies RISCV32 rules to the
+  cart process and RISCV64 rules to the launcher in a single installed
+  filter.
+- Stage 2: ld.so startup syscall set characterised; phase-1 filter
+  defined.
+- Stage 3: `seccomp_allowlist_s.h` committed; RISCV32 and LP64 syscall
+  NR equivalence confirmed (or ILP32-specific NRs documented).
+- Stage 4: full cart runs under the phase-1 + phase-2 filter; adversary
+  probes blocked; Option B constructor ordering confirmed.
+
+**Dependency:** Spike R (raw BPF mechanics validated; LIFO semantics
+confirmed; Fedora 42 QEMU infrastructure reused). Requires a RISC-V
+kernel with the ILP32 ELF loader — this is the only external dependency.
+
+---
+
 ## Ordering
 
 A → B → C and D and E and F (B is the dependency for C, D, and E; F
@@ -2024,8 +2115,11 @@ A (interpreter)
 
 H (native RISC-V sandbox) ← independent; requires Milk-V Duo hardware
 └── R (two-phase seccomp raw BPF) ← depends on H (gap identified); can
-                                     run immediately on QEMU without
-                                     hardware
+    │                                run immediately on QEMU without
+    │                                hardware
+    └── S (hardware trusted-exec seccomp) ← depends on R (raw BPF
+                                             mechanics + LIFO confirmed);
+                                             requires ILP32-capable kernel
 
 I (cart format end-to-end) ← depends on ADR-0024/ADR-0025 and Spikes
                               C, F, G; can run in parallel with H; QEMU
@@ -2083,6 +2177,13 @@ making it most valuable while those decisions are still open.
 Spike P de-risks the Rust heap allocator and atomics (ADR-0108) and
 validates the `on_load` rewind contract (ADR-0087). It depends only on
 Spike O and has now been executed.
+
+Spike S extends Spike R to the hardware trusted native-exec path. It
+depends on Spike R (raw BPF mechanics and LIFO semantics confirmed) and
+requires a RISC-V kernel with the ILP32 ELF binary loader — either a
+cross-compiled patched kernel booted with the Spike R QEMU rootfs, or
+real RISC-V hardware with vendor ILP32 support. It can run independently
+of all other post-R spikes.
 
 Spike R de-risks the two-phase seccomp design in ADR-0116. It depends on
 Spike H having identified the `libseccomp`/`SCMP_ARCH_RISCV32` gap and
