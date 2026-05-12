@@ -55,27 +55,33 @@ library mechanism:
 - **WASM:** same as rv32emu — the library is loaded into the rv32emu
   guest that runs inside the WASM host. No change to the WASM host layer.
 
-### Heap limit enforcement
+### Cart memory budget
 
-Cart memory limits are enforced inside libblytc.so's malloc implementation.
-The allocator tracks total live heap bytes and refuses allocations that
-would exceed a per-cart limit, returning NULL (C) or triggering
-out-of-memory handling (Rust alloc).
+Every cart runs within a hard **16 MB total memory budget**, enforced by
+the runtime. The budget is not declared by the cart and cannot be
+influenced by any value in the cart binary, including `.cart.info`.
+`.cart.info` is cart-supplied and therefore untrusted for
+security-relevant limits.
 
-The limit value is declared by the cart as `heap_size` in
-`cart.build.yaml`; the packer writes it into the `.cart.info` FlatBuffers
-section. The runtime reads it at load time and calls a libblytc.so
-initialisation symbol (`blytc_heap_init(size_t limit)`) before jumping
-to the cart entry point. This call is made on all paths: before the rv32emu
-guest starts on emulated targets, and from libblyt32.so's constructor on
-the hardware trusted-exec path.
+The 16 MB covers **both heap allocations and currently-loaded resources**
+combined. A cart that has pinned 14 MB of resources has only 2 MB
+available for heap, and vice versa.
 
-`heap_size` in `cart.build.yaml` is therefore retained (not removed).
-What changes from ADR-0108 is the enforcement mechanism: previously a
-fixed address-space region was reserved; now the limit is a soft cap
-inside the allocator, and the heap grows lazily via brk/mmap up to that
-cap. Carts that omit `heap_size` (or set it to zero) get no heap; linking
-libblytc.so without declaring a heap_size is a packer error.
+**Mechanism:** The runtime provides a 16 MB arena to libblytc.so by
+calling `blytc_arena_init(void *base, size_t size)` before cart entry.
+libblytc.so's malloc sub-allocates from this arena. The resource
+subsystem also allocates resource buffers from this arena (by calling
+malloc internally for all resource loads). Because all cart memory flows
+through the same arena, the 16 MB cap is automatically enforced at the
+allocation source: malloc returns NULL and resource-load ECALLs return an
+error code whenever the combined live allocation would exceed the budget.
+
+This call is made on all paths: before the rv32emu guest starts on
+emulated targets, and from libblyt32.so's constructor before cart entry
+on the hardware trusted-exec path.
+
+The `heap_size` field previously described in ADR-0108 is removed. No
+per-cart heap declaration exists; the 16 MB budget is the only limit.
 
 ### Rust global_allocator
 
@@ -110,9 +116,8 @@ and are not embedded in any binary.
 
 - Cart distributables are smaller: libc code is shared across all carts
   instead of statically linked per cart.
-- `heap_size` in `cart.build.yaml` is retained and written into
-  `.cart.info`. The enforcement mechanism changes from address-space
-  reservation to a soft cap inside libblytc.so's allocator.
+- The `heap_size` field in `cart.build.yaml` and `.cart.info` is removed.
+  The 16 MB runtime budget replaces it; no per-cart declaration exists.
 - `libblytc.so` must be built as part of the runtime toolchain alongside
   `libblyt32.so`. It is a build-time dependency of the SDK crate's
   `alloc` feature.

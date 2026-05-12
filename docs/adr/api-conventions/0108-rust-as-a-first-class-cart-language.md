@@ -318,12 +318,12 @@ SDK crate's `alloc` feature gates the global_allocator on that
 dependency. Carts that do not use `alloc` omit `libblytc.so` entirely
 and pay no overhead.
 
-The `heap_size` field in `cart.build.yaml` is retained and written into
-`.cart.info` by the packer. The runtime reads it at load time and calls
-`blytc_heap_init(limit)` in libblytc.so before cart entry, configuring
-the allocator's per-cart cap. The enforcement mechanism changes from
-address-space reservation to a soft cap inside libblytc.so (see ADR-0120);
-the cart-author-facing declaration is unchanged.
+The `heap_size` field in `cart.build.yaml` is removed. All cart memory —
+heap and loaded resources combined — is subject to the runtime's hard
+16 MB per-cart budget enforced by libblytc.so's arena allocator (see
+ADR-0120). Heap allocation shares this budget with resource loads; both
+return failure when the budget is exhausted. The limit is not
+cart-declared and cannot be influenced by any value in the cart binary.
 
 **The heap is not part of the save state.** Save state captures the
 declared POD state buffers only (ADR-0009/0010). The heap is transient
