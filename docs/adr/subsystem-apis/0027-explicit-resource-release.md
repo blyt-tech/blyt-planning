@@ -44,6 +44,68 @@ mapping. Handles survive save/load, hot reload, and cross-platform transport.
 **Persistent resources** (ADR-0028) are declared in the manifest and are
 never evicted; `release` on a persistent resource is a no-op.
 
+## Amendment (ADR-0120, 2026-05-12): raw pointer access via pin/unpin
+
+Cart code that needs to pass resource bytes directly to a C library
+(e.g. via `fmemopen` for a library with a `FILE*` API, or directly via
+a `load_from_memory(void*, size_t)` API) requires a stable pointer
+guarantee that the advisory `load`/`release` model does not provide.
+
+Two new calls are added, taking the integer resource ID (packer-generated
+constant, e.g. `R_MY_ANIM_CLIP`) rather than a typed handle:
+
+```c
+blyt_result_t blyt_resource_pin  (blyt_resource_id_t id,
+                                   const void **out_ptr,
+                                   size_t      *out_size);
+blyt_result_t blyt_resource_unpin(blyt_resource_id_t id);
+```
+
+```lua
+local ptr, size = blyt32.resource.pin(R.MY_ANIM_CLIP)
+blyt32.resource.unpin(R.MY_ANIM_CLIP)
+```
+
+**`pin` semantics:**
+- Loads and decompresses the resource if not already cached.
+- Increments an internal pin count for that resource ID.
+- Returns a `const void*` pointer and byte size.
+- While the pin count is greater than zero the runtime guarantees the
+  pointer is stable: the resource will not be evicted or moved.
+
+**`unpin` semantics:**
+- Decrements the pin count.
+- When the count reaches zero the resource becomes eligible for eviction
+  under memory pressure (same as after `release`).
+- The pointer returned by the matching `pin` is invalid after `unpin`
+  returns and must not be accessed.
+
+**Reference counting:** each `pin` call must be matched by exactly one
+`unpin`. Multiple concurrent `pin` calls on the same ID are valid; the
+resource remains stable until all corresponding `unpin` calls complete.
+
+**Persistent resources** (ADR-0028) are permanently pinned by the
+runtime; `pin`/`unpin` calls on them increment and decrement a reference
+count but eviction never occurs regardless. The returned pointer is always
+valid.
+
+**Typical pattern — parse-then-close:**
+
+```c
+const void *ptr;
+size_t size;
+blyt_resource_pin(R_DIALOG_SCRIPT, &ptr, &size);
+FILE *f = fmemopen((void *)ptr, size, "r");
+dialog_load(f);        /* library reads, parses, builds its own structs */
+fclose(f);
+blyt_resource_unpin(R_DIALOG_SCRIPT);
+/* resource may now be evicted; library's internal structs remain valid */
+```
+
+The resource needs to remain pinned only for the duration of the library
+call. Once the library has built its own representation from the bytes,
+the resource can be unpinned and released.
+
 ## Consequences
 
 - Authors with phase-specific large resources can proactively free memory at

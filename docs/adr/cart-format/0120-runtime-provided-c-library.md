@@ -33,13 +33,37 @@ carts, Rust carts that avoid alloc) omit it and pay no overhead.
 **Included:** `malloc`/`free`/`realloc`/`calloc`, string functions
 (`memcpy`, `memmove`, `memset`, `memcmp`, `strlen`, `strcmp`, `strcpy`,
 `strncpy`, `strtol`, `strtod`, etc.), `printf`-family formatting
-(`snprintf`, `vsnprintf`), `qsort`, `abs`, `math.h` functions.
+(`snprintf`, `vsnprintf`), `qsort`, `abs`, `math.h` functions,
+`fmemopen` (creates a `FILE*` over a caller-supplied memory buffer —
+no filesystem access; see below).
 
-**Excluded:** `FILE*` I/O (`fopen`, `fread`, `fprintf`, etc.) — carts
+**Excluded:** `fopen` and all filesystem-based `FILE*` I/O — carts
 access data through the console resource API, not the filesystem;
 `pthread_*` — carts are single-threaded; `signal` — signal handling is
 the runtime's concern; `dlopen`/`dlclose` — dynamic loading is not
 permitted in carts.
+
+**`fmemopen` and C library interop:**
+Some C libraries (animation runtimes, dialog engines, etc.) have
+`FILE*`-based load APIs. `fmemopen` bridges the resource API with these
+libraries: the cart pins the resource to obtain a stable `const void*`
+(ADR-0027 `blyt_resource_pin`), wraps it with `fmemopen`, passes the
+`FILE*` to the library, then closes the `FILE*` and unpins the resource
+once the library has finished loading.
+
+```c
+const void *ptr; size_t size;
+blyt_resource_pin(R_ANIM_CLIP, &ptr, &size);
+FILE *f = fmemopen((void *)ptr, size, "r");
+anim_load(f);
+fclose(f);
+blyt_resource_unpin(R_ANIM_CLIP);
+```
+
+The resource need only remain pinned for the duration of the library's
+load call. Libraries that offer `load_from_memory(void*, size_t)` can
+use the pinned pointer directly without `fmemopen`; that API is
+preferred where available.
 
 ### Target availability
 
