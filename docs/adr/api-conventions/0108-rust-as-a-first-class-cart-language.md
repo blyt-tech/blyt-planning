@@ -310,24 +310,22 @@ which is not a reasonable expectation for cart authors.
 ### Heap allocator
 
 The `blyt32` SDK crate provides a `#[global_allocator]` implementation
-backed by a fixed-size heap region carved out of cart memory at load time.
-This unlocks the full `alloc` crate — `Arc`, `Vec`, `Box`, `String`, and
-any ecosystem crate that depends on allocation.
+backed by `libblytc.so`'s `malloc`/`free` (see ADR-0120). This unlocks
+the full `alloc` crate — `Arc`, `Vec`, `Box`, `String`, and any
+ecosystem crate that depends on allocation. Carts that want heap
+allocation declare a dependency on `libblytc.so` in their DT_NEEDED; the
+SDK crate's `alloc` feature gates the global_allocator on that
+dependency. Carts that do not use `alloc` omit `libblytc.so` entirely
+and pay no overhead.
 
-Heap size is declared in `cart.build.yaml` (default: zero — carts that do
-not use `alloc` pay no overhead):
-
-```yaml
-heap_size: 65536   # bytes; omit or set to 0 for alloc-free carts
-```
-
-The runtime carves out the declared region beyond the save-state buffers
-and exposes it to the SDK crate via a well-known symbol or startup call;
-cart code never interacts with allocator setup directly.
+There is no `heap_size` declaration. The `libblytc.so` allocator manages
+the heap via the standard `brk`/`mmap` mechanism on all targets; no
+fixed reservation is required. The prior `heap_size: N` field in
+`cart.build.yaml` is removed.
 
 **The heap is not part of the save state.** Save state captures the
-declared POD state buffers only (ADR-0009/0010). The heap lives beyond
-the save-state region and is not captured on save, load, or rewind.
+declared POD state buffers only (ADR-0009/0010). The heap is transient
+and is not captured on save, load, or rewind.
 
 The intended pattern is: state buffers are the source of truth; heap
 allocations are a derived cache layer built from state buffers and

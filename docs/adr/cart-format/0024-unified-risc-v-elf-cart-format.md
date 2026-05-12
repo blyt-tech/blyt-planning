@@ -207,6 +207,30 @@ bounds-checking, and `.lua_exports` section validation. The checks in
 ADR-0112 are performed immediately after the identity and DT_NEEDED
 checks described above.
 
+## Amendment (ADR-0119, ADR-0120, 2026-05-12)
+
+**EI_OSABI:** Changed from `0x42` to `ELFOSABI_NONE` (0). The Linux
+kernel ELF loader may reject non-standard OSABI values at exec time,
+which would block the trusted native-exec path introduced in ADR-0119.
+Cart variant continues to be determined from the `.cart.info` `console:`
+field; EI_OSABI no longer carries identity information.
+
+**DT_NEEDED allowlist:** Extended to include `libblytc.so` as an
+optional entry (see ADR-0120). Valid DT_NEEDED sets are now:
+`{libblyt32.so}`, `{libblyt32.so, libblyt32lua.so}`,
+`{libblyt32.so, libblytc.so}`,
+`{libblyt32.so, libblyt32lua.so, libblytc.so}`.
+
+**PT_INTERP and loading paths:** PT_INTERP is no longer universally
+rejected. ADR-0119 introduces two cart loading paths; which applies
+determines whether PT_INTERP is absent or required. See ADR-0112
+amendment and ADR-0119 for the path-conditional rules.
+
+**Loading on hardware:** ADR-0119 describes the trusted native-exec path
+(pre-installed carts exec'd directly by the OS) alongside the existing
+custom-loader path. The loading section above describes the custom-loader
+path; ADR-0119 adds the trusted path.
+
 ## Consequences
 
 - ELF is battle-tested with mature tooling (binutils, objcopy, linker scripts)

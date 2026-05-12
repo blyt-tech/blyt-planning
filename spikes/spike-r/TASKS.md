@@ -37,12 +37,7 @@ One QEMU guest run:
 | 12 | Test C: multi-filter LIFO → SIGSYS | n/a | ✅ | Phase-2 ALLOW passes to phase-1 KILL |
 | 13 | Stage 1 overall: PASS | n/a | ✅ | All 3 sub-tests pass |
 
-## Stage 2 — launcher integration (workaround path)
-
-**NOTE: Stages 2–4 tested against rv32emu, not native ILP32 exec.**
-The Fedora 42 kernel lacks the RISC-V ILP32 ELF binary loader (Finding 1),
-so the production path (launcher execs ILP32 cart directly) was not testable.
-rv32emu was used as a fallback cart runner.
+## Stage 2 — launcher integration (emulated target path)
 
 | # | Step | Host | Guest | Notes |
 |---|------|------|-------|-------|
@@ -50,14 +45,14 @@ rv32emu was used as a fallback cart runner.
 | 15 | `launcher_r` compiles without libseccomp | ✅ | n/a | Uses raw seccomp(2) syscall directly |
 | 16 | `socket` probe → SIGSYS (rc=159) | n/a | ✅ | socket(198) not in allowlist |
 | 17 | `uname` probe → exit 0 | n/a | ✅ | uname(160) in allowlist — key difference from Spike H |
-| 18 | Stage 2 overall: PASS (workaround) | n/a | ✅ | Tested against rv32emu path; native ILP32 exec untested |
+| 18 | Stage 2 overall: PASS | n/a | ✅ | Emulated target path (rv32emu as cart runner) |
 
 **Probes NOT testable by seccomp alone (require mount namespace or Option B):**
 - `open` (openat=56 is in allowlist for ELF loading; filesystem isolated by mount namespace)
 - `execve` (in allowlist for launcher→cart exec; Option B required for post-exec blocking)
 - `mprotect-exec` (mprotect=226 in allowlist; arg filtering or W^X kernel policy needed)
 
-## Stage 3 — allowlist derivation (rv32emu workaround path)
+## Stage 3 — allowlist derivation (emulated target path)
 
 | # | Step | Host | Guest | Notes |
 |---|------|------|-------|-------|
@@ -65,20 +60,20 @@ rv32emu was used as a fallback cart runner.
 | 23 | Cart workloads available in guest | ✅ | ✅ | spike-i case_a/b + spike-q rust_cart.elf |
 | 24-27 | strace each workload type | n/a | ✅ | 22 unique syscalls; strace_*.txt in build/results/stage3-strace/ |
 | 28-31 | Allowlist culled and committed | ✅ | n/a | seccomp_allowlist.h updated; 23 syscalls (was 49) |
-| 32 | Stage 3 overall: PASS (workaround) | n/a | ✅ | 2026-05-11; rv32emu LP64 host syscalls, not native ILP32 syscalls |
+| 32 | Stage 3 overall: PASS | n/a | ✅ | 2026-05-11; production allowlist for emulated targets |
 
-**Note: seccomp_allowlist.h reflects the rv32emu LP64 host syscall set.**
-On a kernel with native ILP32 exec, the allowlist must be re-derived from
-strace of ILP32 cart binaries running natively (not inside rv32emu).
+**Note: seccomp_allowlist.h is the production allowlist for emulated targets (rv32emu LP64 host syscalls).**
+The hardware trusted-exec path (AUDIT_ARCH_RISCV32, native ILP32 syscalls) requires a separate
+derivation in Spike S.
 
-## Stage 4 — adversary re-verification (rv32emu workaround path)
+## Stage 4 — adversary re-verification (emulated target path)
 
 | # | Step | Notes |
 |---|------|-------|
 | 33 | rv32emu cart_a under launcher_r | ✅ | cart exits rc=0; no SIGSYS (2026-05-11) |
 | 34 | socket probe → SIGSYS | ✅ | rc=159 confirmed |
 | 35 | uname probe → SIGSYS | ✅ | rc=159 — correctly blocked (not in rv32emu allowlist) |
-| 36 | Stage 4 overall: PASS (workaround) | ✅ | 2026-05-11; native ILP32 exec path untested |
+| 36 | Stage 4 overall: PASS | ✅ | 2026-05-11; emulated target path complete |
 
 ---
 
@@ -116,13 +111,10 @@ Raw BPF seccomp(2) works correctly and is required.
 
 ## Open items
 
-- **PRIMARY GAP — native ILP32 exec untested:** Fedora 42 kernel lacks the
-  RISC-V ILP32 ELF binary loader.  The production path (launcher execs ILP32
-  cart directly, AUDIT_ARCH_RISCV32 reported for cart) was never exercised.
-  Needs a kernel with ILP32 support — custom kernel build or hardware.
-- **Allowlist must be re-derived:** seccomp_allowlist.h contains rv32emu LP64
-  host syscalls, not native ILP32 cart syscalls.  Must be re-derived from
-  strace of carts running natively under the compat layer.
-- **Option B two-phase:** LIFO semantics confirmed; implementation deferred
-  until the native ILP32 exec path is working.
-- **`SECCOMP_FILTER_FLAG_TSYNC`:** Needed if cart runner is multi-threaded.
+- **Spike S — hardware trusted-exec path:** Fedora 42 kernel lacks the RISC-V
+  ILP32 ELF binary loader, so the hardware native-exec path (ADR-0119) was not
+  testable here.  Spike S validates: native ILP32 exec, AUDIT_ARCH_RISCV32,
+  arch-dispatch filter, ILP32 native syscall allowlist derivation.
+- **Option B — libblyt32.so phase-2 filter:** LIFO semantics confirmed; the
+  constructor in libblyt32.so must install the phase-2 filter.  Deferred to Spike S.
+- **`SECCOMP_FILTER_FLAG_TSYNC`:** Needed if the cart runner is multi-threaded.

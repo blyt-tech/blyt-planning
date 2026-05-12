@@ -123,6 +123,25 @@ the section is still structurally validated.
   unknown values are rejected.
 - Reject duplicate `(module_name, function_name)` pairs.
 
+## Amendment (ADR-0119, 2026-05-12)
+
+The PT_INTERP check is now path-conditional (see ADR-0119):
+
+**Custom-loader path (untrusted, and all emulated targets):** PT_INTERP
+must be absent, as specified above. The runtime is the loader; the OS
+dynamic linker must not be involved.
+
+**Trusted native-exec path (pre-installed hardware carts):** PT_INTERP
+must be present and must name the platform's expected ILP32 dynamic
+linker path. A cart with PT_INTERP absent, or pointing to an unexpected
+interpreter path, is rejected on this path.
+
+All other checks in this ADR (segment layout, opcode scan, FlatBuffers
+validation, resource bounds, `.lua_exports`) apply equally on both paths.
+On the trusted path they are performed file-based by the launcher before
+exec; the TOCTOU risk is accepted given the hardware threat model (trusted
+= pre-installed on device).
+
 ## Consequences
 
 - The loader's rejection surface is well-defined and auditable. A
