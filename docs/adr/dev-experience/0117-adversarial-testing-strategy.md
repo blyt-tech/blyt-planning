@@ -65,6 +65,21 @@ rejected at load time (where appropriate) or handled cleanly at run time:
 - ELF with a `.cart.resources` entry whose `offset + size` overflows.
 - ELF with a `.lua_exports` section where `sym_addr` is zero, out of
   guest-address-space bounds, and equal to `FC32_SENTINEL_ADDR`.
+- ELF with `DT_NEEDED` for a library not on the permitted list.
+- ELF importing a symbol not present in the public exports of any
+  permitted library (expect load rejection).
+- ELF explicitly importing `blytc_arena_init` or another known internal
+  symbol (expect load rejection by the symbol import allowlist).
+- ELF without a `PT_GNU_RELRO` segment (expect load rejection).
+- ELF linked with lazy binding rather than `BIND_NOW` / `-z now`
+  (expect load rejection).
+- Cart that repeatedly calls `malloc` until it reaches the 16 MB budget
+  limit, then calls `malloc` once more — must return NULL without
+  crashing or corrupting internal state.
+- Cart that loads resources to the 16 MB limit, then attempts one further
+  resource-load ECALL — must return a `BLYT_ERR_*` error code, not crash.
+- Cart that interleaves heap allocations and resource loads to exhaust the
+  combined 16 MB budget — same gate as above.
 - ECALL with handle value 0 on every API function.
 - ECALL with handle value `max_valid + 1` on every API function.
 - ECALL with a stale-generation handle on every API function.
@@ -99,5 +114,10 @@ once per major release cycle.
   rather than an open-ended aspiration.
 - The adversarial corpus provides regression coverage for known-bad
   patterns; each new vulnerability discovered becomes a new corpus entry.
+- The symbol import allowlist, RELRO+BIND_NOW, and 16 MB memory budget
+  tests verify the boundaries introduced in ADR-0112 and ADR-0120. The
+  load-time cases (missing RELRO, unlisted imports) are fast deterministic
+  checks; the memory budget cases exercise graceful failure paths that
+  fuzzing alone is unlikely to hit.
 - Upstream monitoring is a low-cost continuous activity that catches
   security-relevant changes before they accumulate into a large diff.
