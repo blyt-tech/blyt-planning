@@ -84,8 +84,10 @@ The test image copy is deleted after each run; the base image is unchanged.
 
 > **CONFIG_COMPAT note:** Ubuntu 24.04.4 RISC-V kernel 6.17 has
 > `CONFIG_COMPAT` explicitly disabled.  Stage 0 (cgroups v2) and the
-> seccomp mechanism pass.  Stages 1, 3, 4 require CONFIG_COMPAT; use
-> Fedora RISC-V or Milk-V Duo hardware for those stages.
+> seccomp mechanism pass.  Stages 1, 3, 4 require CONFIG_COMPAT and
+> UXL=32 hardware support; use Fedora RISC-V or K230D hardware (C908)
+> for those stages. Milk-V Duo / Duo S (C906) cannot be used — the
+> C906 lacks UXL=32 support required to exec ILP32 binaries.
 > See `docs/design/spike-h-results.md` for the full analysis.
 
 The `build/` directory holds:
@@ -103,7 +105,7 @@ prebuilt toolchain ships libgcc + libc only for `rv32gc / ilp32d`, so any
 cart linked against musl uses double-float. `hello.elf` has no libc
 dependency and matches the cart spec exactly. The Lua workloads diverge —
 matching them to the cart-spec ABI requires building a custom toolchain
-or running on the Milk-V Duo's native distro. That's out of spike scope.
+or using the K230D vendor rv64ilp32 toolchain. That's out of spike scope.
 
 ---
 
@@ -276,10 +278,12 @@ references `../../spike-b/benchmarks/`.
 
 ## What this spike does NOT prove
 
-- That Milk-V Duo (C906) silicon runs RV32 carts the way QEMU does. The
+- That K230D (C908) silicon runs RV32 carts the way QEMU does. The
   CONFIG_COMPAT, seccomp, and cgroups behaviour are kernel-level and
   architecture-portable, but performance numbers are not. Real-hardware
-  measurement is a follow-on activity once the board is in hand.
+  measurement is a follow-on activity once a K230D is in hand. Note:
+  Milk-V Duo / Duo S (C906) cannot be used for this validation — the
+  C906 lacks the UXL=32 hardware support needed to exec ILP32 binaries.
 - That the Pi Zero 2 W MIPS reference (Spike A) is right. Stage 4 uses a
   500-MIPS placeholder; the `quota_us = floor(5000 × Pi_MIPS / measured_MIPS)`
   formula works with any value substituted.

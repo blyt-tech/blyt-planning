@@ -85,9 +85,11 @@ kernel's `arch/riscv/` tree for the ILP32 compat ELF loader and enable
 it in the kernel config alongside `CONFIG_COMPAT=y`.
 
 **Option 2 — Real RISC-V hardware.**
-A board whose vendor kernel includes ILP32 support (e.g. VisionFive 2
-with StarFive vendor kernel). Simultaneously validates on real silicon.
-Higher setup cost; appropriate once Option 1 confirms the mechanism.
+A board whose CPU supports UXL=32 and whose vendor kernel includes ILP32
+support (K230D is the project reference target; its SDK ships
+`k230d_canmv_ilp32_defconfig` with the rv64ilp32 patchset applied).
+Simultaneously validates on real silicon. Higher setup cost; appropriate
+once Option 1 confirms the mechanism.
 
 The spike proceeds with Option 1 unless a hardware board is immediately
 available. Option 2 is a follow-up validation step, not a blocker.

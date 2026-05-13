@@ -101,7 +101,7 @@ insufficient for the stated goals.
   Spike H and are not re-proven here.
 - A libseccomp patch. The raw BPF approach makes libseccomp irrelevant
   for this purpose.
-- Milk-V Duo hardware validation. Fedora 42 QEMU is the test environment;
+- K230D hardware validation. Fedora 42 QEMU is the test environment;
   hardware confirms the real syscall set when the board is available.
 
 ---
@@ -356,10 +356,10 @@ block anything needed.
   and 259 should be allowed (Spike H found both were used).
 
 - **QEMU vs hardware syscall sets.** QEMU may make different host syscalls
-  than the real Milk-V Duo environment (QEMU may issue syscalls via its
-  own internal paths, not the RV32 cart's). The strace output in Stage 3
+  than the real K230D environment (QEMU may issue syscalls via its own
+  internal paths, not the RV32 cart's). The strace output in Stage 3
   captures the host-process syscalls made by rv32emu on Fedora 42; this
-  is the correct set for the Fedora 42 / QEMU deployment. The Milk-V Duo
+  is the correct set for the Fedora 42 / QEMU deployment. The K230D
   hardware may have a slightly different set; this is a hardware follow-up.
 
 ---
@@ -387,7 +387,7 @@ block anything needed.
 
 ## Open items deferred
 
-- **Hardware syscall set.** Run Stage 3 strace on a Milk-V Duo once
+- **Hardware syscall set.** Run Stage 3 strace on a K230D once
   available to confirm the allowlist is complete on real silicon.
 - **`SECCOMP_FILTER_FLAG_TSYNC`.** If the cart runner uses multiple
   threads in future (currently single-threaded on the interpreter path),

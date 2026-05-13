@@ -75,7 +75,7 @@ quota_us = floor(period_us × Pi_MIPS / measured_host_MIPS)
 `Pi_MIPS` is the Spike A figure for the minimum emulation host (Pi Zero
 2 W). `measured_host_MIPS` is the emulator throughput on the current
 hardware measured at runtime startup. Hardware constants are finalised
-from Spike A and the Milk-V Duo calibration deferred by Spike H.
+from Spike A and the K230D calibration deferred by Spike H.
 
 ### rlimits
 

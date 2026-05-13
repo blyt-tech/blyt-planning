@@ -48,7 +48,7 @@ Explicitly excluded:
   the A extension is mandatory in that target string. There is no
   `riscv32imfc` Rust target in upstream nightly.
 - The A extension is present in every shipping RISC-V SBC-class CPU
-  (including the Milk-V Duo's C906 core) and is fully implemented by the
+  (including the K230D's C908 core) and is fully implemented by the
   rv32emu emulator. Its inclusion adds no interpreter complexity relative
   to what the emulator already handles.
 - Carts are single-threaded, so LR/SC and AMO instructions always succeed on
@@ -63,7 +63,7 @@ Explicitly excluded:
 - f32 (single-precision) covers every realistic use case at 320×240
   fidelity; the decision to exclude D is consistent with the 32-bit
   everywhere numeric model (ADR-0005).
-- Cheap reference hardware (Milk-V Duo, $9) is available now; the SBC
+- Cheap reference hardware (K230D, ~$29) is available now; the SBC
   ecosystem is growing.
 - Cart binaries are standard RV32IMAFC ELF files, debuggable with GDB and
   LLDB without custom tooling.

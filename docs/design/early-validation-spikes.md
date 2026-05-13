@@ -26,7 +26,7 @@ Each spike letter links to its section below.
 | [G](#spike-g--wasm-lua-direct-per-frame-cpu-budget-enforcement) — `lua_sethook` at N=100 enforces the frame budget with <3% overhead on Chrome desktop; mobile measurement pending | partial | mid-range Android, iPhone | — | yes | iOS App Store forces JSC (no V8) |
 | [G.2](#spike-g2--wasm-lua-direct-dev-mode-pi-parity-throttle) — Chrome's ~100 µs `performance.now()` floor makes per-line busy-wait throttle impossible; abandoned in favour of G.3 | failed | — | — | superseded | Chrome timer clamp (~100 µs, Spectre era) |
 | [G.3](#spike-g3--wasm-lua-direct-accumulated-debt-pi-parity-throttle) — `LUA_MASKLINE` with accumulated-debt tracking matches Pi-class frame times within ±0.4% accuracy on Chrome desktop | done | — | confirm in VS Code web view | yes | — |
-| [H](#spike-h--native-risc-v-cart-execution-and-sandboxing) — a RISC-V cart runs natively as ILP32 on RV64 Linux; IPC round-trip <10 µs; seccomp blocks adversarial syscalls; cgroups v2 CPU quota available; Milk-V Duo silicon validation pending | partial | Milk-V Duo | — | yes | libseccomp `SCMP_ARCH_RISCV32` gap; Ubuntu ILP32 kernel |
+| [H](#spike-h--native-risc-v-cart-execution-and-sandboxing) — a RISC-V cart runs natively as ILP32 on RV64 Linux; IPC round-trip <10 µs; seccomp blocks adversarial syscalls; cgroups v2 CPU quota available; K230D silicon validation pending | partial | K230D | — | yes | libseccomp `SCMP_ARCH_RISCV32` gap; Ubuntu ILP32 kernel; C906 (Milk-V Duo) lacks UXL=32 |
 | [I](#spike-i--cart-format-end-to-end-validation) — all four cart types (C, C+lib, Lua, Lua+C-lib) build, load, and execute correctly across the emulator, WASM, and native RISC-V targets | done | — | — | yes | — |
 | [J](#spike-j--debugger-composition-dap--gdb-stub-under-the-existing-hook-load) — three-way `lua_sethook` composition (budget + throttle + DAP) works without interference; GDB DWARF unwinds through the cart PLT into pre-mapped libraries; VS Code F5 recording pending | partial | — | VS Code F5 recording | yes | — |
 | [K](#spike-k--cross-platform-save-state-portability-end-to-end) — a save state serialised on arm64 deserialises byte-identically on amd64 and produces the same per-frame digest as a same-host continuation | done | — | — | yes | rv32emu `syscall_read` overflow (upstream fix) |
@@ -633,7 +633,7 @@ calibration constants, Stage 4 chrome runner).
 
 ## Spike H — Native RISC-V cart execution and sandboxing
 
-**The question:** Can a RV32IMFC cart ELF run natively on the Milk-V Duo's
+**The question:** Can a RV32IMFC cart ELF run natively on an ILP32-capable
 RISC-V64 Linux kernel, communicate with the runtime via a shared-memory IPC
 library, be adequately isolated from the host system using OS-level
 mechanisms, and have its CPU budget capped to match the performance floor
@@ -651,11 +651,13 @@ permits, bypassing the console API entirely.
 
 Four questions compound:
 
-1. *RV32 on RV64 Linux.* Carts are RV32IMFC ELF binaries. The Milk-V
-   Duo's C906 is RISC-V64. Running 32-bit RISC-V userspace requires
-   `CONFIG_COMPAT` in the Linux kernel. Minimal buildroot configs
-   frequently omit this; its availability on the Milk-V Duo kernel is
-   unverified.
+1. *RV32 on RV64 Linux.* Carts are RV32IMFC ELF binaries. Running 32-bit
+   RISC-V userspace requires both `CONFIG_COMPAT` in the Linux kernel and
+   hardware support for `sstatus.UXL=32` (the mechanism by which the CPU
+   switches a process to 32-bit user mode). Only the C908 and later cores
+   implement UXL=32; the C906 (Milk-V Duo class) does not. The K230D's
+   dual C908 cores satisfy this requirement, and its vendor SDK ships a
+   kernel with the rv64ilp32 patchset applied.
 
 2. *Console API IPC mechanism.* On native hardware, `libconsole` cannot
    issue ECALLs to reach the runtime. The library must communicate with
@@ -692,10 +694,9 @@ Four questions compound:
 
 - **Stage 1 — RV32 execution.** Confirm that a minimal RV32IMFC ELF
   (a "hello world" that calls `write` via ECALL 64) runs natively on
-  the Milk-V Duo's kernel. If `CONFIG_COMPAT` is absent, determine
-  whether it can be added to the buildroot config and rebuilt, or
-  whether an alternative (e.g. compiling carts as RV64 with RV32
-  ABI constraints) is needed.
+  the K230D's kernel. The K230D vendor SDK ships `k230d_canmv_ilp32_defconfig`
+  with the rv64ilp32 patchset; this is the starting point rather than
+  building CONFIG_COMPAT from scratch.
 
 - **Stage 2 — IPC library round-trip.** Build a minimal `libconsole`
   stub: on the cart side, a ring-buffer writer + futex wait; on the
@@ -738,15 +739,15 @@ Four questions compound:
   - *Per-installation measurement:* run once at install time and
     persist the result. Eliminates boot cost; requires a first-run
     setup step.
-  - *Baked into the boot image:* for known hardware targets (Milk-V
-    Duo, Milk-V Duo S), the CPU quota is a fixed constant included in
+  - *Baked into the boot image:* for known hardware targets (K230D
+    CanMV-K230D-Zero), the CPU quota is a fixed constant included in
     the image, with no runtime measurement at all. Simplest at runtime;
     requires a new constant when porting to new hardware.
 
 **Success criterion:**
 
-- *Stage 1:* A RV32IMFC ELF executes natively on the Milk-V Duo,
-  either via `CONFIG_COMPAT` or a documented alternative.
+- *Stage 1:* A RV32IMFC ELF executes natively on the K230D via the
+  vendor rv64ilp32 kernel.
 - *Stage 2:* The IPC round-trip latency for a single API call is
   ≤ 10 µs; a simulated frame's worth of calls (100–200 draw
   primitives) adds ≤ 1 ms of IPC overhead against the 16.67 ms
@@ -778,9 +779,10 @@ Four questions compound:
   the Pi; this spike is about native execution on RISC-V hardware.
   They address different deployment paths.
 
-**Platform:** Milk-V Duo or Milk-V Duo S (must be real hardware;
-QEMU does not exercise the `CONFIG_COMPAT` and seccomp questions in
-a representative way).
+**Platform:** K230D (must be real hardware; QEMU does not exercise the
+UXL=32 hardware capability and seccomp questions in a representative way).
+Note: Milk-V Duo / Duo S (C906) cannot serve as the hardware target — the
+C906 lacks UXL=32 support. See ADR-0002 (amended).
 
 ---
 
@@ -2051,7 +2053,7 @@ any unexpected SIGSYS under the phase 2 filter.
 - Decides the production syscall allowlist for the standalone deployment.
 - Does not address the libretro deployment (which uses inline instruction-
   budget enforcement rather than seccomp; see ADR-0116).
-- Does not address the Milk-V Duo hardware calibration (a Spike H
+- Does not address the K230D hardware calibration (a Spike H
   hardware follow-up).
 
 **Dependency:** Spike H (mechanism validated; gap identified). Can run
@@ -2199,7 +2201,7 @@ A (interpreter)
                                                     composition over
                                                     G + G.3 + DAP
 
-H (native RISC-V sandbox) ← independent; requires Milk-V Duo hardware
+H (native RISC-V sandbox) ← independent; requires K230D hardware (C908)
 └── R (two-phase seccomp raw BPF) ← depends on H (gap identified); can
     │                                run immediately on QEMU without
     │                                hardware
@@ -2230,8 +2232,10 @@ performance question in C is answered by B. Spike F is contingent on
 Spike E missing the desktop-WASM budget — if E had passed, F would not
 need to run. Spike G is contingent on Spike F's adoption recommendation
 — if F had not recommended Lua-direct for WASM, G would not be needed.
-Spike H is independent of the rest of the series; it requires Milk-V
-Duo hardware and can run in parallel with any other spike. Spike I
+Spike H is independent of the rest of the series; it requires K230D
+hardware (C908, UXL=32 capable) and can run in parallel with any other
+spike. Milk-V Duo / Duo S (C906) cannot serve as the Spike H hardware
+target due to the C906's lack of UXL=32 support. Spike I
 depends on the settled cart format (ADR-0024 Accepted, ADR-0025
 Accepted) and on the Lua-direct WASM path established by Spikes F and G;
 it can run in parallel with H and is the first end-to-end test of the
@@ -2306,9 +2310,10 @@ finalised on real silicon.
 - **E, F — mid-range Android (Snapdragon 7-class / Tensor G2-class).**
   Chrome and Firefox WASM perf for the cart workloads; iPhone JSC for
   the iOS path (V8 unavailable on iOS).
-- **H — Milk-V Duo (C906).** Replaces QEMU placeholder for the cgroups
+- **H — K230D (C908).** Replaces QEMU placeholder for the cgroups
   v2 quota constants and confirms Stage 4's CPU-budget mechanism on
-  real silicon, not just a kernel that runs CONFIG_COMPAT.
+  real silicon. Requires K230D hardware; Milk-V Duo / Duo S (C906) cannot
+  be used — C906 lacks UXL=32 support required to exec ILP32 binaries.
 
 ### Manual / visual gates pending
 
@@ -2421,7 +2426,7 @@ the full story.
   crate split); full packer Rust codegen (parse `cart.build.yaml`,
   emit typed constants for all fields and assets); `cart.build.yaml`
   language-dispatch integration (ADR-0073 `language: rust` path);
-  cross-language carts (Rust + C library); Milk-V Duo native target;
+  cross-language carts (Rust + C library); K230D native target;
   WASM target; `blyt_last_error()` heap-clone path; deep state-buffer
   proxy (`players[slot].x` pattern, deferred by ADR-0108 to post-v1);
   sequence API (`SeqStep`, `sequence!` macro).

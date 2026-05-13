@@ -39,7 +39,7 @@ tries to make the host CPU execute guest code, will fault at the OS level.
 
 ### Memory protection — native RISC-V hardware deployment
 
-On native RISC-V hardware (Milk-V Duo etc.) the host CPU executes the
+On native RISC-V hardware (K230D etc.) the host CPU executes the
 cart binary directly. The `PF_X` ELF flag controls which pages receive
 execute permission:
 

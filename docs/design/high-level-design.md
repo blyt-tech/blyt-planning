@@ -126,12 +126,18 @@ in as identity.
 - Little-endian matches every shipping RISC-V implementation and aligns with
   WASM, x86, and ARM.
 
-### Reference hardware: Milk-V Duo / Duo S class.
+### Reference hardware: K230D class.
 
-**Floor:** Milk-V Duo (C906 RISC-V64 at 1GHz, 64MB RAM, $9).
-**Reference target:** Milk-V Duo S (SG2000, 512MB RAM, $13).
+**Floor / reference target:** Kendryte K230D-based board (dual C908 RISC-V64
+at 1.6GHz + 800MHz, 128MB integrated LPDDR4, ~$29). Reference board: Banana
+Pi BPI-CanMV-K230D-Zero.
 **Minimum emulation host:** Raspberry Pi Zero 2 W class (Cortex-A53 quad-core,
 1GHz, ARMv8 with NEON).
+
+The earlier Milk-V Duo / Duo S class (C906) is not a valid native execution
+target: the C906 lacks `sstatus.UXL=32` hardware support, which is required
+to exec ILP32 cart processes on an RV64 kernel. Only the C908 (K230D) and
+later cores that implement this capability qualify. See ADR-0002.
 
 ### Explicitly not supported:
 
@@ -197,7 +203,7 @@ while playing, depending on platform. This is acceptable but not free:
 
 | Platform | Opus decode cost |
 |----------|-----------------|
-| Milk-V Duo native | ~5-10% of one core |
+| K230D native | ~3-7% of one core |
 | Desktop (native runtime) | negligible |
 | Browser via WASM | ~10-15% on weak mobile hardware |
 | Pi Zero 2 W | ~8-15% of one core |
@@ -2032,7 +2038,7 @@ handle the streaming/working-set management for larger carts.
   instantly. Standard carts in a few seconds. Large carts take 10-30
   seconds on typical mobile connections. Flagship carts take minutes.
   Worth surfacing in cart metadata so players can set expectations.
-- **Hardware storage.** A Milk-V Duo with a 32 GB SD card holds
+- **Hardware storage.** A K230D with a 32 GB SD card holds
   thousands of Mini carts, hundreds of Standard, dozens of Large, or
   ~100 Flagship. All reasonable.
 
@@ -2639,7 +2645,7 @@ has drawn anything.
 
 | Platform | Execution model | Cart execution |
 |----------|----------------|----------------|
-| Native RISC-V (Milk-V Duo class) | Runtime runs on Linux; RISC-V cart binaries execute natively | Native |
+| Native RISC-V (K230D class) | Runtime runs on Linux; RISC-V cart binaries execute natively | Native |
 | Desktop (x86-64, ARM64) | Runtime runs as SDL app | Lua: native; RISC-V carts: interpreted |
 | Browser (desktop) | Runtime compiled to WASM via Emscripten | Lua: interpreted in Lua VM (itself in WASM); RISC-V carts: RISC-V interpreter (in WASM) |
 | **Browser (mobile — iOS Safari, Chrome)** | Same WASM build + touch-control overlay | Same as desktop browser |
@@ -2983,7 +2989,7 @@ direct display handling:
 - **Touch overlay** occupies space outside the game area (§14), never
   overlays the game itself.
 
-**Hardware (Milk-V Duo + HDMI or LCD):** Runtime handles display
+**Hardware (K230D + HDMI or LCD):** Runtime handles display
 directly via DRM/KMS or framebuffer device:
 - **Direct output** if the panel is 320×240 or a simple multiple
   (trivial small LCDs connected via SPI).
@@ -3357,7 +3363,7 @@ This is documentation work, not engineering work, but it's what makes
 3. **Hardware image in QEMU:** `qemu-system-riscv64 -machine virt` with
    the buildroot image. Tests kernel boot, userspace init, runtime launch,
    cart execution end-to-end.
-4. **Real hardware:** Final validation on Milk-V Duo with real peripherals
+4. **Real hardware:** Final validation on K230D with real peripherals
    (USB gamepad, display, audio). Catches driver quirks, timing, peripheral
    bugs that QEMU misses.
 
@@ -3635,7 +3641,7 @@ tests for representative cart workloads.
 
 23. **Buildroot image for QEMU virt.** Minimal Linux, runtime as
     PID-1-equivalent. Full boot-to-runtime flow in QEMU.
-24. **Milk-V Duo adaptation.** Port buildroot config to real hardware.
+24. **K230D adaptation.** Port buildroot config to real hardware.
     Hardware image uses custom libretro frontend (same as standalone
     desktop; framebuffer/DRM display backend). Validate on physical
     device with gamepad/display/audio.
@@ -3658,11 +3664,11 @@ tests for representative cart workloads.
     - Audio API handles simultaneous SFX channels plus music.
     - Native cart SDK (C toolchain, linker script, layout declarations)
       works for a nontrivial codebase.
-    - Performance claims hold up: full-speed native on Milk-V, full-speed
+    - Performance claims hold up: full-speed native on K230D, full-speed
       interpreted on desktop, playable (20-30fps) in browser via WASM,
       via libretro in RetroArch.
 
-    Serves as marketing touchstone ("runs Doom on a $9 RISC-V board")
+    Serves as marketing touchstone ("runs Doom on a $29 RISC-V board")
     and forces discovery of API gaps that pure test carts wouldn't
     reveal.
 30. Community bootstrap: example carts, tutorials, starter kit
@@ -3697,7 +3703,7 @@ case of the "scripting is optional" principle.
 | RISC-V interpreter too slow on low-end hosts | API design keeps expensive ops host-side; measure early and optimize dispatch; SoftFloat as fallback for determinism over speed |
 | State buffer ergonomics insufficient in practice | Can add `ref<T>` sugar and row proxies in v1.x without breaking existing carts |
 | Libretro API constraints conflict with core design | Build libretro frontend early (before browser even) to catch assumptions; core API designed frontend-agnostic from day one |
-| Buildroot / Linux image proves fragile on new SBCs | Start with Milk-V Duo only; add others as community demand emerges |
+| Buildroot / Linux image proves fragile on new SBCs | Start with K230D only; add others as community demand emerges |
 | Save state / rewind / netplay determinism bugs | CI tests for bit-identity across platforms; controlled math library; strict FP mode enforcement |
 | Cart authoring friction from 32-bit-only numerics | Ship good patterns / libraries; f64 can be added later if genuine need emerges (non-breaking) |
 | Hot-reload state migration surprises authors | Default migration (copy matching fields, zero new) handles most cases; author migration hooks for complex cases; clear docs on "state stays, closures don't" boundary |
@@ -3819,5 +3825,5 @@ Accessible via:
 On real RISC-V hardware, debugging requires a development-mode build of
 the device image (enables the DAP and GDB servers on a TCP port reachable
 from the dev machine). Release/shipping images omit the debug servers.
-The development-mode image is the default for anyone flashing a Milk-V
-Duo to develop carts.
+The development-mode image is the default for anyone flashing a K230D
+to develop carts.

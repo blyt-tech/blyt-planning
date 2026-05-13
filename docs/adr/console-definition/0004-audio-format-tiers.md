@@ -7,7 +7,7 @@ Accepted
 
 The console needs an audio system that serves a wide range of carts — from
 tiny jam games to full voice-acted adventures — while keeping CPU cost
-manageable on the weakest supported hardware (Milk-V Duo, Pi Zero 2 W) and
+manageable on the weakest supported hardware (K230D, Pi Zero 2 W) and
 in the browser (WASM on weak mobile hardware).
 
 Streamed compressed audio (Opus, MP3, OGG Vorbis) costs 5–15% of one core

@@ -40,7 +40,7 @@ is acceptable.
 It is the wrong approach for capture. Generating a GIF requires running
 the cart simulation forward through the full clip duration. A Lua cart on
 a fast machine might simulate 5–10× real-time; a native cart running near
-the hardware performance floor on a Milk-V Duo-class device will simulate
+the hardware performance floor on a K230D-class device will simulate
 at or below real-time. Hitting "share my death clip" and waiting 15 seconds
 for the GIF to render is unacceptable UX. The framebuffer ring buffer
 eliminates this: GIF generation encodes already-rendered frames and is fast

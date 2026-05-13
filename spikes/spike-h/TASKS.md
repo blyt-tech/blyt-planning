@@ -101,7 +101,7 @@ must be in the allowlist.
 ## Open items
 
 - `uname` seccomp probe: production requires custom BPF with AUDIT_ARCH_RISCV32
-- Hardware validation: Milk-V Duo (C906) for real CoreMark MIPS numbers
+- Hardware validation: K230D (C908) for real CoreMark MIPS numbers
 - Pi Zero 2 W MIPS: placeholder is 500 MIPS (Spike A pending)
 - Production seccomp allowlist: determined when runtime is implemented
 

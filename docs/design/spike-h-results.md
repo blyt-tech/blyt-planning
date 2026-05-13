@@ -110,10 +110,15 @@ running the same procedure on the Milk-V Duo.
 
 ## What this spike does NOT prove
 
-- That Milk-V Duo (C906) silicon produces the same numbers as QEMU.
 - That the Pi Zero 2 W reference MIPS (Spike A) is final.
 - That the production seccomp allowlist is complete (uname/ILP32 arch needs raw BPF).
 - That the cart-spec `ilp32f` ABI Lua workloads match the `ilp32d` builds here.
+
+**Hardware validation note (2026-05-13):** Milk-V Duo (C906) hardware
+validation is no longer planned. Investigation confirmed that the C906 does
+not support `sstatus.UXL=32`, the hardware prerequisite for running ILP32
+(RV32 ABI) processes on an RV64 kernel. Hardware CoreMark calibration should
+be performed on K230D (C908) hardware instead. See ADR-0002 (amended).
 
 ## Code discoveries during the run
 
@@ -134,9 +139,11 @@ running the same procedure on the Milk-V Duo.
 **The OS mechanism story is sound.** Proceed with cart format implementation
 in Spike I and the runtime build using CONFIG_COMPAT + seccomp + cgroups:
 
-- **CONFIG_COMPAT:** Fedora 42 (and presumably the Milk-V Duo's buildroot kernel)
-  compile in ILP32 compat support unconditionally. Ubuntu's kernel does not.
-  The cart runtime should target a kernel that has this compiled in.
+- **CONFIG_COMPAT:** Fedora 42 compiles in ILP32 compat support unconditionally.
+  Ubuntu's kernel does not. The cart runtime must target a kernel that has this
+  compiled in. Note: regardless of kernel config, ILP32 execution also requires
+  hardware UXL=32 support (C908 or later); C906 (Milk-V Duo class) cannot run
+  ILP32 binaries even with the right kernel.
 
 - **seccomp:** The KILL_PROCESS filter mechanism works correctly. The allowlist
   needs `riscv_flush_icache` (musl RV32 startup) and a custom BPF rule for

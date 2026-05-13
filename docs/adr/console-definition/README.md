@@ -8,7 +8,7 @@ work as structural properties of the system rather than bolt-ons.
 | # | Decision |
 |---|----------|
 | [0001](0001-risc-v-isa-rv32imfc.md) | ISA choice — RV32IMAFC, little-endian, no D extension |
-| [0002](0002-reference-hardware-milk-v-duo.md) | Reference hardware — Milk-V Duo class SBCs |
+| [0002](0002-reference-hardware-milk-v-duo.md) | Reference hardware — K230D class SBCs |
 | [0003](0003-display-320x240-paletted-256-colors.md) | Display — 320×240 paletted, 256 colors, double-buffered |
 | [0004](0004-audio-format-tiers.md) | Audio — format tiers by cart class |
 | [0005](0005-32-bit-numeric-model.md) | Numeric model — i32 and f32 everywhere |

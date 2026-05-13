@@ -35,7 +35,7 @@ What the spike has proven without hardware:
   "Provisional Pi Zero 2 W projection" below.
 - The Pi-under-rv32emu environment is the platform's *minimum emulation
   host*, not its deployment target. Native RV32 execution on the actual
-  target hardware (e.g. Milk-V Duo / C906) is projected ~10× faster than
+  target hardware (e.g. K230D / C908) is projected ~10× faster than
   rv32emu on Pi for the same binary, since native silicon avoids the
   interpreter dispatch overhead. A spike-b pass on Pi-rv32emu is therefore
   a *strong-form* pass: the worst environment in the deployment surface
@@ -333,7 +333,7 @@ exactly as fast as the Pi can run it.
 
 The Pi Zero 2 W running rv32emu is fc32's *minimum emulation host* — the
 slowest environment in the platform's intended deployment surface.
-Native-RV32 deployment targets like the Milk-V Duo (C906 @ 1 GHz) skip
+Native-RV32 deployment targets like the K230D (C908 @ 1.6 GHz) skip
 both of the slowdowns this spike currently projects through:
 
 1. The Pi's 4–8× clock-and-pipeline disadvantage vs the Apple Silicon
@@ -348,13 +348,15 @@ Stacking it up for the same `doom_tick` cart binary:
 |----------------------------------------------|------------------:|
 | rv32emu on Apple Silicon Docker (measured)   |  ~7 μs (C) / 548 μs (Lua) |
 | rv32emu on Pi Zero 2 W (projected)           | ~28–56 μs / 2.2–4.4 ms    |
-| **Native RV32 on Milk-V Duo C906**           | **~3–6 μs / ~250–500 μs** |
+| **Native RV32 on K230D C908**                | **~2–4 μs / ~150–350 μs** |
 
-The native-Duo column is order-of-magnitude reasoning, not measurement
-— it leans on the C906's published ~3.5 CoreMark/MHz being close to the
-Cortex-A53's ~3.0 CoreMark/MHz. But the *direction* is unambiguous:
-native execution on a real RV32-capable RISC-V core is roughly 10×
-faster than the same binary inside rv32emu on a comparable ARM host.
+The native-K230D column is order-of-magnitude reasoning, not measurement.
+The C908 is an out-of-order core at 1.6GHz; the C906 it replaces was
+in-order at 1GHz and ~3.5 CoreMark/MHz. The C908 runs faster on both
+dimensions, so the estimates are conservatively better than the former
+C906 figures. The *direction* is unambiguous: native execution on a real
+ILP32-capable RISC-V core is roughly 10× faster than the same binary
+inside rv32emu on a comparable ARM host.
 
 Practical consequence: a workload that fits the Pi under rv32emu fits
 the Duo native with **roughly an order of magnitude of headroom to

@@ -220,7 +220,7 @@ No ADR-0108 amendments are required. The spike confirms the design as written.
   with `build-std` and the correct target flags.
 - **Cross-language carts.** Rust game logic + C library (ADR-0108 `languages:
   rust: … c: …` multi-language form). Not exercised in this spike.
-- **Milk-V Duo native target.** Run the Rust cart on real RV32 silicon.
+- **K230D native target.** Run the Rust cart on real RV32 silicon.
   The float ABI correctness is validated by rv32emu's instruction-accurate
   simulation; real-silicon confirmation is a follow-up.
 - **WASM target.** Rust→WASM is a separate compilation story; not in scope here.

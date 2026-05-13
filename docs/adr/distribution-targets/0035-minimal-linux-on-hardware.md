@@ -5,7 +5,7 @@ Accepted
 
 ## Context
 
-The hardware target (Milk-V Duo class SBCs) needs a software stack. Options:
+The hardware target (K230D class SBCs) needs a software stack. Options:
 - **Full desktop Linux** (Raspbian, Ubuntu): easy to develop with, but
   exposes a desktop shell — breaks the fantasy console illusion.
 - **Bare-metal** (no OS): maximum control, no overhead, but requires writing

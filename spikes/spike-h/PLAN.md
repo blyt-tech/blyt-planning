@@ -35,7 +35,7 @@ as an expected cart syscall (for the ring buffer). With direct
 allowlist is derivable from strace of the process startup sequence alone,
 which is small and well-understood.
 
-**Platform.** Real Milk-V Duo hardware is the final validation target.
+**Platform.** Real K230D hardware is the final validation target.
 Initial development and mechanism verification uses QEMU full-system
 emulation of RISC-V64 (`qemu-system-riscv64`), which correctly exercises
 `CONFIG_COMPAT`, seccomp-bpf, Linux namespaces, and cgroups v2 at the kernel
@@ -71,9 +71,9 @@ at the host level and does not exercise any of these kernel mechanisms.
   unknown until the runtime is implemented. The spike establishes that a
   tight allowlist is sound in principle and confirms the minimal set for
   the test harness.
-- **Real Milk-V Duo hardware numbers**. QEMU validates the mechanism; the
-  hardware-specific constants (CoreMark/MHz for the C906, cpu.max quota for
-  the Duo) are a follow-on measurement once the board is available.
+- **Real K230D hardware numbers**. QEMU validates the mechanism; the
+  hardware-specific constants (CoreMark/MHz for the C908, cpu.max quota for
+  the K230D) are a follow-on measurement once the board is available.
 - **Pi Zero 2 W numbers**. Still pending from Spike A; Stage 4 uses the
   500 MIPS placeholder and is designed to substitute the real number when
   it arrives.
@@ -127,7 +127,7 @@ mechanism validation.
    has no libc dependency and can target `ilp32f` exactly, matching the
    cart spec. All other binaries (adversary, busy_loop, Lua workloads)
    that link against musl use `ilp32d` — ABI alignment with the cart spec
-   requires a custom toolchain or the Milk-V Duo's native environment.
+   requires a custom toolchain or the K230D vendor rv64ilp32 toolchain.
    Document this divergence; it is out of spike scope.
 
 5. Confirm host toolchain versions:
@@ -324,14 +324,14 @@ produces a reasonable quota value.
     Write `cpu.max "quota_us 50000"` to the test cgroup.
 
     Note: on QEMU, `measured_MIPS` reflects QEMU's emulation speed on the
-    host machine, which is not representative of real C906 silicon. The QEMU
+    host machine, which is not representative of real C908 silicon. The QEMU
     run validates that the calibration formula and quota write work correctly;
-    the actual Pi_MIPS / C906_MIPS ratio and the resulting Milk-V Duo constant
+    the actual Pi_MIPS / C908_MIPS ratio and the resulting K230D constant
     are hardware measurements deferred to when the board is available.
 
     The three calibration options from the spec (in ascending order of
     simplicity): per-boot measurement, per-installation measurement, baked
-    constant per known hardware target. For the Milk-V Duo a baked constant
+    constant per known hardware target. For the K230D a baked constant
     is the simplest and is the recommended production approach — run once on
     real hardware, publish the `cpu.max` pair in the image config.
 
@@ -356,8 +356,8 @@ produces a reasonable quota value.
     - `entity_update` mean = 778 ms (vs 6.0 ms unthrottled)
 
     Exact numeric matching against Pi is not required — QEMU calibration
-    does not predict real C906 performance. Hardware-accurate numbers follow
-    from running the same procedure on the Milk-V Duo.
+    does not predict real C908 performance. Hardware-accurate numbers follow
+    from running the same procedure on the K230D.
 
 ---
 
@@ -373,7 +373,7 @@ produces a reasonable quota value.
   `rv32gc/ilp32d` (double-float ABI). Only `hello.S` (which has no libc
   dependency) can be built with the cart-spec `rv32imfc/ilp32f`. All other
   spike binaries use `ilp32d`. Full ABI alignment requires a custom
-  toolchain build or the Milk-V Duo's native compiler. Out of spike scope.
+  toolchain build or the K230D vendor rv64ilp32 toolchain. Out of spike scope.
 
 - **seccomp compat syscalls on RV32 (RESOLVED IN SPIKE).** The compat layer
   introduces `riscv_flush_icache` (syscall 258/259) which musl RV32 calls
@@ -398,9 +398,9 @@ produces a reasonable quota value.
   rejected. Use `50000 500000` (50 ms in 500 ms) or equivalent. Confirmed.
 
 - **QEMU cgroup numbers are not hardware-representative.** The cpu.max quota
-  derived from QEMU CoreMark does not predict anything about a real C906.
+  derived from QEMU CoreMark does not predict anything about a real C908.
   Stage 4 validates the mechanism; record the QEMU numbers with a clear
-  note that hardware-accurate constants require Milk-V Duo measurement.
+  note that hardware-accurate constants require K230D measurement.
 
 - **Spike B bare-metal port to Linux ABI.** The Lua VM in spike-b uses a
   custom `malloc`/`free` over a static heap, a hand-rolled `snprintf`, and
@@ -440,15 +440,17 @@ produces a reasonable quota value.
 
 ## Open items deferred to real hardware
 
-The following require a Milk-V Duo (C906) or equivalent physical RISC-V board:
+The following require a K230D (C908) or equivalent physical RISC-V board with
+UXL=32 hardware support. Note: Milk-V Duo / Duo S (C906) cannot substitute —
+the C906 lacks UXL=32 and cannot exec ILP32 binaries.
 
-1. **C906 CoreMark/MHz measurement.** The QEMU calibration run validates the
-   formula; the actual quota constant for the Milk-V Duo requires a real
-   CoreMark run on the C906 silicon.
+1. **C908 CoreMark/MHz measurement.** The QEMU calibration run validates the
+   formula; the actual quota constant for the K230D requires a real
+   CoreMark run on the C908 silicon.
 
-2. **`cpu.max` constant for the Milk-V Duo image.** Once the C906 CoreMark
+2. **`cpu.max` constant for the K230D image.** Once the C908 CoreMark
    and Spike A's Pi Zero 2 W MIPS are known, compute and bake
-   `quota_us = floor(50000 × Pi_MIPS / C906_MIPS)` into the buildroot image.
+   `quota_us = floor(50000 × Pi_MIPS / C908_MIPS)` into the buildroot image.
 
 3. **Production seccomp allowlist.** The full runtime syscall set is
    determined once the runtime is implemented. The spike confirms the approach
@@ -462,4 +464,4 @@ The following require a Milk-V Duo (C906) or equivalent physical RISC-V board:
 5. **Cart-spec ABI (`ilp32f`) Lua workloads.** The spike's Lua binaries use
    `ilp32d` due to toolchain constraints. Running the benchmark suite with
    a properly spec-aligned `ilp32f` binary requires either a custom toolchain
-   or the Milk-V Duo's native compiler environment.
+   or the K230D vendor rv64ilp32 toolchain.

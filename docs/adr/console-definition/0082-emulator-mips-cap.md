@@ -88,6 +88,6 @@ at full speed). This is the only period in which fast-host drift is accepted.
 - JIT-compiled execution paths (if a JIT is added in future) have approximate
   cycle costs rather than exact ones. The MIPS cap remains correct in
   aggregate even if individual block costs are approximate.
-- The cap does not apply on native RISC-V hardware. A Milk-V Duo runs carts
+- The cap does not apply on native RISC-V hardware. A K230D runs carts
   directly; its CPU speed is what it is, and no emulator layer is present to
   throttle.
