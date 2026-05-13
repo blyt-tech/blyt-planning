@@ -25,3 +25,4 @@ names), and the performance strategy that informs API shape decisions.
 | [0113](0113-runtime-handle-validation.md) | Runtime handle validation — range checks, generation counters, type confusion prevention |
 | [0114](0114-ecall-argument-validation.md) | ECALL argument validation policy — integers, flags, enums, strings, out-params |
 | [0118](0118-lua-interface-security.md) | Lua interface security for hybrid carts — Layer 2 scope, export surface, WASM parsing |
+| [0121](0121-cpp-cart-language.md) | C++ as a supported cart language — conventions, static libc++, RNG codegen, coroutine limits |
