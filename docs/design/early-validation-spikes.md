@@ -1,13 +1,43 @@
 # Early validation spikes
 
-Before building the full runtime, a small set of focused spikes de-risk the
+Before building the full runtime, a series of focused spikes de-risk the
 architectural bets that could actually invalidate the design. Everything else
 — ELF loading, the full API surface, the packer, debug tooling — is
-well-understood engineering. These five questions are not.
+well-understood engineering. The questions below are not.
 
 Each spike is the minimum code needed to answer its question. None of them
 requires a working cart format, a complete API, or any tooling beyond a
 compiler and a target device.
+
+---
+
+## Status at a glance
+
+Each spike letter links to its section below.
+
+| Spike | Status | Hardware | Manual gate | Eng. followup | External blocker |
+|-------|--------|----------|-------------|---------------|-----------------|
+| [A](#spike-a--interpreter-throughput-on-minimum-emulation-hardware) — hardware measurement pending on Pi Zero 2 W; rv32emu baseline and MIPS cap methodology established | partial | Pi Zero 2 W | — | — | — |
+| [B](#spike-b--lua-running-inside-the-interpreter-on-minimum-hardware) — hardware measurement pending (depends on Spike A MIPS cap); Lua workload structure and frame-timing harness established | partial | Pi Zero 2 W | — | yes | — |
+| [C](#spike-c--lua-as-a-host-provided-shared-library-in-the-vm) — Lua 5.4 builds as a versioned RV32IMFC shared library and is callable via PLT from cart code | done | — | — | yes | Debian rv32 multilib gap |
+| [D](#spike-d--cross-platform-determinism) — the same cart produces bit-identical per-frame digests on arm64 and amd64, including f32 transcendentals | done | — | — | yes | — |
+| [E](#spike-e--performance-and-correctness-in-a-wasm-container) — native-C carts fit the WASM budget; Lua-in-rv32emu is 7.4× over budget on desktop (led to Spike F); mobile measurement pending | partial | mid-range Android | phone perf run | yes | — |
+| [F](#spike-f--lua-compiled-directly-to-wasm-no-rv32emu-layer) — Lua compiled direct to WASM fits the desktop budget (doom_tick 1.71 ms mean); mobile measurement pending | partial | mid-range Android | phone perf run | yes | — |
+| [G](#spike-g--wasm-lua-direct-per-frame-cpu-budget-enforcement) — `lua_sethook` at N=100 enforces the frame budget with <3% overhead on Chrome desktop; mobile measurement pending | partial | mid-range Android, iPhone | — | yes | iOS App Store forces JSC (no V8) |
+| [G.2](#spike-g2--wasm-lua-direct-dev-mode-pi-parity-throttle) — Chrome's ~100 µs `performance.now()` floor makes per-line busy-wait throttle impossible; abandoned in favour of G.3 | failed | — | — | superseded | Chrome timer clamp (~100 µs, Spectre era) |
+| [G.3](#spike-g3--wasm-lua-direct-accumulated-debt-pi-parity-throttle) — `LUA_MASKLINE` with accumulated-debt tracking matches Pi-class frame times within ±0.4% accuracy on Chrome desktop | done | — | confirm in VS Code web view | yes | — |
+| [H](#spike-h--native-risc-v-cart-execution-and-sandboxing) — a RISC-V cart runs natively as ILP32 on RV64 Linux; IPC round-trip <10 µs; seccomp blocks adversarial syscalls; cgroups v2 CPU quota available; Milk-V Duo silicon validation pending | partial | Milk-V Duo | — | yes | libseccomp `SCMP_ARCH_RISCV32` gap; Ubuntu ILP32 kernel |
+| [I](#spike-i--cart-format-end-to-end-validation) — all four cart types (C, C+lib, Lua, Lua+C-lib) build, load, and execute correctly across the emulator, WASM, and native RISC-V targets | done | — | — | yes | — |
+| [J](#spike-j--debugger-composition-dap--gdb-stub-under-the-existing-hook-load) — three-way `lua_sethook` composition (budget + throttle + DAP) works without interference; GDB DWARF unwinds through the cart PLT into pre-mapped libraries; VS Code F5 recording pending | partial | — | VS Code F5 recording | yes | — |
+| [K](#spike-k--cross-platform-save-state-portability-end-to-end) — a save state serialised on arm64 deserialises byte-identically on amd64 and produces the same per-frame digest as a same-host continuation | done | — | — | yes | rv32emu `syscall_read` overflow (upstream fix) |
+| [L](#spike-l--libretro-core-adapter-feasibility) — the frontend-pulls model bridges to libretro's callback-pull in a ~400-line shim; `retro_serialize_size` is computable at cart-load time; RetroArch five-behaviour demo pending | partial | Linux+RetroArch host | RetroArch demo (5-behaviour gate) | yes | — |
+| [M](#spike-m--managed-lua-coroutine-saverestore-end-to-end) — `blyt32.coroutine.create{}` round-trips save/restore byte-identically across every yield point in both cross-host directions (928 runs) | done | — | — | yes | — |
+| [N](#spike-n--hot-reload-via-saverestore-lua-and-native-paths) — native and Lua carts reload mid-run with POD state intact; latency targets met (<3 s native, <500 ms Lua); incompatible edits surface clean diagnostics | done | — | — | yes | — |
+| [O](#spike-o--rust-cart-end-to-end) — a Rust `no_std` cart compiles to RV32IMAFC, links against libblyt32, and produces byte-identical digests to an equivalent C cart; both compile-fail type guards work | done | — | — | yes | — |
+| [P](#spike-p--rust-heap-allocator-atomics-and-on_load-contract)<br>- a manifest-declared heap region supports `Vec` and `Arc` under rv32emu<br>- `AtomicU32` requires explicit inline AMO assembly; LLVM emits plain loads/stores on rv32imafc by default<br>- `on_load` correctly separates resource-derived heap (survives rewind) from state-derived heap (rebuilt from restored state) | done | — | — | yes | — |
+| [Q](#spike-q--luarust-hybrid-binding-rv32-path-and-wasm-call-on-demand)<br>- Rust `extern "C"` Lua C API calls resolve correctly against `libconsolelua.so` in the RV32IMAFC guest<br>- rv32emu operates as a per-call function server via a sentinel-ECALL mechanism (i32 and f32 confirmed)<br>- a single WASM module interleaves Lua-direct and rv32emu call-on-demand; cross-path determinism is byte-exact | done | — | — | yes | — |
+| [R](#spike-r--two-phase-seccomp-with-raw-bpf-for-rv32-ilp32)<br>- raw BPF correctly dispatches on both `AUDIT_ARCH_RISCV64` and `AUDIT_ARCH_RISCV32` in a single installed filter<br>- LIFO multi-filter semantics compose correctly across phase-1 (pre-exec) and phase-2 (post-exec)<br>- production rv32emu allowlist (`seccomp_allowlist.h`, 23 syscalls) committed | done | — | — | yes | libseccomp `SCMP_ARCH_RISCV32` gap |
+| [S](#spike-s--hardware-trusted-native-exec-seccomp-path)<br>- `seccomp_data.arch = AUDIT_ARCH_RISCV32` for natively exec'd ILP32 processes (3 kernel patches required on c-sky 6.5-rc1)<br>- the arch-dispatch filter applies correct per-arch rules across the LP64→ILP32 exec boundary<br>- `libblyt32.so`'s constructor installs phase-2 before cart code runs (socket → SIGSYS, execve → SIGSYS, write → exit 0) | done | RISC-V (QEMU; real hardware pending) | — | yes | 3 kernel patches required for ILP32 `seccomp_data.arch` |
 
 ---
 
@@ -1553,6 +1583,23 @@ any outstanding M/N follow-up work.
 
 ## Spike P — Rust heap allocator, atomics, and on_load contract
 
+**Status:** PASS. Implementation in [`spikes/spike-p/`](../../spikes/spike-p/);
+results in [`spike-p-results.md`](spike-p-results.md). All five stages and all
+digest gates pass on arm64 and amd64 (2026-05-09). Six findings recorded. Key
+results: (1) `linked_list_allocator`-backed `#[global_allocator]` works
+correctly under rv32emu — `Vec`, `Arc`, and the realloc growth path all execute
+without panics; 30-frame cross-host digests are byte-equal. (2) `AtomicU32` on
+`riscv32imafc-unknown-none-elf` uses LLVM single-threaded atomic lowering (plain
+loads/stores, no AMO opcodes); explicit inline assembly (`amoadd.w.aqrl`,
+`lr.w.aq`/`sc.w.rl`) is required to emit A-extension instructions — rv32emu
+executes them correctly once `CONFIG_EXT_A=y` is set. (3) The `on_load`
+two-category contract is confirmed: state-derived heap data is rebuilt from
+restored state buffer values; cross-host arm64-save → amd64-load digest gate
+passes. Two design findings require ADR follow-up: `#[global_allocator]` must be
+in the final cart crate (not the SDK rlib), and the correct load sequence is
+`init → state restored → on_load`. ADR-0087 and ADR-0108 amendments proposed in
+`docs/design/spike-p-results.md`.
+
 **The question:** Does a manifest-declared heap region wired up as a Rust
 `#[global_allocator]` let `Vec`, `Arc`, and other `alloc` types work
 correctly in a `no_std` Rust cart? Do `AtomicU32` and `Once` emit
@@ -1674,6 +1721,24 @@ Can run immediately; no other spikes are blocking.
 ---
 
 ## Spike Q — Lua+Rust hybrid binding: rv32 path and WASM call-on-demand
+
+**Status:** PASS. Implementation in [`spikes/spike-q/`](../../spikes/spike-q/);
+results in [`spike-q-results.md`](spike-q-results.md). All four stages and all
+digest gates pass on arm64 and amd64, with the WASM/Node path byte-equal to both
+rv32 paths (2026-05-09). Six findings recorded. Key results: (1) `extern "C"`
+Lua C API calls from `no_std` Rust resolve correctly against `libconsolelua.so`
+in the RV32IMAFC guest — the Rust compiler emits the same `R_RISCV_CALL`/
+`R_RISCV_JUMP_SLOT` relocations as C, and fc32_dynload resolves them identically.
+(2) `#[link_section = ".lua_exports"]` with `#[used]` and `KEEP(*(.lua_exports))`
+in the linker script correctly emits the 80-byte-per-entry section and survives
+gc-sections. (3) rv32emu can be operated as a call-on-demand function server via
+a sentinel-ECALL mechanism: `rv32emu_call_fn` sets PC to the target function,
+places args in a0–a5 (integer) or fa0–fa5 (float), runs until ECALL 0xDEAD
+fires, and reads the return from a0 or fa0. The ilp32f float register ABI is
+confirmed (addf(1.0f, 2.0f) → 0x40400000 on both hosts). (4) A single
+Emscripten WASM module can contain both the Lua-direct runtime and rv32emu in
+call-on-demand mode; the trampoline layer correctly bridges the Lua stack and the
+rv32emu register ABI. Determinism across all three paths is byte-exact.
 
 **The question:** Does the ADR-0111 Lua+Rust hybrid binding mechanism work
 end-to-end on both execution paths?
@@ -1873,6 +1938,15 @@ any remaining spikes that do not touch rv32emu's WASM build.
 
 ## Spike R — Two-phase seccomp with raw BPF for RV32 ILP32
 
+**Status:** PASS. Implementation in [`spikes/spike-r/`](../../spikes/spike-r/);
+results in [`spike-r-results.md`](spike-r-results.md). All four stages pass on
+Fedora 42 RISC-V QEMU. Raw BPF arch-dispatch correctly handles both
+`AUDIT_ARCH_RISCV64` and `AUDIT_ARCH_RISCV32`. LIFO multi-filter semantics
+confirmed. Stages 2–4 used `rv32emu` as the cart workload because the Fedora 42
+kernel lacks the ILP32 ELF binary loader; the production allowlist
+(`seccomp_allowlist.h`, 23 syscalls) is complete for the emulated-target path.
+The ILP32 hardware native-exec path is validated in Spike S.
+
 **The question:** Can a hand-written raw BPF seccomp filter correctly
 implement two-phase enforcement for a fork/exec launcher where the
 launcher process is LP64 (`AUDIT_ARCH_RISCV64`) and the cart process
@@ -1986,6 +2060,18 @@ immediately; does not depend on any pending spike.
 ---
 
 ## Spike S — Hardware trusted native-exec seccomp path
+
+**Status:** PASS. Implementation in [`spikes/spike-s/`](../../spikes/spike-s/);
+results in [`spike-s-results.md`](spike-s-results.md). All five stages pass
+(2026-05-12/13) using the c-sky/csky-linux `sg2042-master-qspinlock-64ilp32_v4`
+tree (Linux 6.5-rc1 + 3 patches) booted with the Fedora 42 Cloud rootfs under
+QEMU on Apple Silicon. `seccomp_data.arch = AUDIT_ARCH_RISCV32 = 0x400000F3`
+confirmed for natively exec'd ILP32 processes. Arch-dispatch filter confirmed
+across the LP64→ILP32 exec boundary. `libblyt32.so` constructor installs
+phase-2 before cart code (socket → SIGSYS; execve → SIGSYS; write → exit 0).
+`seccomp_allowlist_s.h` committed. Three kernel patches required: `syscall_get_arch`
+TIF_32BIT check, `SECCOMP_ARCH_COMPAT` definition, and seccomp cache skip for
+ILP32 processes.
 
 **The question:** Does the hardware trusted native-exec path (ADR-0119)
 work in practice? Specifically: can a LP64 launcher exec an ILP32 cart
@@ -2196,7 +2282,7 @@ implementation of the standalone OS sandbox.
 
 ## Followup status
 
-Spikes A through Q have all been executed. Several spikes have outstanding items that have not yet
+Spikes A through S have all been executed. Several spikes have outstanding items that have not yet
 been closed — either because real hardware is not yet on hand, because
 a manual / visual gate has not yet been performed, or because a clearly-
 scoped piece of post-spike engineering has been logged for later. This
@@ -2205,30 +2291,7 @@ result documents. **Authoritative detail lives in each spike's
 `docs/design/spike-X-results.md` and `spikes/spike-X/TASKS.md`** —
 entries here are pointers, not the full record.
 
-### Status at a glance
-
-| Spike | Status   | Hardware             | Manual gate                      | Eng. followup | External blocker                              |
-|-------|----------|----------------------|----------------------------------|---------------|-----------------------------------------------|
-| A     | partial  | Pi Zero 2 W          | —                                | —             | —                                             |
-| B     | partial  | Pi Zero 2 W          | —                                | yes           | —                                             |
-| C     | done     | —                    | —                                | yes           | Debian rv32 multilib gap                      |
-| D     | done     | —                    | —                                | yes           | —                                             |
-| E     | partial  | mid-range Android    | phone perf run                   | yes           | —                                             |
-| F     | partial  | mid-range Android    | phone perf run                   | yes           | —                                             |
-| G     | partial  | mid-range Android, iPhone | —                           | yes           | iOS App Store forces JSC (no V8 path)         |
-| G.2   | failed   | —                    | —                                | superseded    | Chrome timer clamp (~100 µs, Spectre era)     |
-| G.3   | done     | —                    | confirm in real VS Code web view | yes           | —                                             |
-| H     | partial  | Milk-V Duo           | —                                | yes           | libseccomp `SCMP_ARCH_RISCV32` gap; Ubuntu kernel ILP32 compat |
-| I     | done     | —                    | —                                | yes           | —                                             |
-| J     | partial  | —                    | VS Code F5 recording             | yes           | —                                             |
-| K     | done     | —                    | —                                | yes           | rv32emu `syscall_read` overflow (upstream fix) |
-| L     | partial  | Linux+RetroArch host | RetroArch demo (5-behaviour gate) | yes          | —                                             |
-| M     | done     | —                    | —                                | yes           | —                                             |
-| N     | done     | —                    | —                                | yes           | —                                             |
-| O     | done     | —                    | —                                | yes           | —                                             |
-| P     | done     | —                    | —                                | yes           | —                                             |
-| Q     | done     | —                    | —                                | yes           | —                                             |
-| R     | pending  | —                    | —                                | —             | —                                             |
+The status table is at the [top of this document](#status-at-a-glance).
 
 ### Hardware-blocked items
 
@@ -2392,6 +2455,18 @@ the full story.
   space). Multi-module carts (multiple `#[lua_module]` instances). ADR-0111
   amendment: note `sym_addr` generation responsibility (proc macro) and
   `FC32_SENTINEL_ADDR` reservation requirement.
+- **R:** Production `seccomp_allowlist.h` validation on real cart workloads
+  (current allowlist derived from Spike I binaries under rv32emu; needs
+  re-measurement after any cart API changes). `SECCOMP_FILTER_FLAG_TSYNC`
+  if rv32emu ever becomes multi-threaded.
+- **S:** Hardware validation on real RISC-V silicon (QEMU-only so far; bare-
+  metal syscall path may differ). `SECCOMP_FILTER_FLAG_TSYNC` if
+  `libblyt32.so` or the cart runner is ever multi-threaded. Full DT_NEEDED
+  set (`libblyt32.so`, `libblytc.so`, `libblyt32lua.so`) — this spike uses
+  a minimal stub; each additional library's phase-1 ld.so syscall
+  contribution must be characterised. Upstream the three kernel patches.
+  Stage 4 cart workloads (cart_a/b via launcher_s; skipped because the
+  Makefile didn't SCP spike-i carts).
 
 ### External blockers
 
@@ -2406,78 +2481,15 @@ upstream patch, a vendor change, or a workaround we have shipped.
   Fundamental Chrome behaviour, not a fixable bug. G.2 abandoned;
   G.3 took its place.
 - **H / R** — `libseccomp` does not define `SCMP_ARCH_RISCV32`. Vendor
-  gap requiring custom raw-BPF workaround (the subject of Spike R).
-  Ubuntu kernel lacks ILP32 CONFIG_COMPAT (vendor choice, not bug);
-  Fedora 42 kernel works.
+  gap requiring custom raw-BPF workaround (the subject of Spike R, now
+  resolved for the emulated path). Ubuntu kernel lacks ILP32
+  CONFIG_COMPAT (vendor choice, not bug); Fedora 42 kernel works.
 - **K** — Upstream rv32emu `syscall_read` writes to a fixed 4 KiB
   host buffer without bounds-checking the cart-supplied count.
   Worked around in spike by chunking reads to 4 KiB on cart side;
   one-line upstream fix needed (`min(count, PREALLOC_SIZE)`).
-
-### Spikes M and N
-
-Both are complete.
-
-- **Spike M (managed Lua coroutine save/restore) — PASS.** 928
-  cross-host runs byte-identical. ADR-0012 amended (2026-05-06) with
-  the single-function `create(function(ctx), seed?)` shape, constrained
-  `ctx` shape, and load-resume idiom contract. Post-spike engineering
-  follow-ups logged below.
-- **Spike N (hot-reload via save/restore) — PASS.** 148 cross-host
-  runs byte-identical; l6/l9/l10 clean-failure diagnostics byte-equal
-  cross-host; all latency gates pass (< 3 s native, < 500 ms Lua).
-  ADR-0045 and ADR-0083 both amended (2026-05-07). Post-spike
-  engineering follow-ups logged below.
-- **Spike O (Rust cart end-to-end) — PASS.** Four-way digest equality
-  A=B=C=D (Rust arm64 = Rust amd64 = C arm64 = C amd64); float ABI
-  witness `vol=3f000000` on both hosts; both compile-fail guards reject
-  with the expected type errors (2026-05-08). Eight findings recorded
-  (four confirmations, four production follow-ups). ADR-0108 amended
-  (2026-05-09): target corrected to `riscv32imafc-unknown-none-elf`
-  (Finding O-1), Rust elevated to primary native language alongside Lua,
-  single-threaded A-extension rationale added. ADR-0001 amended
-  (2026-05-09): A extension added to the ISA (RV32IMFC → RV32IMAFC).
-  Post-spike follow-ups: full `blyt32` crate, full packer Rust codegen,
-  `cart.build.yaml` language-dispatch integration, Milk-V Duo native
-  target.
-- **Spike P (Rust heap allocator, atomics, on_load contract) — PASS.**
-  All five stages and all digest gates pass on arm64 and amd64
-  (2026-05-09). Six findings recorded. Key results: (1) `linked_list_allocator`-backed
-  `#[global_allocator]` works correctly under rv32emu — `Vec`, `Arc`,
-  and the realloc growth path all execute without panics; 30-frame
-  cross-host digests are byte-equal. (2) `AtomicU32` on
-  `riscv32imafc-unknown-none-elf` uses LLVM single-threaded atomic
-  lowering (plain loads/stores, no AMO opcodes); explicit inline
-  assembly (`amoadd.w.aqrl`, `lr.w.aq`/`sc.w.rl`) is required to emit
-  A-extension instructions — rv32emu executes them correctly once
-  `CONFIG_EXT_A=y` is set (disabled by default in the spike-a image).
-  (3) The `on_load` two-category contract is confirmed: state-derived
-  heap data rebuilt from restored state buffer values; cross-host
-  arm64-save → amd64-load digest gate passes. Two design findings
-  require ADR follow-up: `#[global_allocator]` must be in the final
-  cart crate (not the SDK rlib), and the correct load sequence is
-  `init → state restored → on_load` (not bare `on_load` without prior
-  `init`). ADR-0087 and ADR-0108 amendments proposed in
-  `docs/design/spike-p-results.md`. Post-spike follow-ups logged below.
-- **Spike Q (Lua+Rust hybrid binding: rv32 path and WASM call-on-demand) — PASS.**
-  All four stages and all digest gates pass on arm64 and amd64, with the
-  WASM/Node path byte-equal to both rv32 paths (2026-05-09). Six findings
-  recorded. Key results: (1) `extern "C"` Lua C API calls from `no_std` Rust
-  resolve correctly against `libconsolelua.so` in the RV32IMAFC guest — the
-  Rust compiler emits the same `R_RISCV_CALL`/`R_RISCV_JUMP_SLOT` relocations
-  as C, and fc32_dynload resolves them identically. (2) `#[link_section =
-  ".lua_exports"]` with `#[used]` and `KEEP(*(.lua_exports))` in the linker
-  script correctly emits the 80-byte-per-entry section and survives gc-sections.
-  (3) rv32emu can be operated as a call-on-demand function server via a
-  sentinel-ECALL mechanism: `rv32emu_call_fn` sets PC to the target function,
-  places args in a0–a5 (integer) or fa0–fa5 (float), runs until ECALL 0xDEAD
-  fires, and reads the return from a0 or fa0. The ilp32f float register ABI
-  is confirmed (addf(1.0f, 2.0f) → 0x40400000 on both hosts). (4) A single
-  Emscripten WASM module can contain both the Lua-direct runtime and rv32emu
-  in call-on-demand mode; the trampoline layer correctly bridges the Lua stack
-  and the rv32emu register ABI. Determinism across all three paths is
-  byte-exact. Post-spike follow-ups: proc macro for `.lua_exports` and Lua C
-  API glue generation, production `rv32emu_call_fn` API (error classification,
-  timeout, re-entrancy), full `.lua_exports` parser, `rv_set_fpreg`/`rv_get_fpreg`
-  public API, sentinel-address reservation in the memory map, per-frame budget
-  analysis for realistic Rust payloads, heap allocation in hybrid carts.
+- **S** — Three kernel patches required on the c-sky 6.5-rc1 tree for
+  `seccomp_data.arch = AUDIT_ARCH_RISCV32` to work: `syscall_get_arch`
+  TIF_32BIT check, `SECCOMP_ARCH_COMPAT` definition, and seccomp cache
+  skip for ILP32 processes. These patches need upstream review; the
+  workaround (TIF_32BIT cache-skip) is spike-quality only.
