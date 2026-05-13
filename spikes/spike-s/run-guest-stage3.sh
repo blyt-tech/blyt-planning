@@ -51,10 +51,18 @@ for tool in strace python3; do
         || { err "$tool not available"; exit 1; }
 done
 
-# Confirm ld.so is installed (Stage 2 prerequisite)
+# Install ILP32 ld.so if not already present (fresh QEMU overlay = no persistent state).
+# The Makefile SCP's ld-musl-riscv32.so.1 to /tmp/ for each QEMU run.
 if ! ls /lib/ld-musl-riscv32*.so* >/dev/null 2>&1; then
-    err "ILP32 ld.so not found at /lib/ld-musl-riscv32*.so* — run Stage 2 first"
-    exit 1
+    if [ -f /tmp/ld-musl-riscv32.so.1 ]; then
+        sudo mkdir -p /lib
+        sudo cp /tmp/ld-musl-riscv32.so.1 /lib/ld-musl-riscv32.so.1
+        sudo chmod +x /lib/ld-musl-riscv32.so.1
+        echo "  Installed ld.so from /tmp/ld-musl-riscv32.so.1"
+    else
+        err "ILP32 ld.so not found at /lib/ or /tmp/ — check Makefile SCP"
+        exit 1
+    fi
 fi
 ok "ILP32 ld.so present: $(ls /lib/ld-musl-riscv32*.so* | head -1)"
 
@@ -74,37 +82,45 @@ mkdir -p "$CARTDIR" "$ILP32_LIBDIR"
 
 STAGED_ANY=0
 
-# spike-i cart workloads (ILP32 ELFs compiled against libconsole.so)
+# spike-i cart workloads.
+# virtfs is unavailable with the c-sky 6.5-rc1 kernel; the Makefile
+# SCP's carts to /tmp/ directly.  Fall back to virtfs if /tmp/ is absent.
 for lib in libconsole.so libconsolelua.so; do
-    src="$SPIKE_I_STAGE/lib/$lib"
-    if [ -f "$src" ]; then
-        cp "$src" "$ILP32_LIBDIR/"; ok "lib: $lib"
+    if [ -f "/tmp/$lib" ]; then
+        cp "/tmp/$lib" "$ILP32_LIBDIR/"
+        ok "lib: $lib (from /tmp)"
+    elif [ -f "$SPIKE_I_STAGE/lib/$lib" ]; then
+        cp "$SPIKE_I_STAGE/lib/$lib" "$ILP32_LIBDIR/"
+        ok "lib: $lib (from virtfs)"
     else
-        echo "  WARNING: $src not found (spike-i stage not present)"
+        echo "  NOTE: $lib not found (spike-i stage not present)"
     fi
 done
 
 for c in a b; do
-    src="$SPIKE_I_STAGE/cases/case_$c/cart_$c"
-    if [ -f "$src" ]; then
-        cp "$src" "$CARTDIR/cart_$c"
+    if [ -f "/tmp/cart_$c" ]; then
+        cp "/tmp/cart_$c" "$CARTDIR/cart_$c"
         chmod +x "$CARTDIR/cart_$c"
-        echo "  cart_$c: $(file "$CARTDIR/cart_$c" | grep -o 'RISC-V.*' || echo '?')"
+        echo "  cart_$c (from /tmp): $(file "$CARTDIR/cart_$c" 2>/dev/null | grep -o 'RISC-V.*' || echo '?')"
         ok "cart_$c (spike-i case $c)"
+        STAGED_ANY=1
+    elif [ -f "$SPIKE_I_STAGE/cases/case_$c/cart_$c" ]; then
+        cp "$SPIKE_I_STAGE/cases/case_$c/cart_$c" "$CARTDIR/cart_$c"
+        chmod +x "$CARTDIR/cart_$c"
+        ok "cart_$c (spike-i case $c, from virtfs)"
         STAGED_ANY=1
     else
         echo "  SKIP: spike-i cart_$c not found (not blocking)"
     fi
 done
 
-# spike-q rust cart
-for candidate in "$SPIKE_Q_ELFS/rust_cart.elf" "$SPIKE_Q_ELFS/out/rust_cart.elf"; do
+# spike-q rust cart (static; from /tmp/ or virtfs)
+for candidate in "/tmp/rust_cart.elf" "$SPIKE_Q_ELFS/rust_cart.elf" "$SPIKE_Q_ELFS/out/rust_cart.elf"; do
     if [ -f "$candidate" ]; then
         cp "$candidate" "$CARTDIR/rust_cart.elf"
-        ok "rust_cart.elf (spike-q)"; STAGED_ANY=1; break
+        ok "rust_cart.elf (from $candidate)"; STAGED_ANY=1; break
     fi
 done
-[ -z "${candidate:-}" ] || true
 
 # adversary_s_dynamic (minimal cart with DT_NEEDED libblyt32.so)
 if [ -f /tmp/adversary_s_dynamic ]; then

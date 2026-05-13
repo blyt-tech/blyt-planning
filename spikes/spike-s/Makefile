@@ -37,6 +37,8 @@
 ##   make qemu-stage4-s    # End-to-end: launcher + phase-1 + libblyt32 phase-2
 
 SPIKE_H_DIR := $(CURDIR)/../spike-h
+SPIKE_I_DIR := $(CURDIR)/../spike-i
+SPIKE_Q_DIR := $(CURDIR)/../spike-q
 DOCKER_IMAGE := fc32-spike-h       ## reuse spike-h's image (carries riscv32/64 toolchains)
 DOCKER_PLATFORM := linux/arm64
 
@@ -433,6 +435,10 @@ qemu-stage2-s: docker-build-s docker-build-ilp32-s docker-extract-ld-musl
 	$(SCP_BINARIES) -r \
 	    fedora@localhost:/tmp/spike-s-results/ \
 	    $(BUILD)/results/ 2>/dev/null || true
+	$(SCP_BINARIES) \
+	    fedora@localhost:/tmp/spike-s-results/stage2.log \
+	    fedora@localhost:/tmp/spike-s-results/phase1_ld_syscalls.txt \
+	    $(BUILD)/results/ 2>/dev/null || true
 	$(QEMU_STOP)
 	@echo "=== Stage 2 results ==="
 	@grep -E "(PASS|FAIL|===|Stage)" $(BUILD)/results/stage2.log 2>/dev/null || \
@@ -441,6 +447,11 @@ qemu-stage2-s: docker-build-s docker-build-ilp32-s docker-extract-ld-musl
 	    echo "ld.so syscalls:" && cat $(BUILD)/results/phase1_ld_syscalls.txt || true
 
 # ── QEMU Stage 3: cart syscall strace + allowlist derivation ─────────────────
+
+# Stage 3 depends on spike-i/q carts for syscall characterisation.
+# virtfs is unavailable with the c-sky 6.5-rc1 kernel, so carts are SCP'd.
+SPIKE_I_STAGE := $(SPIKE_I_DIR)/build/guest-stage
+SPIKE_Q_WASM  := $(SPIKE_Q_DIR)/wasm-build
 
 .PHONY: qemu-stage3-s
 qemu-stage3-s: docker-build-ilp32-s docker-extract-ld-musl
@@ -452,6 +463,15 @@ qemu-stage3-s: docker-build-ilp32-s docker-extract-ld-musl
 	    $(BUILD)/ld-musl-riscv32.so.1 \
 	    $(CURDIR)/run-guest-stage3.sh \
 	    fedora@localhost:/tmp/
+	@echo "Copying spike-i/q cart binaries (best-effort)..."
+	-$(SCP_BINARIES) \
+	    $(SPIKE_I_STAGE)/cases/case_a/cart_a \
+	    $(SPIKE_I_STAGE)/cases/case_b/cart_b \
+	    $(SPIKE_I_STAGE)/lib/libconsole.so \
+	    $(SPIKE_I_STAGE)/lib/libconsolelua.so \
+	    fedora@localhost:/tmp/ 2>/dev/null || true
+	-$(SCP_BINARIES) $(SPIKE_Q_WASM)/rust_cart.elf \
+	    fedora@localhost:/tmp/ 2>/dev/null || true
 	$(SSH_CMD) \
 	    -o ServerAliveCountMax=30 \
 	    'chmod +x /tmp/run-guest-stage3.sh && \
@@ -459,13 +479,16 @@ qemu-stage3-s: docker-build-ilp32-s docker-extract-ld-musl
 	$(SCP_BINARIES) -r \
 	    fedora@localhost:/tmp/spike-s-results/ \
 	    $(BUILD)/results/ 2>/dev/null || true
+	$(SCP_BINARIES) \
+	    fedora@localhost:/tmp/spike-s-results/stage3.log \
+	    $(BUILD)/results/ 2>/dev/null || true
 	$(QEMU_STOP)
 	@echo "=== Stage 3 results ==="
 	@grep -E "(PASS|FAIL|===|Stage)" $(BUILD)/results/stage3.log 2>/dev/null || \
 	    echo "(log not found)"
-	@[ -f $(BUILD)/results/stage3-strace/syscall_names.txt ] && \
+	@[ -f $(BUILD)/results/spike-s-results/stage3-strace/syscall_names.txt ] && \
 	    echo "Observed cart syscalls:" && \
-	    cat $(BUILD)/results/stage3-strace/syscall_names.txt || true
+	    cat $(BUILD)/results/spike-s-results/stage3-strace/syscall_names.txt || true
 
 # ── QEMU Stage 4: end-to-end Option B ────────────────────────────────────────
 

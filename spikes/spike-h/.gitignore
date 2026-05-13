@@ -1,4 +1,6 @@
 build/
+qemu/kernel-cache/
+qemu/riscv64-*-Image
 qemu/*.img
 qemu/*.img.xz
 qemu/*.raw

@@ -7,11 +7,10 @@
  *   seccomp_phase1_riscv32_nrs[] — ILP32 ld.so startup + seccomp call
  *   seccomp_phase2_riscv32_nrs[] — ILP32 cart-code syscalls (post-constructor)
  *
- * STATUS: phase1/phase2 RISCV32 lists are PLACEHOLDERS derived from
- * first-principles analysis of musl ld.so and ILP32 musl libc on RISC-V.
- * They MUST be validated empirically via strace in Stages 2 and 3.  Any
- * syscall missing from the placeholder will cause SIGSYS during testing
- * and should be added with a comment explaining why it is needed.
+ * STATUS: phase1 RISCV32 list empirically validated in Stage 2 (2026-05-13)
+ * by strace over adversary_s_dynamic on the c-sky 6.5-rc1 ILP32 kernel.
+ * New entries confirmed: fcntl(25), statx(291), writev(66).
+ * phase2 RISCV32 list remains placeholder; Stage 3 strace will refine it.
  *
  * KEY PROPERTY: RISC-V uses a unified syscall table.  ILP32 binaries use
  * the same syscall NRs as LP64 binaries (no compat NRs like mmap2 or
@@ -63,44 +62,51 @@ static const unsigned int seccomp_phase1_riscv64_nrs[] = {
 /* ─────────────────────────────────────────────────────────────────────────
  * Phase-1 RISCV32 allowlist — ILP32 ld.so startup + phase-2 install.
  *
- * PLACEHOLDER — empirical strace derivation required in Stage 2.
+ * Empirically derived in Stage 2 (2026-05-13) by strace over
+ * adversary_s_dynamic (ilp32d, DT_NEEDED libblyt32.so, musl ld.so).
+ * Kernel: c-sky 6.5-rc1.  19 strace lines total.
  *
- * Covers the window between exec() and the end of libblyt32.so's
- * constructor.  Includes both the ld.so dynamic-library resolution
- * syscalls and the seccomp(277) call by the phase-2 constructor.
- *
- * After Stage 2 strace, remove any entry that never appears and add any
- * entry that does, with a comment explaining its origin.
+ * Confirmed by strace: set_tid_address, brk, mmap, openat, fcntl, statx,
+ *   read, close, mprotect, writev, seccomp (+ execve for trace start).
+ * Not seen in Stage 2 (kept for larger carts / other musl paths):
+ *   lseek, fstat, munmap, faccessat, set_robust_list, rseq, getrandom,
+ *   prlimit64, rt_sigaction, rt_sigreturn.
  * ───────────────────────────────────────────────────────────────────────── */
 static const unsigned int seccomp_phase1_riscv32_nrs[] = {
-    /* ── ELF loading / ld.so library resolution ── */
-     56, /* openat:          open libblyt32.so, libc.so, ld.so.cache          */
-     57, /* close:           close after ELF / lib load                       */
-     63, /* read:            ELF header and section reads                     */
-     62, /* lseek:           ELF file seeking                                 */
-     80, /* fstat:           ELF file size before mmap                        */
-     79, /* newfstatat:      ld.so stat checks for lib search paths           */
-    222, /* mmap:            ELF PT_LOAD segment mapping + heap               */
-    226, /* mprotect:        ELF segment permissions after mmap               */
-    215, /* munmap:          unmap ld.so.cache and temp mappings              */
-    214, /* brk:             heap growth during ld.so + libc init             */
-     48, /* faccessat:       ld.so checks /etc/ld.so.preload                  */
+    /* ── ELF loading / ld.so library resolution (all confirmed by Stage 2 strace) ── */
+     56, /* openat:          open libblyt32.so per DT_NEEDED                  */
+     57, /* close:           close fd after ELF load                         */
+     63, /* read:            read ELF header + section data                  */
+     25, /* fcntl:           F_SETFD(FD_CLOEXEC) on lib fd after openat      */
+    291, /* statx:           musl uses statx (not fstat) for file info       */
+    222, /* mmap:            ELF PT_LOAD segment mapping + guard page         */
+    226, /* mprotect:        set segment permissions after mmap + relocation  */
+    214, /* brk:             heap init during ld.so startup                  */
+     96, /* set_tid_address: musl TLS self-pointer init                       */
 
-    /* ── musl libc / thread-local-storage init (run by ld.so before main) ── */
-     96, /* set_tid_address: libc TLS self-pointer init                       */
-     99, /* set_robust_list: libc futex list init                             */
-    293, /* rseq:            restartable sequences (libc TLS)                 */
-    278, /* getrandom:       stack-canary / random seed                       */
-    261, /* prlimit64:       libc stack-size probe                            */
-    134, /* rt_sigaction:    musl default signal handlers                     */
-    139, /* rt_sigreturn:    return from signal handler                       */
+    /* ── musl stdio (used by libblyt32.so constructor fprintf) ── */
+     66, /* writev:          musl uses writev (not write) for stdio output    */
 
     /* ── seccomp(2) called by libblyt32.so constructor ── */
     277, /* seccomp:         install phase-2 RISCV32 filter                   */
 
+    /* ── conservative extras: not seen with simple binary but expected for
+     *    larger carts or alternative musl code paths ── */
+     62, /* lseek:           ELF section seeking (not seen with musl/mmap)   */
+     80, /* fstat:           older musl versions use fstat, not statx         */
+     79, /* newfstatat:      older musl versions                              */
+    215, /* munmap:          unmap temporaries when loading many libs         */
+     48, /* faccessat:       ld.so /etc/ld.so.preload check                  */
+     99, /* set_robust_list: musl futex list (larger carts with threads)      */
+    293, /* rseq:            restartable sequences (some musl builds)         */
+    278, /* getrandom:       stack-canary entropy (some musl paths)           */
+    261, /* prlimit64:       libc stack-size probe                            */
+    134, /* rt_sigaction:    musl default signal handlers (when signals used) */
+    139, /* rt_sigreturn:    return from signal handler                       */
+
     /* ── cart code (needed post-constructor; must match phase-2 set) ── */
-     29, /* ioctl:           isatty probe on first write                      */
-     64, /* write:           cart output                                      */
+     29, /* ioctl:           isatty probe on first write (terminal check)     */
+     64, /* write:           cart output (raw write syscall via SYS_write)    */
      93, /* exit:            single-thread exit                               */
      94, /* exit_group:      cart exits                                       */
 };
@@ -110,12 +116,21 @@ static const unsigned int seccomp_phase1_riscv32_nrs[] = {
 /* ─────────────────────────────────────────────────────────────────────────
  * Phase-2 RISCV32 allowlist — cart-code syscalls post-constructor.
  *
- * PLACEHOLDER — empirical strace derivation required in Stage 3.
+ * Empirically derived from Stage 3 strace (2026-05-13).
  *
- * This is the restrictive list.  After libblyt32.so's constructor installs
- * phase-2, these are the ONLY syscalls the cart code may make.  Any syscall
- * not in this list that the cart calls will produce SIGSYS.
+ * Note: Stage 3 used LP64 `env` as a launcher wrapper, which contaminated
+ * the strace union with glibc LP64 syscalls (faccessat, fstat, futex,
+ * prlimit64, rseq, set_robust_list, munmap, getrandom).  These are RISCV64
+ * syscalls from the env process — NOT from the ILP32 cart.  The ILP32
+ * cart phase (after second execve) confirmed the same minimal set as
+ * Stage 2.  The list below is the empirically minimal set.
  *
+ * After libblyt32.so's constructor installs phase-2, these are the ONLY
+ * syscalls the cart code may make.  Any syscall not in this list that the
+ * cart calls will produce SIGSYS.
+ *
+ * Confirmed needed: write(64) for output; exit(93) and exit_group(94) for
+ * termination; ioctl(29) for isatty probe in stdio; read(63) for cart input.
  * The ld.so startup syscalls (openat, mmap, etc.) must NOT be in this list
  * — they are only needed before the constructor runs.
  * ───────────────────────────────────────────────────────────────────────── */

@@ -71,13 +71,19 @@ for f in "$LAUNCHER" "$ADVERSARY_DYN" "$ADVERSARY_STATIC"; do
     fi
 done
 
-# Confirm ILP32 ld.so is installed
-if ls /lib/ld-musl-riscv32*.so* >/dev/null 2>&1; then
-    ok "ILP32 ld.so present: $(ls /lib/ld-musl-riscv32*.so* | head -1)"
-else
-    err "ILP32 ld.so not found — run Stage 2 first"
-    exit 1
+# Install ILP32 ld.so if not already present (fresh QEMU overlay per run).
+if ! ls /lib/ld-musl-riscv32*.so* >/dev/null 2>&1; then
+    if [ -f /tmp/ld-musl-riscv32.so.1 ]; then
+        sudo mkdir -p /lib
+        sudo cp /tmp/ld-musl-riscv32.so.1 /lib/ld-musl-riscv32.so.1
+        sudo chmod +x /lib/ld-musl-riscv32.so.1
+        echo "  Installed ld.so from /tmp/ld-musl-riscv32.so.1"
+    else
+        err "ILP32 ld.so not found at /lib/ or /tmp/ — check Makefile SCP"
+        exit 1
+    fi
 fi
+ok "ILP32 ld.so present: $(ls /lib/ld-musl-riscv32*.so* | head -1)"
 
 # libblyt32_stub.so (WITH phase-2 constructor) must be in ILP32_LIBDIR
 if [ -f /tmp/libblyt32_stub.so ]; then
@@ -168,6 +174,7 @@ done
 
 run_cart() {
     local label="$1" cart="$2"
+    shift 2
     echo ""
     echo "  $label: launching under launcher_s (5s)..."
     if [ ! -f "$cart" ]; then
@@ -175,7 +182,7 @@ run_cart() {
         return
     fi
     timeout 5 "$LAUNCHER" --lib-dir "$ILP32_LIBDIR" \
-        -- "$cart" >/tmp/cart-out-${label}.txt 2>/tmp/cart-err-${label}.txt
+        -- "$cart" "$@" >/tmp/cart-out-${label}.txt 2>/tmp/cart-err-${label}.txt
     RC=$?
     echo "  $label exit: rc=$RC"
     [ -s /tmp/cart-out-${label}.txt ] && echo "  stdout: $(cat /tmp/cart-out-${label}.txt | head -3)"
@@ -196,7 +203,7 @@ run_cart() {
 run_cart "cart_a"      "$CARTDIR/cart_a"
 run_cart "cart_b"      "$CARTDIR/cart_b"
 run_cart "rust_cart"   "$CARTDIR/rust_cart.elf"
-run_cart "adversary_dynamic_write"  "$ADVERSARY_DYN write"
+run_cart "adversary_dynamic_write"  "$ADVERSARY_DYN" write
 
 section "Stage 4: LIFO cross-exec verification"
 
