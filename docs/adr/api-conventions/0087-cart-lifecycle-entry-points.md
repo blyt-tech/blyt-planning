@@ -25,14 +25,26 @@ void blyt_cart_update(void);
 void blyt_cart_draw(void);
 
 // Optional — SDK provides weak-linked no-op defaults
-void blyt_cart_on_save(void);
-void blyt_cart_on_load(void);
+void blyt_cart_on_new_state(void);
+void blyt_cart_on_save_state(void);
+void blyt_cart_on_load_state(blyt_load_reason_t reason);
 void blyt_cart_cleanup(void);
 void blyt_cart_on_credits(void);
 void blyt_cart_on_quit(void);
 
 // Native carts only — not part of the Lua lifecycle (ADR-0083)
 void blyt_cart_panic(blyt_panic_reason_t reason);
+```
+
+The `blyt_load_reason_t` enum passed to `blyt_cart_on_load_state`:
+
+```c
+typedef enum {
+    BLYT_LOAD_SAVE_GAME  = 0,  // cart called blyt_save_read
+    BLYT_LOAD_SAVE_STATE = 1,  // frontend restored a save state (libretro or dev-mode)
+    BLYT_LOAD_REWIND     = 2,  // rewind
+    BLYT_LOAD_HOT_RELOAD = 3,  // dev-mode hot reload
+} blyt_load_reason_t;
 ```
 
 Cart signals back to the runtime:
@@ -60,8 +72,9 @@ The Lua shim looks up these global function names:
 | `blyt_cart_init` | `init` |
 | `blyt_cart_update` | `update` |
 | `blyt_cart_draw` | `draw` |
-| `blyt_cart_on_save` | `on_save` |
-| `blyt_cart_on_load` | `on_load` |
+| `blyt_cart_on_new_state` | `on_new_state` |
+| `blyt_cart_on_save_state` | `on_save_state` |
+| `blyt_cart_on_load_state` | `on_load_state` |
 | `blyt_cart_cleanup` | `cleanup` |
 | `blyt_cart_on_credits` | `on_credits` |
 | `blyt_cart_on_quit` | `on_quit` |
@@ -104,30 +117,72 @@ cleared buffer and produce bit-identical output to the live render.
 ### Lifecycle sequences
 
 ```
-Cart start:      zero state → init → update/draw loop
-Load save:       blyt_save_read → state restored → on_load → loop continues
-Rewind:          state restored from rewind snapshot → on_load → loop continues
-Reset:           (autosave written if slot set) → zero state → init → loop
-Credits:         on_credits → blyt_credits_done → runtime resumes
-Quit:            on_quit → blyt_quit_ready → cleanup → exit
+Cart start:       zero state → init → on_new_state → update/draw loop
+Reset:            [on_save_state → autosave if slot set] → zero state → init → on_new_state → loop
+Manual save:      on_save_state → runtime writes slot (fsync) → loop continues
+Autosave:         on_save_state → runtime writes slot (no fsync) → loop continues
+Save-game load:   blyt_save_read → state restored → on_load_state(SAVE_GAME) → loop continues
+Save state:       state restored by frontend → on_load_state(SAVE_STATE) → loop continues
+Rewind:           state restored from rewind snapshot → on_load_state(REWIND) → loop continues
+Hot reload:       on_save_state → snapshot → reload → zero state → init → restore → on_load_state(HOT_RELOAD) → loop
+Credits:          on_credits → blyt_credits_done → runtime resumes
+Quit:             on_quit → blyt_quit_ready → cleanup → exit
 ```
+
+**`on_new_state` — fresh-state initialisation.** `on_new_state` fires after
+`init` whenever the runtime has zeroed state and is not about to immediately
+restore a snapshot. It fires on cold start and on reset; it does not fire
+during hot reload, where state is restored from a snapshot immediately after
+`init`. This separates two concerns that `init` would otherwise conflate:
+
+- **`init`** — session-scoped setup: lookup tables, audio registration,
+  resource handles. Valid regardless of whether a new game or a loaded game
+  follows.
+- **`on_new_state`** — initial game-state setup: starting positions, HP,
+  initial scene selection. Appropriate only when state should begin fresh.
+
+Carts that have no distinction between these concerns continue to implement
+everything in `init`; the SDK no-op default for `on_new_state` is correct
+for them.
 
 **Load does not call `init`.** A save load happens during normal cart
 execution (typically from a title screen menu). The runtime restores tracked
-state buffers and fires `on_load`; the `update`/`draw` loop then continues.
-`init` is not called again. Non-saveable state (resources, palette, Lua
-locals) was established by `init` at session start and carries through
-untouched — only tracked state buffers are overwritten by the restore.
+state buffers and fires `on_load_state(BLYT_LOAD_SAVE_GAME)`; the
+`update`/`draw` loop then continues. `init` is not called again.
+Non-saveable state (resources, palette, Lua locals) was established by `init`
+at session start and carries through untouched — only tracked state buffers
+are overwritten by the restore.
 
-**Rewind uses the same `on_load` hook, with the same heap behaviour as
-save-load.** The runtime restores state buffers from the rewind snapshot and
-fires `on_load`; `init` is not called and the heap is not zeroed. Heap
-memory falls into two natural categories: resource-derived data set up in
-`init` (lookup tables, parsed resource structures) which remains valid
-across rewind since resources do not change; and state-derived data
-(entity lists, spatial indices) which may be stale relative to the restored
-state buffers and must be refreshed in `on_load`. Carts whose heap contains
-only resource-derived data need no `on_load` implementation.
+**Rewind and save-state restores fire `on_load_state` with the appropriate
+reason, with the same heap behaviour as save-game load.** The runtime restores
+state buffers from the snapshot and fires `on_load_state`; `init` is not
+called and the heap is not zeroed. Heap memory falls into two natural
+categories: resource-derived data set up in `init` (lookup tables, parsed
+resource structures) which remains valid across restores since resources do
+not change; and state-derived data (entity lists, spatial indices) which may
+be stale relative to the restored state buffers and must be refreshed in
+`on_load_state`. Carts whose heap contains only resource-derived data need no
+`on_load_state` implementation.
+
+**`on_save_state` — pre-serialisation flush.** `on_save_state` fires before
+all POD-buffer persistence operations: manual saves, autosaves, and hot-reload
+snapshots. It does not fire before libretro save states or rewind, which
+capture the entire cart heap atomically via `retro_serialize` and need no
+flush step from the cart. `on_save_state` exists to let carts flush live state
+into POD buffers before serialisation — most commonly when integrating
+third-party libraries (physics engines, dialogue systems) whose internal state
+is not natively stored in POD buffers. Well-formed carts that keep all mutable
+state in POD buffers need not implement it; the SDK no-op default is correct
+for them.
+
+**`on_load_state` reason argument.** The `blyt_load_reason_t` argument
+identifies what triggered the restore. Typical use is playing a load sound or
+showing a notification only for player-visible loads. Carts should treat any
+unrecognised reason value as "rebuild caches, no UI effect" — forward
+compatibility for reasons added in later versions. `BLYT_LOAD_SAVE_STATE` and
+`BLYT_LOAD_REWIND` are only reachable in libretro-frontend builds and
+dev-mode native builds; standard native builds will only see
+`BLYT_LOAD_SAVE_GAME` and `BLYT_LOAD_HOT_RELOAD`.
 
 ### Reset — always present in the pause menu
 
@@ -143,11 +198,13 @@ reset_confirm: "Unsaved progress will be lost."
 ```
 
 **Reset flow:**
-- If an autosave slot is set: runtime writes the autosave silently, then
-  zeros state and calls `init`. No confirmation prompt.
+- If an autosave slot is set: runtime calls `on_save_state`, writes the
+  autosave silently, zeros state, then calls `init` followed by
+  `on_new_state`. No confirmation prompt.
 - If no autosave slot is set: runtime shows a confirmation dialog ("Restart
   the game? Your progress will be lost." or cart-customised text). On
-  confirm, zeros state and calls `init`. On cancel, resumes.
+  confirm, zeros state and calls `init` followed by `on_new_state`. On
+  cancel, resumes.
 
 There is no cart callback for reset. The cart manages whether autosave is
 active; the runtime handles the rest.
@@ -204,11 +261,9 @@ cycles. `blyt_save_set_autosave_interval` clamps silently to this floor in
 release. In dev mode the floor is not enforced, allowing rapid save/load
 testing without waiting a minute per cycle.
 
-**`on_save` is not called for autosaves.** In a fixed-timestep model, tracked
-state is always consistent between frames — there is nothing for the cart to
-flush. `on_save` exists for manual saves where the cart may want to record
-custom metadata or take other pre-save actions. Autosave is a pure runtime
-operation that snapshots tracked state directly.
+**`on_save_state` fires before every POD-buffer write**, including periodic
+autosaves. See "on_save_state — pre-serialisation flush" in the Lifecycle
+sequences section for the full semantics.
 
 **Filesystem sync.** Manual saves and the autosave triggered immediately
 before a reset issue a filesystem sync (e.g. `fsync` on Linux, equivalent on
@@ -218,9 +273,9 @@ periodic writes the previous autosave remains intact, and losing the most
 recent periodic write is an acceptable trade-off against continuously
 hammering storage.
 
-**On reset.** If an autosave slot is set, the runtime writes to it and syncs
-immediately before zeroing state and calling `init`, regardless of the
-periodic interval.
+**On reset.** If an autosave slot is set, the runtime calls `on_save_state`,
+writes to the slot, and syncs immediately before zeroing state and calling
+`init`, regardless of the periodic interval.
 
 ### Save slot metadata
 
@@ -375,7 +430,7 @@ practical concern.
 
 ## Consequences
 
-- The lifecycle is minimal and predictable: three required symbols, five
+- The lifecycle is minimal and predictable: three required symbols, six
   optional ones with sensible defaults, no surprises.
 - Lua cart authors define only what they need; the preamble handles the rest.
 - Zeroing state before every `init` eliminates a class of subtle bugs where
@@ -397,5 +452,15 @@ practical concern.
   declare a save description buffer in the manifest; the runtime includes it
   in the metadata header automatically and exposes it as a read-only proxy on
   the load screen using the same field access syntax as gameplay code.
+- `on_new_state` separates resource setup (`init`) from initial game-state
+  setup, so hot reload and state restores avoid running new-game initialisation
+  superfluously. Carts that make no distinction continue to implement
+  everything in `init` — the no-op default is correct for them.
+- `on_save_state` fires before all POD-buffer snapshots, giving third-party
+  library integrations a guaranteed flush point regardless of what triggered
+  the save.
+- The `blyt_load_reason_t` argument to `on_load_state` lets carts respond
+  differently to player-visible loads versus transparent restores without
+  coupling unrelated code paths.
 - `on_return_to_title` is deliberately absent from v1. The reset mechanism
   covers the primary use case; richer flows are v2 work.
