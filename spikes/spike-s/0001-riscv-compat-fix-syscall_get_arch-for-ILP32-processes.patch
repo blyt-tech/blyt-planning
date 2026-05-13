@@ -1,0 +1,62 @@
+From: Spike S <spike-s@fc32>
+Subject: [PATCH 1/3] riscv: compat: return AUDIT_ARCH_RISCV32 for ILP32 processes
+
+Three patches are needed to make seccomp arch-dispatch work for ILP32 processes
+on RISC-V 64-bit kernels:
+
+  1. arch/riscv/include/asm/syscall.h: check TIF_32BIT in syscall_get_arch()
+  2. arch/riscv/include/asm/seccomp.h: define SECCOMP_ARCH_COMPAT for ILP32
+  3. kernel/seccomp.c: skip cache for ILP32 (TIF_32BIT) processes
+
+This patch (1/3): syscall_get_arch() unconditionally returns AUDIT_ARCH_RISCV64
+on CONFIG_64BIT kernels, even when a compat (ILP32) process is running.
+
+TIF_32BIT is set by SET_PERSONALITY() for ELFCLASS32 ELF binaries and is used
+by syscall_handler() to dispatch to the compat syscall table.  Connect it to
+syscall_get_arch() so that seccomp_data.arch reports AUDIT_ARCH_RISCV32.
+
+Signed-off-by: Spike S <spike-s@fc32>
+
+[PATCH 2/3] riscv: seccomp: define SECCOMP_ARCH_COMPAT for ILP32 processes
+
+arch/riscv/include/asm/seccomp.h does not define SECCOMP_ARCH_COMPAT, so the
+seccomp cache uses a single native bitmap without checking sd->arch.  For a
+filter that allows all RISCV64 syscalls, all bits are set in the native bitmap;
+when an ILP32 process (arch=RISCV32) makes a syscall, the cache returns ALLOW
+without running the BPF filter, bypassing all arch-dispatch logic.
+
+Define SECCOMP_ARCH_COMPAT = AUDIT_ARCH_RISCV32 so the cache maintains a
+separate allow_compat bitmap for ILP32 processes.
+
+[PATCH 3/3] kernel/seccomp.c: skip cache for ILP32 (TIF_32BIT) processes
+
+Even with SECCOMP_ARCH_COMPAT defined, the allow_compat bitmap preparation
+(seccomp_cache_prepare_bitmap) may incorrectly cache syscalls as always-allowed
+for ILP32 processes.  Skip the cache entirely for processes with TIF_32BIT set
+to ensure the BPF filter is always evaluated.
+
+This is the simplest safe fix for the spike; a production kernel would want
+to correctly populate allow_compat in seccomp_cache_prepare_bitmap instead.
+
+Signed-off-by: Spike S <spike-s@fc32>
+---
+ arch/riscv/include/asm/syscall.h | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/arch/riscv/include/asm/syscall.h b/arch/riscv/include/asm/syscall.h
+index xxxxxxx..yyyyyyy 100644
+--- a/arch/riscv/include/asm/syscall.h
++++ b/arch/riscv/include/asm/syscall.h
+@@ -1,6 +1,11 @@
+ static inline int syscall_get_arch(struct task_struct *task)
+ {
+ #ifdef CONFIG_64BIT
++#ifdef CONFIG_COMPAT
++	/* Check UXL in saved sstatus: SR_UXL_32 means 32-bit U-mode process.
++	 * Using task_pt_regs is more reliable than TIF_32BIT. */
++	if ((task_pt_regs(task)->status & SR_UXL) == SR_UXL_32)
++		return AUDIT_ARCH_RISCV32;
++#endif
+ 	return AUDIT_ARCH_RISCV64;
+ #else
+ 	return AUDIT_ARCH_RISCV32;

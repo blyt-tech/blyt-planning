@@ -1,0 +1,69 @@
+Spike S — Stage 1: arch-dispatch filter across exec boundary
+Date:   2026-05-12T23:33:00Z
+Kernel: 6.5.0-rc1-gee021e57ffe3-dirty
+
+=== Stage 1: seccomp_raw_test_s ===
+  seccomp_raw_test_s: RISC-V, RVC, double-float ABI, version 1 (SYSV), statically linked, BuildID[sha1]=0170e65df6e94f32e06247e0b7efa400a33d971f, for GNU/Linux 4.15.0, not stripped
+  adversary_s_static: RISC-V, RVC, double-float ABI, version 1 (SYSV), static-pie linked, with debug_info, not stripped
+
+  Baseline: ILP32 adversary write probe without filter...
+  Baseline write: rc=0
+  PASS: ILP32 adversary runs without seccomp
+
+  Running seccomp_raw_test_s (Tests A-F)...
+.
+probe_write: returned -1 errno=38
+Arch-dispatch filter: 20 instructions
+
+=== Test A: LP64 write → allowed (expect rc=0) ===
+  arch=RISCV64 process; RV64 rules allow write(64)
+  PASS A: LP64 write rc=0 (RV64 rules allow write)
+
+=== Test B: LP64 socket → SIGSYS (expect rc=159) ===
+  arch=RISCV64 process; RV64 rules do not allow socket(198)
+  PASS B: LP64 socket rc=159 SIGSYS (RV64 rules block socket)
+
+=== Test C: ILP32 write → allowed (expect rc=0) ===
+  arch=RISCV32 process (via native ILP32 exec); RV32 rules allow write(64)
+  REQUIRES: kernel with RISC-V ILP32 ELF loader
+  PASS C: ILP32 write rc=0 (RV32 rules allow write — arch dispatch confirmed)
+
+=== Test D: ILP32 socket → SIGSYS (expect rc=159) ===
+  arch=RISCV32 process; RV32 rules do not allow socket(198)
+  PASS D: ILP32 socket rc=159 SIGSYS (RV32 rules block socket)
+
+=== Test E: ILP32 execve → SIGSYS (expect rc=159) ===
+  arch=RISCV32 process; RV32 rules do not allow execve(221)
+  PASS E: ILP32 execve rc=159 SIGSYS (cart cannot exec)
+
+=== Test F: RISCV64-only filter kills ILP32 (expect rc=159) ===
+  Confirms AUDIT_ARCH_RISCV32 is seen for ILP32; no RV64-only fallthrough.
+  If arch-dispatch is needed, the RV32 branch must be present.
+  PASS F: ILP32 write rc=159 under RISCV64-only filter
+          → AUDIT_ARCH_RISCV32 confirmed for ILP32 processes
+
+=== Test G: ILP32 arch probe via ERRNO (non-destructive) ===
+  Filter: if arch==RISCV32 AND nr==write → ERRNO(42); else ALLOW
+  Startup syscalls are unaffected; only write is probed.
+  ILP32 write rc=1 (write failed errno=42) → arch IS RISCV32
+  ILP32 write rc=0 (write succeeded)       → arch IS RISCV64
+  ILP32 write under ERRNO filter: rc=1
+  PASS G: write returned non-zero (errno=42) → arch IS RISCV32
+          → seccomp_data.arch = AUDIT_ARCH_RISCV32 confirmed
+
+==========================================
+Stage 1 results: PASS=7  FAIL=0
+Stage 1: PASS
+  Arch-dispatch filter works across exec boundary.
+  AUDIT_ARCH_RISCV32 confirmed for ILP32 processes.
+  LP64 and ILP32 rules applied correctly by same filter.
+
+  PASS: Stage 1: seccomp_raw_test_s ALL PASS (Tests A-F)
+  Arch-dispatch filter confirmed across exec boundary.
+  AUDIT_ARCH_RISCV32 confirmed for ILP32 native processes.
+
+==========================================
+Stage 1 complete
+PASS: 3    FAIL: 0
+Log: /tmp/spike-s-results/stage1.log
+==========================================

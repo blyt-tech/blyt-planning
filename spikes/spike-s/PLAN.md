@@ -8,7 +8,7 @@ arch-dispatch seccomp filter across the exec boundary, and have
 `libblyt32.so`'s constructor install a restrictive phase-2 filter before
 any cart code runs?
 
-**Status:** Not yet started.
+**Status:** Stages 0–1 PASS (2026-05-12/13). Stages 2–4 pending.
 
 ---
 

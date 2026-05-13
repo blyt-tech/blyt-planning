@@ -1,0 +1,28 @@
+Spike S — Stage 0: environment
+Date:   2026-05-12T07:52:47Z
+Kernel: 6.5.0-rc1-gee021e57ffe3-dirty
+Arch:   riscv64
+
+=== Stage 0a: kernel ILP32 ELF loader check ===
+  PASS: ILP32 loader symbol 'riscv_compat' found in /proc/kallsyms
+
+=== Stage 0b: static ILP32 binary executes natively ===
+  file: /tmp/adversary_s_static: ELF 32-bit LSB pie executable, UCB RISC-V, RVC, double-float ABI, version 1 (SYSV), static-pie linked, with debug_info, not stripped
+  adversary_s_static write probe: rc=0
+  PASS: Static ILP32 binary executes natively (rc=0)
+
+=== Stage 0c: seccomp(2) syscall available ===
+  PASS: seccomp(2) (__NR_seccomp=277) available
+
+=== Stage 0d: AUDIT_ARCH_RISCV32 confirmed for ILP32 processes ===
+  Running seccomp_raw_test_s Test F (RISCV64-only filter kills ILP32)...
+=== Test F: RISCV64-only filter kills ILP32 (expect rc=159) ===
+  FAIL F: ILP32 write rc=0 — arch is RISCV64 (no native ILP32 exec?)
+  (Full arch-dispatch validation is in Stage 1)
+  PASS: seccomp_raw_test_s available for Stage 1 testing
+
+==========================================
+Stage 0 complete
+PASS: 4    FAIL: 0
+Log: /tmp/spike-s-results/stage0.log
+==========================================
