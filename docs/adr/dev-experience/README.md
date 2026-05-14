@@ -16,3 +16,5 @@ dev-mode instrumentation that compiles away to nothing in release builds.
 | [0104](0104-vscode-dev-shell-runtime-architecture.md) | VS Code dev shell — renderer-side runtime with Node bridge (Proposed) |
 | [0107](0107-dev-mode-draw-step-inspector.md) | Dev-mode draw step inspector — pause and inspect the framebuffer mid-frame |
 | [0117](0117-adversarial-testing-strategy.md) | Adversarial testing strategy — fuzzing harnesses, corpus, sanitisers, upstream monitoring |
+| [0126](0126-implementation-repository-structure.md) | Implementation repository structure — monorepo layout, build systems, schemas, forked upstreams, integration tests |
+| [0128](0128-version-file-convention.md) | Version file convention — version.txt, build/version.txt, local dev vs CI vs buildbot stamping |

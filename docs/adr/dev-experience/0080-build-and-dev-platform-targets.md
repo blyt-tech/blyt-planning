@@ -1,7 +1,9 @@
 # ADR-0080: Build and development platform targets
 
 ## Status
-Accepted
+Accepted.
+Amended by ADR-0127 (macOS SDK is a universal binary covering ARM64 + x86-64;
+Intel Mac is now a supported platform).
 
 ## Context
 
@@ -41,7 +43,7 @@ watch mode, runtime with display, debugger.
 
 | Platform | Architecture | Notes |
 |----------|-------------|-------|
-| macOS | ARM64 (Apple Silicon) only | Intel Mac excluded — Apple Silicon is the current standard; Intel Macs are not a supported dev target. Rosetta 2 may allow builds to run but is untested and unsupported. |
+| macOS | Universal (ARM64 + x86-64) | Single universal binary download covers both Apple Silicon and Intel Macs. |
 | Windows | x86-64 | Standard desktop/laptop Windows. |
 | Linux | x86-64 | Standard desktop distributions (Ubuntu, Fedora, Debian, Arch). |
 | Linux | ARM64 | See explicitly targeted hardware below. |
@@ -63,7 +65,6 @@ merely "probably works."
 
 ### What is not a supported dev platform in v1
 
-- macOS x86-64 (Intel Mac).
 - Windows ARM (Surface Pro X, Qualcomm laptops) — may work but untested.
 - Browser-based development environments (GitHub Codespaces, Gitpod) —
   the packer runs headless but the runtime requires display; deferred.
@@ -77,9 +78,11 @@ merely "probably works."
 - The ARM64 Linux tier (RPi, Chromebook ARM) means the Rust packer and
   pre-built toolchain binaries must be provided for `aarch64-linux`. This
   is a first-class build target, not an afterthought.
-- Excluding Intel Macs simplifies the macOS toolchain: only the
-  `aarch64-apple-darwin` Rust target is required; no universal binaries
-  needed for the SDK tools.
+- The macOS SDK download is a universal binary (ARM64 + x86-64), produced
+  by lipo from per-architecture builds. LLVM's official releases already
+  ship as universal macOS binaries; `blytbuild` requires two Cargo target
+  builds (`aarch64-apple-darwin` + `x86_64-apple-darwin`) and a lipo step.
+  Intel Mac users get a native binary with no special casing at runtime.
 - Chromebook and RPi targeting signals that the toolchain is accessible
   on budget hardware. The packer performance targets in ADR-0044 are
   defined for mainstream desktop hardware; a somewhat slower dev cycle

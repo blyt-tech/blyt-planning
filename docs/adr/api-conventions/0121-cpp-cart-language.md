@@ -3,6 +3,8 @@
 ## Status
 
 Accepted.
+Amended by ADR-0127 (libc++ is a modified fork of LLVM libc++, not stock
+upstream; sourcing, modifications, and SDK distribution are specified there).
 
 ## Context
 
@@ -89,6 +91,12 @@ The SDK ships a pre-built `libc++.a` and `libc++abi.a` targeting the
 console's ABI (RV32 ILP32). Cart C++ code links these statically. The
 runtime does not expose libc++ symbols and does not depend on or control
 the version of libc++ the cart uses.
+
+The SDK-supplied libc++ is a **modified fork** of LLVM libc++, not the
+stock upstream library. It removes facilities unavailable in the cart
+execution environment (`<filesystem>`, `<fstream>`, `<thread>`, `<locale>`)
+and stubs `std::random_device` to terminate. The full list of modifications,
+sourcing, and build process are specified in ADR-0127.
 
 **Why static, not dynamic.** Dynamic libc++ would require the runtime to
 provide a versioned libc++ ABI boundary and ship the library as part of

@@ -6,6 +6,8 @@ Accepted — amends ADR-0067 (Lua compilation always runs; emulator-based luac);
 amends ADR-0073 (default source directory per language).
 Amended by ADR-0110 (test frameworks, TAP protocol confirmed, two-tier
 host + emulator test execution).
+Amended by ADR-0126 (luac and rv32emu are embedded in blytbuild, not
+external dependencies; see §Lua compilation via embedded emulator below).
 
 ## Context
 
@@ -193,16 +195,31 @@ Each Rust source set is an independent Cargo workspace. Multiple Rust source
 sets are not merged; if a cart declares two, dependencies may be duplicated.
 This is acceptable for v1 — game carts almost always have one Rust source set.
 
-### Lua: compilation via emulated luac
+### Lua: compilation via embedded emulator and luac
 
 Standard `luac` produces bytecode for the architecture it runs on.
 Cross-compilation is not supported: a host-native `luac` cannot produce valid
-fc32 bytecode (bytecode format encodes endianness and integer sizes).
+blyt bytecode (bytecode format encodes endianness and integer sizes).
 
-The packer compiles Lua source by running the fc32-native `luac` binary
-inside the fc32 emulator as a build step. This guarantees bytecode
-compatibility by construction — the same luac version and architecture that
-the runtime uses performs the compilation.
+The packer compiles Lua source by running the RV32IMAFC-native `luac` binary
+inside an embedded RISC-V emulator. This guarantees bytecode compatibility by
+construction — the same luac version and architecture that the runtime uses
+performs the compilation.
+
+**`blytbuild` embeds both rv32emu and luac.** rv32emu is statically linked
+into `blytbuild` as a C library (via Cargo's `build.rs` and the `cc` crate).
+The RV32IMAFC `luac` binary is embedded as a byte array (`include_bytes!()`)
+baked in at `blytbuild` compile time. Cart authors have no external emulator
+dependency; `blytbuild` is self-contained.
+
+The RV32IMAFC `luac` binary is produced by the runtime's CMake build and
+must exist before `blytbuild` can be compiled. In CI this is a sequencing
+constraint: the CMake build runs first and produces `luac`; Cargo then
+compiles `blytbuild` with the binary embedded.
+
+rv32emu appears in two independent build contexts: linked into `blytbuild`
+for Lua compilation, and compiled by CMake into the runtime for cart
+execution. Both use the same `third_party/rv32emu` submodule.
 
 **Amendment to ADR-0067:** luac compilation runs for **both** debug and
 release builds, not only release. Debug carts still ship Lua source text
@@ -210,9 +227,6 @@ release builds, not only release. Debug carts still ship Lua source text
 validate that the source compiles. Compiled bytecode and source text are both
 written to `build/game/lua/` — bytecode for potential runtime use, source for
 debug tooling (stack traces, DAP step-debugging).
-
-The fc32 emulator is therefore a **build-time dependency** for any cart with
-Lua source, not only a dev/run dependency.
 
 ### Tests under the emulator
 

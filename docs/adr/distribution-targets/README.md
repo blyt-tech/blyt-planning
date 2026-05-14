@@ -12,3 +12,4 @@ Also covers the game-service integration model at the distribution layer.
 | [0034](0034-custom-libretro-frontends-for-standalone-hardware.md) | Custom libretro frontends for standalone and hardware distribution |
 | [0035](0035-minimal-linux-on-hardware.md) | On hardware — minimal Linux (buildroot-based), runtime as PID-1-equivalent |
 | [0036](0036-frontend-pulls-model.md) | Frontend-pulls model — frontend owns the fixed-timestep accumulator |
+| [0127](0127-sdk-distribution-and-bundled-toolchain.md) | SDK distribution and bundled toolchain — platform matrix, bundled LLVM, modified libc++, two-tier artifact structure |
