@@ -1,7 +1,9 @@
 # ADR-0105: Project naming and console variants
 
 ## Status
-Accepted
+Accepted.
+Amended by ADR-0119 (EI_OSABI changed from 0x42 to ELFOSABI_NONE (0);
+the Linux kernel rejects non-standard OSABI values at exec time).
 
 ## Context
 
@@ -18,7 +20,7 @@ now-removed `docs/pending-name.md`. Placeholders included:
 | `console` CLI binary  | `blyt` (runner) and `blytbuild` (dev tool)     |
 | `.cart` extension     | `.blyt`, with `.blyt.demo` for demo carts    |
 | `fc32` codename       | `blyt` (project) / `Blyt32` (initial variant)|
-| ELF OSABI (unassigned)| `0x42` ('B' for Blyt)                        |
+| ELF OSABI (unassigned)| `ELFOSABI_NONE` (0) — see ADR-0119           |
 
 The deferral was deliberate: naming would be settled once the foundational
 design was stable.
@@ -222,10 +224,11 @@ in both languages.
   `.cart.resources` — unchanged. Internal convention, not user-facing.
 - **FlatBuffers preamble tags:** `CINF` (cart info), `CCFG` (cart config)
   — unchanged. Stable identifiers derived from "cart info / cart config".
-- **ELF OSABI value:** `0x42` (`'B'` for Blyt), in the OS-specific range
-  (64–127). If the project later registers a formal value with the
-  RISC-V community or publishes a spec, the formal value supersedes.
-  See ADR-0024.
+- **ELF OSABI value:** `ELFOSABI_NONE` (0). The original placeholder was
+  `0x42` ('B' for Blyt), but spike testing showed the Linux kernel rejects
+  non-standard OSABI values when exec-ing an ELF natively. Cart identity
+  is carried exclusively by the `console:` field in `.cart.info`; the
+  OSABI field carries no Blyt-specific information. See ADR-0119.
 
 ### Runtime / variant relationship
 
@@ -255,7 +258,7 @@ three variants.
   rename when a variant boundary moves; only the manifest field changes.
 - `docs/pending-name.md` is removed; this ADR is the forward-looking
   reference. Earlier ADRs that referenced `pending-name.md` are revised
-  to reference this ADR (notably ADR-0024 for OSABI and cart extension,
+  to reference this ADR (notably ADR-0024 for cart extension,
   ADR-0025 for Lua library naming, ADR-0081 for the BlyTTY sibling).
 - SDK package registrations (cargo crate, npm, VS Code publisher ID)
   are unblocked but deferred until those artefacts actually exist.
