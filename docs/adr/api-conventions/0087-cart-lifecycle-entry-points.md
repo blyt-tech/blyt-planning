@@ -428,6 +428,112 @@ within one session are handled correctly — each load resets both values.
 **i32 range.** Overflows after ~19,884 hours of play at 60 fps. Not a
 practical concern.
 
+## Amendment — blyt_load_info_t, saved_cart_version, and per-field restoration metadata
+
+### `on_load_state` signature
+
+The `blyt_cart_on_load_state` entry point is amended to receive a
+`blyt_load_info_t` struct rather than a bare `blyt_load_reason_t`:
+
+```c
+typedef struct {
+    bool        was_restored;       // false if entire buffer absent from save
+    const bool *fields_restored;    // fields_restored[BLYT_FIELD_INDEX(field_h)]
+} blyt_buffer_load_info_t;
+
+typedef struct {
+    blyt_load_reason_t             reason;
+    uint32_t                       saved_cart_version;
+    const blyt_buffer_load_info_t *buffers;  // indexed by blyt_buffer_h value
+} blyt_load_info_t;
+
+// Updated signature
+void blyt_cart_on_load_state(blyt_load_info_t info);
+```
+
+`BLYT_FIELD_INDEX(fh)` extracts the field index from a `blyt_field_h`
+(low 16 bits). The packer defines this macro in the generated header.
+
+The Lua shim unpacks `blyt_load_info_t` into a table:
+
+```lua
+function on_load_state(info)
+    -- info.reason          string  ("save_game", "save_state", "rewind", "hot_reload")
+    -- info.cart_version    integer (saved_cart_version; 0 if not declared)
+    -- info.buffers         table   indexed by buffer handle value
+    --   .was_restored      bool
+    --   .fields_restored   table   indexed by field index
+end
+```
+
+### `saved_cart_version`
+
+`blyt_load_info_t.saved_cart_version` carries the `save_version` integer
+declared in `cart.info.yaml` by the cart that wrote the save (ADR-0125).
+It is 0 when `reason` is not `BLYT_LOAD_SAVE_GAME`, or when the save
+predates `save_version` being declared.
+
+Cart authors increment `save_version` whenever they make a schema change
+that requires migration logic. The cart reads `saved_cart_version` to
+determine what migration is needed:
+
+```c
+void blyt_cart_on_load_state(blyt_load_info_t info) {
+    if (info.reason == BLYT_LOAD_SAVE_GAME && info.saved_cart_version < 3) {
+        // save predates quest system — initialise to starting chapter
+        blyt_buffer_set_u8(S_QUESTS, 0, S_QUEST_CHAPTER, 1);
+    }
+}
+```
+
+### `buffers` — restoration metadata
+
+By the time `on_load_state` fires, the runtime has completed the migration
+walk (ADR-0125): matching fields have been copied to their current positions
+and new fields have been zero-initialised. `buffers` reflects the outcome.
+
+`info.buffers` is indexed by `blyt_buffer_h` value (1-based, matching
+packer-generated buffer constants). `fields_restored` is indexed by
+`BLYT_FIELD_INDEX(field_h)` (1-based field index, low 16 bits of
+`blyt_field_h`). Both arrays are runtime-owned and valid only for the
+duration of `on_load_state`; they must not be retained beyond the callback.
+
+Usage:
+
+```c
+void blyt_cart_on_load_state(blyt_load_info_t info) {
+    // Entire buffer absent from save (added in a later cart version)
+    if (!info.buffers[S_QUESTS].was_restored) {
+        blyt_buffer_set_u8(S_QUESTS, 0, S_QUEST_CHAPTER, 1);
+    }
+
+    // Specific field absent from save (added to existing buffer)
+    if (!info.buffers[S_PLAYERS].fields_restored[BLYT_FIELD_INDEX(S_PLAYER_STAMINA)]) {
+        float hp = blyt_buffer_get_f32(S_PLAYERS, 0, S_PLAYER_HP);
+        blyt_buffer_set_f32(S_PLAYERS, 0, S_PLAYER_STAMINA, hp * 0.5f);
+    }
+}
+```
+
+`buffers` is populated for all load reasons, not only `BLYT_LOAD_SAVE_GAME`.
+For hot reload, rewind, and save state loads, it reflects which buffers and
+fields were present in the snapshot.
+
+The standalone `blyt_buffer_was_restored` function described in earlier
+design documents is superseded by `blyt_load_info_t.buffers` and is not
+part of the v1 API.
+
+### Updated lifecycle sequences
+
+```
+Save-game load:  blyt_save_read → migration walk → on_load_state(info) → loop
+Hot reload:      on_save_state → snapshot → reload → zero state → init →
+                   restore + migration walk → on_load_state(info) → loop
+```
+
+The `info.reason` field distinguishes the two cases for carts that need
+different behaviour (e.g. playing a load sound only for player-visible loads).
+
 ## Consequences
 
 - The lifecycle is minimal and predictable: three required symbols, six

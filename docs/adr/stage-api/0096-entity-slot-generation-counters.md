@@ -128,6 +128,38 @@ Generation counters are part of the buffer's tracked region and are included
 in save/restore. A reference saved to disk and restored later is still valid
 if the target entity was not destroyed in the intervening time.
 
+## Amendment — generations on by default; ref fields require generations
+
+### Default changed to opt-out
+
+Generation counters are enabled by default for all state buffers. Buffers
+that genuinely never hold or are referenced by cross-buffer `ref:` fields
+may opt out to save 2 bytes per slot:
+
+```yaml
+state_buffers:
+  enemies:   { record: Enemy,    count: 128  }               # generations on (default)
+  players:   { record: Player,   count: 4    }               # generations on (default)
+  particles: { record: Particle, count: 1000, generations: false }  # opt out
+```
+
+`generations: false` is appropriate for ephemeral pools (particles, audio
+voices) where nothing holds a reference to a specific slot and staleness
+detection is meaningless by design. For any buffer that game entities may
+reference across frames, the default (on) is correct.
+
+### `ref:` fields require generations
+
+A manifest `ref:` field (ADR-0009) stores a `blyt_entity_ref_t` into a
+named buffer. The packer enforces that the target buffer must have
+generations enabled — declaring `ref: some_buffer` where `some_buffer` has
+`generations: false` is a build error. This guarantees that:
+
+- `BLYT_ENTITY_REF_NONE` (0) is always a valid null sentinel for `ref:`
+  fields (generation 0 is reserved as invalid).
+- Staleness of a stored reference is always detectable via
+  `stage_entity_ref_valid`.
+
 ## Consequences
 
 - Stale references are detectable at any call site that holds an

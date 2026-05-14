@@ -73,3 +73,112 @@ schema at cart load time.
 - ADR-0010 (POD typed state buffers) is updated to reflect the
   manifest-declaration model. The `alloc_state(layout, count)` dynamic
   API is not present in v1.
+
+## Amendment — record shapes, inline embedding, and cross-buffer references
+
+### Terminology: records
+
+The unit of schema declaration is a **record** — a named, flat collection
+of typed fields. Records replace the earlier informal use of "type" and
+"layout" for this concept.
+
+### `records:` manifest section
+
+Record shapes are declared in a top-level `records:` section, separate from
+the `state_buffers:` section that declares the named buffer pools. This
+allows a record shape to be referenced from multiple buffers, used as an
+inline embedded type, or used for transient heap-allocated structs that
+never appear in a state buffer.
+
+```yaml
+records:
+  Vec2:
+    fields:
+      - { name: x, type: f32 }
+      - { name: y, type: f32 }
+
+  Player:
+    fields:
+      - { name: pos,    type: Vec2 }      # inline embed — see below
+      - { name: hp,     type: u8   }
+      - { name: max_hp, type: u8   }
+      - { name: weapon, ref: weapons }    # cross-buffer reference — see below
+
+  Enemy:
+    fields:
+      - { name: pos,  type: Vec2 }
+      - { name: hp,   type: u16  }
+      - { name: kind, type: u8   }
+
+state_buffers:
+  players: { record: Player, count: 4   }
+  enemies: { record: Enemy,  count: 128 }
+  weapons: { record: Weapon, count: 64  }
+```
+
+The `state_buffers:` key changes from `type:` to `record:` to match the
+new vocabulary.
+
+The packer generates a C struct (`blyt_player_t`, `blyt_enemy_t`, etc.) for
+every declared record, regardless of whether it appears in a `state_buffers:`
+entry. Records used only for transient heap objects still get packer-generated
+structs and field constants.
+
+### Inline embedding (`type: RecordName`)
+
+When a field's `type:` names a record rather than a primitive, the record's
+fields are laid out inline inside the containing record. The serialised
+representation is identical to listing all primitive fields directly —
+inline embedding is purely a manifest-authoring convenience.
+
+```yaml
+records:
+  Vec2:
+    fields:
+      - { name: x, type: f32 }
+      - { name: y, type: f32 }
+  Player:
+    fields:
+      - { name: pos, type: Vec2 }   # expands to pos.x (f32) + pos.y (f32) inline
+      - { name: hp,  type: u8  }
+```
+
+Generated C:
+
+```c
+typedef struct { float x, y; } blyt_vec2_t;
+typedef struct { blyt_vec2_t pos; uint8_t hp; } blyt_player_t;
+```
+
+**Cycle detection.** The packer rejects cyclic type references (e.g. a
+record that directly or transitively embeds itself) with a build error.
+Cycles are detected via topological sort at pack time.
+
+### Cross-buffer references (`ref: buffer_name`)
+
+When a field uses `ref:` instead of `type:`, it stores a
+`blyt_entity_ref_t` — a packed `u32` containing a slot index and generation
+counter (ADR-0096). The target is a buffer name, not a record type name,
+because multiple buffers can share the same record type and the reference
+must be unambiguous.
+
+```yaml
+records:
+  Player:
+    fields:
+      - { name: weapon, ref: weapons }   # blyt_entity_ref_t into the weapons buffer
+```
+
+- **Null reference:** `BLYT_ENTITY_REF_NONE` (0). Zero-initialisation of
+  state buffers before `init` (ADR-0087) means all `ref` fields start as
+  null without any explicit initialisation.
+- **Staleness detection:** the generation counter catches stale references
+  after the target slot is freed and reallocated (ADR-0096).
+- **Packer enforcement:** a `ref:` field targeting a buffer that declares
+  `generations: false` is a build error. Cross-buffer references require
+  generation tracking to provide a well-defined null and staleness
+  detection.
+
+The distinction between `type:` (inline embed) and `ref:` (index reference)
+is explicit in the YAML key, making the two very different semantics
+impossible to confuse.

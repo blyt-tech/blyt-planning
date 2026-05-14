@@ -16,3 +16,4 @@ infrastructure.
 | [0013](0013-four-save-mechanisms.md) | Four distinct save mechanisms |
 | [0057](0057-state-buffer-field-constants.md) | State buffer field access via blyt_field_h compile-time integer constants |
 | [0058](0058-active-slot-management.md) | Active slot management built into the buffer API |
+| [0125](0125-save-file-format.md) | Save file format — versioned chunked binary with per-section internal versioning |
