@@ -24,12 +24,15 @@ RNG, tilemaps, and supporting utilities.
 | [0060](0060-mutable-tilemaps.md) | Mutable tilemaps — manifest-declared, diff-based save, per-instance flags |
 | [0069](0069-text-rendering-params-struct.md) | Text rendering via params struct |
 | [0072](0072-bmfont-internal-font-format.md) | BMFont as internal font format; TTF/OTF input-only |
+| [0122](0122-prev-frame-surface.md) | Runtime-managed previous-frame surface for draw()-only frame feedback (deferred, post-v1) |
 
 ### Audio
 
 | # | Decision |
 |---|----------|
 | [0053](0053-audio-single-music-channel-stem-muting.md) | Audio — single music channel with stem muting |
+| [0123](0123-tracker-playback-library-and-position-api.md) | libopenmpt for tracker playback; tracker position API (state API deferred, post-v1) |
+| [0124](0124-tracker-channel-volume.md) | Per-channel volume control for tracker music |
 | [0054](0054-audio-voice-groups-vs-tags.md) | Audio — voice groups vs voice tags |
 | [0055](0055-three-layer-volume-model.md) | Three-layer volume model |
 | [0056](0056-speech-api-rhubarb-lip-sync.md) | Speech API and Rhubarb lip sync pipeline |

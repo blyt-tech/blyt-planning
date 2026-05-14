@@ -1,7 +1,7 @@
 # ADR-0004: Audio — format tiers by cart class
 
 ## Status
-Accepted
+Accepted — partially superseded by ADR-0123 (libopenmpt replaces libxmp as the tracker decoder)
 
 ## Context
 
