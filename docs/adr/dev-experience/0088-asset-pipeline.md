@@ -23,8 +23,8 @@ re-processed. All staged resources are uncompressed; compression is deferred
 to Phase 2.
 
 **Phase 2 — Bundle.** Staged files are compressed where beneficial (ADR-0026)
-and packed into the ELF cart file. This phase runs only for `blytbuild pack`;
-it is skipped entirely in `blytbuild watch` / dev mode.
+and packed into the ELF cart file. This phase runs only for `blyt pack`;
+it is skipped entirely in `blyt watch` / dev mode.
 
 **Dev mode** runs Phase 1 only. The runtime accepts a `build/` directory
 path in place of a `.blyt` file and reads resources directly from the staged,

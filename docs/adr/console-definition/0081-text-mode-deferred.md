@@ -163,7 +163,7 @@ silently providing a degraded experience.
 extending Blyt32 with an awkward keyboard-required mode, the sibling
 variant **BlyTTY** is the planned home for text mode (see ADR-0105 for the
 variant model). BlyTTY shares the runtime infrastructure (RV32IMAFC ELF
-cart format, Lua, save state, audio, lifecycle, `blytbuild` toolchain) but
+cart format, Lua, save state, audio, lifecycle, `blyt` toolchain) but
 declares a keyboard-primary input contract. Text mode at 640×480 is its
 natural display mode rather than an optional extension. Carts for BlyTTY
 target roguelikes, text adventures, interactive fiction, and BBS-style

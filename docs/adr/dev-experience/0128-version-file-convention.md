@@ -7,7 +7,7 @@ Accepted.
 ## Context
 
 The `blyt` repository contains multiple build systems (CMake for the C
-runtime, Cargo for `blytbuild`, `Makefile.libretro` for the libretro
+runtime, Cargo for `blyt`, `Makefile.libretro` for the libretro
 buildbot) that each need to embed or report the same version string. CI
 runs the C and Rust builds as separate jobs. A single authoritative source
 is needed so all artefacts from one build carry the same version, and so
@@ -74,7 +74,7 @@ file(READ "${CMAKE_BINARY_DIR}/version.txt" BLYT_VERSION)
 string(STRIP "${BLYT_VERSION}" BLYT_VERSION)
 ```
 
-**Cargo / `blytbuild` (`build.rs`):**
+**Cargo / `blyt` (`build.rs`):**
 `build.rs` reads `build/version.txt` and exposes the version string as a
 compile-time environment variable. It also declares a rerun dependency so
 Cargo re-embeds the version if the file changes.
@@ -87,7 +87,7 @@ println!("cargo:rerun-if-changed=../../build/version.txt");
 ```
 
 The CMake build ordering constraint (CMake runs before Cargo, because CMake
-produces the `luac` binary that `blytbuild` embeds) means `build/version.txt`
+produces the `luac` binary that `blyt` embeds) means `build/version.txt`
 is always present before Cargo runs.
 
 **`Makefile.libretro` (libretro buildbot):**

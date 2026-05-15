@@ -2432,7 +2432,7 @@ the full story.
   sequence API (`SeqStep`, `sequence!` macro).
 - **P:** Enable `CONFIG_EXT_A=y` in the base spike-a rv32emu config
   (currently off; Spike P rebuilds inline — production images should
-  enable it as baseline). `#[global_allocator]` declaration: blytbuild
+  enable it as baseline). `#[global_allocator]` declaration: blyt
   Rust codegen must emit the allocator declaration in the generated
   cart preamble for `heap_size > 0` carts (can't live in the SDK rlib).
   Production allocator hardening: OOM strategy (graceful `Result`-
@@ -2443,7 +2443,7 @@ the full story.
   sequence for all load scenarios including fresh-process restore; note
   `on_start` split as a candidate follow-up once real-cart complexity
   warrants it. ADR-0108 amendment: document `#[global_allocator]`
-  placement constraint and blytbuild codegen responsibility.
+  placement constraint and blyt codegen responsibility.
 - **Q:** `__extendsfdf2` stub: libconsolelua.so's double-precision stubs return 0.0 (intentional for RV32IMAFC — no D extension). Lua's number-to-string path casts float→double via this stub, so float results display as "0.0". Workaround: fast_add pushes integer result; production fix is a correct bit-manipulation implementation. Also: `LUA_REGISTRYINDEX = -1001000` (not -16000), controlled by `LUAI_IS32INT` (whether int ≥ 32 bits = always true on RV32), not by `LUA_32BITS`.
 - **Q:** `#[lua_module]` / `#[lua_export]` proc macro (generates the
   `#[link_section = ".lua_exports"]` static and Lua C API glue from function

@@ -3023,9 +3023,9 @@ Carts don't see or influence any of this — the abstraction is clean
 
 ### Decision: CLI tool packs project directory to cart; VS Code dev loop.
 
-**Packer:** `blytbuild pack ./myproject` → `myproject.blyt`. Takes a project
+**Packer:** `blyt pack ./myproject` → `myproject.blyt`. Takes a project
 directory with a manifest, source files, and resources; produces the cart
-container. `blytbuild run myproject.blyt` for local testing.
+container. `blyt run myproject.blyt` for local testing.
 
 **VS Code integration:** Extension or task-based setup that runs packer
 on save and reloads a webview panel containing the browser build of the
@@ -3098,7 +3098,7 @@ ambiguous cases, and fails safe (offer full reset) when unresolvable.
 
 **Signal protocol:**
 
-Packer runs in watch mode (`blytbuild watch ./project`), detects file
+Packer runs in watch mode (`blyt watch ./project`), detects file
 changes, rebuilds, signals runtime. Signal channel is the DAP
 connection (already present in dev mode) via a custom `hot_reload`
 command. Alternative channels (Unix socket, filesystem marker) available
@@ -3293,7 +3293,7 @@ to fix.
 
 ### Starter kit and examples
 
-`blytbuild new myproject` creates a project with:
+`blyt new myproject` creates a project with:
 - Pre-configured manifest, VS Code workspace, recommended extensions.
 - Starter Lua or native-cart code with inline comments explaining the API.
 - Example sprite sheet, tilemap, tracker module in correct formats —
@@ -3672,7 +3672,7 @@ tests for representative cart workloads.
     and forces discovery of API gaps that pure test carts wouldn't
     reveal.
 30. Community bootstrap: example carts, tutorials, starter kit
-    (`blytbuild new myproject`), CC0 starter asset pack, initial tooling
+    (`blyt new myproject`), CC0 starter asset pack, initial tooling
     polish.
 
 **Capability reference points:** The console is **Doom-class** in raw

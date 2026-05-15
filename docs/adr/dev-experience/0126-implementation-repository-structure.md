@@ -16,7 +16,7 @@ ADR-0105 identified the library components (`libblyt`, `libblytcommon`,
 `libblytcommonlua`, `libblyt32`, `libblyt32lua`). ADR-0120 established
 `libblytc.so` as a runtime-provided shared library. ADR-0121 established
 `libc++.a` as an SDK artifact for C++ cart authors. ADR-0109 established
-`blytbuild` as the cart build tool and driver.
+`blyt` as the cart build tool and driver.
 
 The `fc32` repository (where this ADR lives) is an ADR and design archive.
 Production code lives in a separate implementation repository.
@@ -25,7 +25,7 @@ Key constraints:
 - The libretro buildbot is a strategic distribution target; it expects a
   Makefile entry point (ADR-0033 / ADR-0034).
 - The runtime is C for libretro ABI compatibility.
-- The packer (`blytbuild`) is Rust/Cargo.
+- The packer (`blyt`) is Rust/Cargo.
 - FlatBuffers schemas for the cart binary format are shared between the C
   runtime (reader) and the Rust packer (writer).
 - Modified upstream dependencies (musl for `libblytc`, LLVM libc++ for
@@ -51,7 +51,7 @@ blyt/
 ├── src/                       # C runtime library source
 ├── frontends/                 # platform frontends
 ├── sdk/                       # non-code SDK artifacts (toolchain, linker scripts)
-├── blytbuild/                 # Rust Cargo workspace (packer, asset pipeline)
+├── devtool/               # Rust Cargo workspace (dev tool, asset pipeline)
 ├── tests/                     # runtime unit and integration tests
 └── third_party/               # vendored and forked upstream dependencies
 ```
@@ -100,7 +100,7 @@ their respective `src/<lib>/` directory and are not installed.
 
 ```
 frontends/
-  sdl/       # SDL2 frontend → blyt binary (native runner)
+  sdl/       # SDL2 frontend → blytrun binary
   libretro/  # libretro adapter → blyt_libretro.so
   wasm/      # Emscripten frontend
 ```
@@ -119,9 +119,9 @@ ship with the SDK but are not compiled C source. All C source lives under
 under `sdk/`) because it is C source built by the same CMake toolchain as
 all other runtime libraries.
 
-### Packer toolchain (`blytbuild/`)
+### Packer toolchain (`devtool/`)
 
-`blytbuild/` is a top-level Cargo workspace. It is not nested under a
+`devtool/` is a top-level Cargo workspace. It is not nested under a
 `tools/` directory: the packer is a primary product component comparable
 in scope to the runtime, not a development utility. It is the cart build
 driver (ADR-0109) and asset pipeline (ADR-0088).
@@ -131,19 +131,19 @@ driver (ADR-0109) and asset pipeline (ADR-0088).
 ```
 tests/
   unit/          # C unit tests for runtime components
-  integration/   # end-to-end: blytbuild + runtime
+  integration/   # end-to-end: blyt + runtime
 ```
 
 **Integration tests** are written in Rust. The `assert_cmd` crate
 provides a clean API for invoking and asserting on CLI binary outputs;
 the `tempfile` crate provides temporary filesystem isolation for test
 cart projects. A typical integration test: write a minimal cart source
-tree into a `tempdir`, invoke `blytbuild pack` on it, invoke the runtime
+tree into a `tempdir`, invoke `blyt pack` on it, invoke the runtime
 against the resulting `.blyt`, assert on output and exit code.
 
 The integration tests live as a Cargo test binary — either as a crate
-within the `blytbuild/` workspace or as a separate top-level crate at
-`tests/integration/`. The monorepo makes both `blytbuild` and the
+within the `devtool/` workspace or as a separate top-level crate at
+`tests/integration/`. The monorepo makes both `devtool/` and the
 compiled runtime available in the same checkout without cross-repository
 coordination.
 
@@ -160,12 +160,12 @@ third_party/
 ```
 
 **rv32emu is used in two independent build contexts.** It is statically
-linked into `blytbuild` as a C library (for running the embedded RV32IMAFC
+linked into `blyt` as a C library (for running the embedded RV32IMAFC
 `luac` binary during Lua compilation), and compiled separately by CMake into
 the runtime (for cart execution on emulated targets). The RV32IMAFC `luac`
-binary produced by the CMake build is embedded into `blytbuild` at Cargo
+binary produced by the CMake build is embedded into `blyt` at Cargo
 compile time via `include_bytes!()`; the CMake build must complete before
-`blytbuild` can be compiled. See ADR-0109 for the Lua compilation mechanism.
+`blyt` can be compiled. See ADR-0109 for the Lua compilation mechanism.
 
 **Modified dependencies are maintained as forks, referenced via git
 submodule.** Patch-file workflows (checking in `.patch` files applied at
@@ -197,7 +197,7 @@ pointing to upstream directly.
 `Makefile.libretro` contains no build logic — it is a translation layer
 only. All build logic lives in `CMakeLists.txt`.
 
-**Rust tooling: Cargo.** The `blytbuild/` workspace uses Cargo, invoked
+**Rust tooling: Cargo.** The `devtool/` workspace uses Cargo, invoked
 independently by CI. There is no meta-build system unifying the two; they
 are separate jobs.
 

@@ -1414,7 +1414,7 @@ Within a dev session: adding a resource → appended, existing IDs unchanged. Re
 ### External Tool Access to cart.info
 
 ```
-blytbuild info myproject.blyt --json > cart_info.json
+blyt info myproject.blyt --json > cart_info.json
 ```
 
 Also ships `blyt_cartinfo` C library for tools that need to read `.cart.info` ELF sections without a full runtime.
@@ -1577,7 +1577,7 @@ YAML 1.2 reads naturally for the nested structures these manifests carry
 ubiquitous `yaml-language-server` extension with JSON-Schema-driven
 completion and validation, and avoids the boolean-coercion footguns of
 YAML 1.1 (`no`, `yes`, `on`, `off`). The SDK ships JSON Schemas for each
-manifest; `blytbuild new` generates projects with a `# yaml-language-server:
+manifest; `blyt new` generates projects with a `# yaml-language-server:
 $schema=` header in each file. See ADR-0073 for the rationale against
 Lua-source manifests.
 

@@ -39,7 +39,7 @@ its own manifest file compiled to its own ELF section, read by that
 language's own runtime library. For v1, only Lua has a language-specific
 manifest (`cart.lua.yaml` → `.cart.lua`), described below.
 
-**Tooling.** The SDK ships JSON Schemas for all manifest files. `blytbuild new`
+**Tooling.** The SDK ships JSON Schemas for all manifest files. `blyt new`
 generates projects with a `# yaml-language-server: $schema=` header in each
 manifest and a pre-configured VS Code workspace, giving schema-validated
 completions and inline error highlighting out of the box.

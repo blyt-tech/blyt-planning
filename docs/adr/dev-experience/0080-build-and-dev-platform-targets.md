@@ -80,7 +80,7 @@ merely "probably works."
   is a first-class build target, not an afterthought.
 - The macOS SDK download is a universal binary (ARM64 + x86-64), produced
   by lipo from per-architecture builds. LLVM's official releases already
-  ship as universal macOS binaries; `blytbuild` requires two Cargo target
+  ship as universal macOS binaries; `blyt` requires two Cargo target
   builds (`aarch64-apple-darwin` + `x86_64-apple-darwin`) and a lipo step.
   Intel Mac users get a native binary with no special casing at runtime.
 - Chromebook and RPi targeting signals that the toolchain is accessible

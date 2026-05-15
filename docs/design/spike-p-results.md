@@ -115,13 +115,13 @@ And add a clarifying note:
 
 Add to the allocator section:
 
-> Rust requires `#[global_allocator]` to be declared in the final binary/staticlib crate, not in a dependency rlib. The `blyt32` SDK crate therefore exports the `BlytAllocator` type and `__blyt_heap_init` function, but the `#[global_allocator]` attribute must be placed in the cart crate. The SDK build tooling (blytbuild) will generate a standard allocator declaration in the cart's generated preamble for carts that declare `heap_size > 0`.
+> Rust requires `#[global_allocator]` to be declared in the final binary/staticlib crate, not in a dependency rlib. The `blyt32` SDK crate therefore exports the `BlytAllocator` type and `__blyt_heap_init` function, but the `#[global_allocator]` attribute must be placed in the cart crate. The SDK build tooling (blyt) will generate a standard allocator declaration in the cart's generated preamble for carts that declare `heap_size > 0`.
 
 ---
 
 ## Production Follow-Ups
 
-1. **`#[global_allocator]` in blytbuild codegen.** blytbuild's Rust cart codegen should emit `#[global_allocator] static ALLOCATOR: blyt32::allocator::BlytAllocator = blyt32::allocator::BlytAllocator::new();` in the generated preamble for carts with `heap_size > 0`.
+1. **`#[global_allocator]` in blyt codegen.** blyt's Rust cart codegen should emit `#[global_allocator] static ALLOCATOR: blyt32::allocator::BlytAllocator = blyt32::allocator::BlytAllocator::new();` in the generated preamble for carts with `heap_size > 0`.
 
 2. **rv32emu A-extension configuration.** The fc32 rv32emu build configuration should enable `CONFIG_EXT_A` as a baseline for all spike and production builds.
 

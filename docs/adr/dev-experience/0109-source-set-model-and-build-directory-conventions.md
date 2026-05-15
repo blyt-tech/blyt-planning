@@ -6,7 +6,7 @@ Accepted — amends ADR-0067 (Lua compilation always runs; emulator-based luac);
 amends ADR-0073 (default source directory per language).
 Amended by ADR-0110 (test frameworks, TAP protocol confirmed, two-tier
 host + emulator test execution).
-Amended by ADR-0126 (luac and rv32emu are embedded in blytbuild, not
+Amended by ADR-0126 (luac and rv32emu are embedded in blyt, not
 external dependencies; see §Lua compilation via embedded emulator below).
 
 ## Context
@@ -32,7 +32,7 @@ incremental up-to-date checking without a global dependency graph.
 
 ### Default source sets
 
-`blytbuild new` creates the following source sets, one per declared language:
+`blyt new` creates the following source sets, one per declared language:
 
 | Source directory | Build directory | Language |
 |---|---|---|
@@ -66,7 +66,7 @@ sources:
 ### Test source sets
 
 Test source sets live under `src/test/<name>` and build to
-`build/test/<name>`. Default sets created by `blytbuild new`:
+`build/test/<name>`. Default sets created by `blyt new`:
 
 | Source directory | Build directory |
 |---|---|
@@ -206,18 +206,18 @@ inside an embedded RISC-V emulator. This guarantees bytecode compatibility by
 construction — the same luac version and architecture that the runtime uses
 performs the compilation.
 
-**`blytbuild` embeds both rv32emu and luac.** rv32emu is statically linked
-into `blytbuild` as a C library (via Cargo's `build.rs` and the `cc` crate).
+**`blyt` embeds both rv32emu and luac.** rv32emu is statically linked
+into `blyt` as a C library (via Cargo's `build.rs` and the `cc` crate).
 The RV32IMAFC `luac` binary is embedded as a byte array (`include_bytes!()`)
-baked in at `blytbuild` compile time. Cart authors have no external emulator
-dependency; `blytbuild` is self-contained.
+baked in at `blyt` compile time. Cart authors have no external emulator
+dependency; `blyt` is self-contained.
 
 The RV32IMAFC `luac` binary is produced by the runtime's CMake build and
-must exist before `blytbuild` can be compiled. In CI this is a sequencing
+must exist before `blyt` can be compiled. In CI this is a sequencing
 constraint: the CMake build runs first and produces `luac`; Cargo then
-compiles `blytbuild` with the binary embedded.
+compiles `blyt` with the binary embedded.
 
-rv32emu appears in two independent build contexts: linked into `blytbuild`
+rv32emu appears in two independent build contexts: linked into `blyt`
 for Lua compilation, and compiled by CMake into the runtime for cart
 execution. Both use the same `third_party/rv32emu` submodule.
 
@@ -241,7 +241,7 @@ Running tests on the emulator ensures results reflect the actual target
 environment. Emulator bugs or ABI divergences surface during development,
 not at cart runtime on real hardware.
 
-A host-compiled test mode (`blytbuild test --host`) also exists for fast
+A host-compiled test mode (`blyt test --host`) also exists for fast
 iteration; it uses the same source set but stubs the blyt API boundary and
 does not require the emulator. See ADR-0110 for framework choices, the blyt
 API mock surface, and the full two-tier execution model.

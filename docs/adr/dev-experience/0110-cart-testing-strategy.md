@@ -21,12 +21,12 @@ the device. The three languages have meaningfully different answers.
 
 Tests run in two modes:
 
-**Emulator mode** (`blytbuild test`) — the authoritative tier. Test binaries
+**Emulator mode** (`blyt test`) — the authoritative tier. Test binaries
 compile to RV32IMAFC ELF and execute inside the fc32 emulator. Results reflect
 the real target environment: ABI, integer sizes, emulator bugs, and blyt API
 behaviour are all as-shipped. This is the mode CI runs.
 
-**Host mode** (`blytbuild test --host`) — the fast-iteration tier. Test
+**Host mode** (`blyt test --host`) — the fast-iteration tier. Test
 binaries compile for the native host target (macOS ARM64). The blyt API
 boundary is stubbed; no emulator is required. ASan and UBSan are available.
 Tests that call real blyt functions fail to link on host and are excluded from
@@ -93,7 +93,7 @@ harness for `no_std` RV32IMAFC targets:
 - The crate provides the `main` entry point that iterates collected tests,
   outputs TAP, and exits with pass/fail code.
 
-`blyt_test` is not published to crates.io. `blytbuild` injects a
+`blyt_test` is not published to crates.io. `blyt` injects a
 `[patch.crates-io]` entry via `cargo --config` (Cargo 1.63+) pointing to the
 SDK installation path. Cart `Cargo.toml` declares a normal dev-dependency:
 
@@ -102,7 +102,7 @@ SDK installation path. Cart `Cargo.toml` declares a normal dev-dependency:
 blyt_test = "1"
 ```
 
-`blytbuild` resolves it to the SDK-local copy transparently, consistent with
+`blyt` resolves it to the SDK-local copy transparently, consistent with
 its existing role as the build driver.
 
 ### Blyt API mock surface for C tests
@@ -146,30 +146,30 @@ in the SDK headers, always available).
 ### Test output
 
 **TAP** is the unified internal protocol across all three languages (amending
-ADR-0109's "TBD"). Each framework emits TAP to stdout; blytbuild reads it:
+ADR-0109's "TBD"). Each framework emits TAP to stdout; blyt reads it:
 
 | Language | Framework | TAP mechanism |
 |---|---|---|
 | C | Unity | Unity TAP output mode |
 | Lua | busted | busted `--output TAP` |
 | Rust (emulator) | blyt_test | blyt_test runner |
-| Rust (host) | cargo test | blytbuild translates or passes through |
+| Rust (host) | cargo test | blyt translates or passes through |
 
-**JUnit XML** is the CI artifact format. blytbuild converts TAP output to
+**JUnit XML** is the CI artifact format. blyt converts TAP output to
 JUnit XML and writes it to `build/test-results/<language>-<mode>.xml`
 (e.g. `c-host.xml`, `rust-emulator.xml`). CI systems (GitHub Actions, etc.)
 consume these files directly. No TAP tooling is required in the CI pipeline.
 
 ### Test filtering
 
-`blytbuild test --filter <pattern>` runs only tests whose names match the
+`blyt test --filter <pattern>` runs only tests whose names match the
 given pattern. The pattern is a substring match by default; prefix with `/`
-for a regex. blytbuild threads the filter through to each framework's native
+for a regex. blyt threads the filter through to each framework's native
 mechanism:
 
 | Language / mode | Mechanism |
 |---|---|
-| C (Unity) | blytbuild compiles a filter shim that skips non-matching test names at registration time |
+| C (Unity) | blyt compiles a filter shim that skips non-matching test names at registration time |
 | Lua (busted) | passed as `--filter <pattern>` to busted |
 | Rust (host) | passed as the test name argument to `cargo test` |
 | Rust (emulator) | passed to the `blyt_test` runner which skips non-matching entries |
@@ -179,10 +179,10 @@ mechanism:
 
 ### VS Code integration
 
-`blytbuild new` ships a pre-configured VS Code workspace (ADR-0044) that
+`blyt new` ships a pre-configured VS Code workspace (ADR-0044) that
 includes `tasks.json` and `launch.json` entries for test running and
 debugging. Cart authors get working test IDE integration from the first
-`blytbuild new`.
+`blyt new`.
 
 #### Running tests
 
@@ -195,13 +195,13 @@ host task is the default test task (bound to the IDE's test shortcut):
   {
     "label": "test: host",
     "type": "shell",
-    "command": "blytbuild test --host",
+    "command": "blyt test --host",
     "group": { "kind": "test", "isDefault": true }
   },
   {
     "label": "test: host (watch)",
     "type": "shell",
-    "command": "blytbuild test --host --watch",
+    "command": "blyt test --host --watch",
     "group": "test",
     "isBackground": true,
     "problemMatcher": []
@@ -209,7 +209,7 @@ host task is the default test task (bound to the IDE's test shortcut):
   {
     "label": "test: emulator",
     "type": "shell",
-    "command": "blytbuild test",
+    "command": "blyt test",
     "group": "test"
   }
 ]}
@@ -217,7 +217,7 @@ host task is the default test task (bound to the IDE's test shortcut):
 
 `--watch` is only offered for the host tier; emulator startup overhead makes
 watch mode impractical on the emulator tier. `--filter` composes with both:
-`blytbuild test --host --watch --filter player` re-runs matching tests on
+`blyt test --host --watch --filter player` re-runs matching tests on
 every save.
 
 #### Debugging host C tests
@@ -231,7 +231,7 @@ without running it:
 {
   "label": "build: c tests (host)",
   "type": "shell",
-  "command": "blytbuild test --host --no-run"
+  "command": "blyt test --host --no-run"
 }
 
 // .vscode/launch.json
@@ -257,14 +257,14 @@ attaching:
 {
   "label": "test: start emulator (debug)",
   "type": "shell",
-  "command": "blytbuild test --debug --port 3333",
+  "command": "blyt test --debug --port 3333",
   "isBackground": true,
   "problemMatcher": {
     "pattern": { "regexp": "." },
     "background": {
       "activeOnStart": true,
-      "beginsPattern": "blytbuild: starting emulator",
-      "endsPattern": "blytbuild: GDB stub listening on :3333"
+      "beginsPattern": "blyt: starting emulator",
+      "endsPattern": "blyt: GDB stub listening on :3333"
     }
   }
 }
@@ -281,11 +281,11 @@ attaching:
 }
 ```
 
-`blytbuild test --debug --port <n>` builds the test binary, starts the
+`blyt test --debug --port <n>` builds the test binary, starts the
 emulator with it loaded, opens the GDB stub on the specified port, and emits
 the sentinel line to stdout when the stub is ready. The exact sentinel strings
-(`blytbuild: starting emulator`, `blytbuild: GDB stub listening on :3333`) are
-stable and part of the blytbuild output contract.
+(`blyt: starting emulator`, `blyt: GDB stub listening on :3333`) are
+stable and part of the blyt output contract.
 
 #### Debugging Rust host tests
 
@@ -305,8 +305,8 @@ same way.
   capture for audio, input via fixture injection. No full API mock layer.
 - Graphics unit testing is deliberately minimal; logic extraction is the
   preferred structural discipline.
-- `blyt_test` requires blytbuild to inject Cargo config at build time,
-  consistent with blytbuild's existing role managing the RV32IMAFC toolchain
+- `blyt_test` requires blyt to inject Cargo config at build time,
+  consistent with blyt's existing role managing the RV32IMAFC toolchain
   invocation.
 - Host tests that call real blyt functions fail to link — compile-time
   enforcement of the tier boundary with no runtime machinery needed.
@@ -314,20 +314,20 @@ same way.
   selection or version management burden for C testing.
 - `blyt_test_reset()` is a required SDK function; its contract (zeroes all
   blyt state buffers) must be maintained across SDK versions.
-- `blytbuild new` ships pre-configured `tasks.json` and `launch.json` entries;
+- `blyt new` ships pre-configured `tasks.json` and `launch.json` entries;
   test running, watch mode, and debugging work in the IDE from project creation
   with no manual setup.
-- blytbuild writes JUnit XML to `build/test-results/` after every test run.
-  The filenames (`<language>-<mode>.xml`) are stable and part of the blytbuild
+- blyt writes JUnit XML to `build/test-results/` after every test run.
+  The filenames (`<language>-<mode>.xml`) are stable and part of the blyt
   output contract.
-- `blytbuild test --filter`, `--host`, `--watch`, `--no-run`, `--debug`, and
-  `--port` are all required blytbuild subcommand flags. `--watch` is restricted
+- `blyt test --filter`, `--host`, `--watch`, `--no-run`, `--debug`, and
+  `--port` are all required blyt subcommand flags. `--watch` is restricted
   to `--host` mode.
-- `blytbuild test --debug --port <n>` must emit two stable sentinel lines
-  (`blytbuild: starting emulator`, `blytbuild: GDB stub listening on :<n>`)
+- `blyt test --debug --port <n>` must emit two stable sentinel lines
+  (`blyt: starting emulator`, `blyt: GDB stub listening on :<n>`)
   that must not change without a corresponding update to the generated workspace
   templates.
-- Test timeouts are a CI job responsibility; blytbuild does not implement an
+- Test timeouts are a CI job responsibility; blyt does not implement an
   internal timeout.
 - `#[blyt_test::test]` emitting `#[test]` on host targets is a requirement of
   the proc macro implementation, not an optional convenience.

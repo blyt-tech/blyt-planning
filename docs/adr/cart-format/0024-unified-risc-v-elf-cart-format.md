@@ -51,7 +51,7 @@ manifest console and `DT_NEEDED`, is rejected at pack time and at load
 time.
 
 The variant library is not shipped with the cart. It is provided by the
-runtime environment (the `blyt` runner, libretro core, or hardware image),
+runtime environment (`blytrun`, the libretro core, or the hardware image),
 which can host any variant. The runtime selects the appropriate variant
 library at load time based on `.cart.info`. The library behaves differently
 depending on execution context:
@@ -144,7 +144,7 @@ is the final bundling step that packs the directory into the ELF file. Watch
 mode simply omits that step.
 
 Directory layout (default: `<project>/build/`, gitignored by the
-`.gitignore` that `blytbuild new` writes — see ADR-0044):
+`.gitignore` that `blyt new` writes — see ADR-0044):
 
 ```
 build/

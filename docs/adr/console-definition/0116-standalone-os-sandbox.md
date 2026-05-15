@@ -11,7 +11,7 @@ the emulator) and, on native hardware, an OS-level process isolation
 layer. Spike H proved all three OS mechanisms — CONFIG_COMPAT RV32
 execution, seccomp-bpf, namespace isolation, and cgroups v2 CPU
 throttling — work on a Fedora 42 RISC-V kernel (6.16.4). This ADR
-captures the production design for the standalone `blyt` runner on Linux.
+captures the production design for the standalone `blytrun` on Linux.
 
 The OS-level sandbox is **not claimed for the libretro deployment**. See
 the libretro section below.
@@ -126,7 +126,7 @@ do not set). A watchdog thread is not used in the libretro core.
   outer layer, in-emulator checks as the inner layer.
 - The libretro deployment's weaker threat model is explicitly documented.
   Frontend authors who need hostile-input isolation should use the
-  standalone runner, not the libretro core.
+  standalone `blytrun`, not the libretro core.
 - Two-phase seccomp with raw BPF is blocked on Spike R; until Spike R
   completes this ADR's seccomp section is a design target.
 - The cgroups CPU quota formula produces accurate numbers once Spike A's

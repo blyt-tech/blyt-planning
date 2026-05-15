@@ -20,7 +20,7 @@ because they underpin every other differentiating feature.
 - `CMakeLists.txt`: skeleton that compiles nothing but has the target
   structure in place (`libblytcommon`, `libblyt32`, `libblytc`, etc. as
   empty targets)
-- `blytbuild/`: Cargo workspace with a stub binary that prints its version
+- `devtool/`: Cargo workspace for the `blyt` dev tool — stub binary that prints its version
   and exits
 - Submodules registered: `rv32emu`, `lua`, `libopenmpt`, `zstd`,
   `libretro-common`, `libcxx`
@@ -53,7 +53,7 @@ because they underpin every other differentiating feature.
 - `blyt_console_debug(const char *s)` declared in `blyt.h`, implemented as
   an ECALL handler; output goes to the frontend's log/console
 - SDL2 frontend: window, event loop, audio output stub, wired to `libblyt`
-- `blytbuild`: pack a minimal C cart — a single source file that calls
+- `blyt`: pack a minimal C cart — a single source file that calls
   `blyt_console_debug` and exits; no assets, no state, no other API
 - rv32emu security: ecall allowlist enforced; non-permitted ecalls trap
 
@@ -81,7 +81,7 @@ frontend. Malicious ecalls are trapped.
 - Emscripten build of the runtime in `frontends/wasm/`
 - Browser frontend: HTML shell, canvas, `blyt_console_debug` output to
   browser console
-- `blytbuild run` orchestrates the WASM build and serves it locally
+- `blyt run` orchestrates the WASM build and serves it locally
 - DAP and GDB server transport design settled: WebSocket endpoints exposed
   by the WASM runtime (required for Phase 8's primary debugging path)
 
@@ -122,9 +122,9 @@ The targets gate closes here. No game API expansion until all four pass.
 **Deliverables:**
 
 **Rust:**
-- Rust SDK crate in `blytbuild/`: wraps `blyt_console_debug`, provides
+- Rust SDK crate in `devtool/`: wraps `blyt_console_debug`, provides
   `#[global_allocator]` backed by `libblytc.so`'s `malloc`
-- `blytbuild` packs a minimal Rust cart
+- `blyt` packs a minimal Rust cart
 - Rust cart calls `blyt_console_debug` on all four targets
 
 **Lua:**
@@ -135,13 +135,13 @@ The targets gate closes here. No game API expansion until all four pass.
   `blyt32.debug.print` wraps `blyt_console_debug`
 - Lua cart template: native ELF shim that initialises the Lua state and
   forwards lifecycle callbacks
-- `blytbuild` packs a minimal Lua cart
+- `blyt` packs a minimal Lua cart
 - Lua cart calls `blyt32.debug.print` on all four targets
 
 **C++:**
 - SDK toolchain verified: modified `libc++.a` links cleanly, `-fno-exceptions
   -fno-rtti` enforced, `std::random_device` terminates
-- `blytbuild` packs a minimal C++ cart
+- `blyt` packs a minimal C++ cart
 - C++ cart calls `blyt_console_debug` on all four targets
 
 **Cross-language calling:**
@@ -168,7 +168,7 @@ grows, not discovered later.
   but should be confirmed explicitly as a distinct case.
 
 Each cross-language combination is exercised as a minimal cart on all four
-targets. `blytbuild` must pack hybrid carts (multiple language source sets
+targets. `blyt` must pack hybrid carts (multiple language source sets
 in one cart) for this to work.
 
 **Gate:** C, Rust, Lua, and C++ carts each call the debug output function
@@ -199,7 +199,7 @@ servers must work well on WASM before the API grows. Other targets follow.
   set a breakpoint in a C cart, step through it
 - GDB RSP wired on SDL2, libretro, and QEMU targets (TCP transport)
 
-**`blytbuild run`:**
+**`blyt run`:**
 - Orchestrates the WASM build, serves the frontend, exposes DAP and GDB
   WebSocket endpoints
 - No VS Code extension yet; developer connects a standalone client
@@ -220,7 +220,7 @@ features of the console.
 **Deliverables:**
 - State buffer system in `libblytcommon`: typed field layouts (ADR-0010),
   SOA storage, field-handle access functions, Lua metatable sugar (ADR-0011)
-- `blytbuild` codegen: reads state buffer declarations from `cart.build.yaml`,
+- `blyt` codegen: reads state buffer declarations from `cart.build.yaml`,
   emits:
   - C headers with typed field handle constants (`build/blyt/c/`)
   - Rust modules with field handle constants (`build/blyt/rust/`)
@@ -249,7 +249,7 @@ baseline that grows alongside the API.
 
 **SDK packaging pipeline:**
 - Build pipeline assembles the four platform SDK downloads per ADR-0127:
-  per-host binaries (Clang, LLD, `blytbuild`) combined with shared
+  per-host binaries (Clang, LLD, `blyt`) combined with shared
   RV32IMAFC target artefacts (headers, `libblyt32.so`, `libblyt32lua.so`,
   `libblytc.so`, `libc++.a`, `BlytToolchain.cmake`, `BlytConfig.cmake`,
   linker scripts)
@@ -267,7 +267,7 @@ test sequence has four steps, run per platform:
 2. **Execute SDKs on each platform to build test carts.** On each host
    platform (Linux x64, Linux arm64, Windows x64, macOS Universal), unpack
    the platform's SDK into a clean directory and use only its tools
-   (`blytbuild`, SDK-bundled Clang) to build the same test cart projects
+   (`blyt`, SDK-bundled Clang) to build the same test cart projects
    from source.
 
 3. **Execute the cart.** Run each platform's SDK-built cart in the runtime

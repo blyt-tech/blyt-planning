@@ -17,7 +17,7 @@ now-removed `docs/pending-name.md`. Placeholders included:
 | `libfantasyconsole`   | `libblyt` (host runtime library)             |
 | `libconsole.so`       | `libblyt32.so` / `libblytty.so` / `libblyt3d.so` (cart-facing, per variant) |
 | `libconsolelua.so`    | `libblyt32lua.so` / `libblyttylua.so` / `libblyt3dlua.so` (per variant) |
-| `console` CLI binary  | `blyt` (runner) and `blytbuild` (dev tool)     |
+| `console` CLI binary  | `blytrun` (runner) and `blyt` (dev tool)       |
 | `.cart` extension     | `.blyt`, with `.blyt.demo` for demo carts    |
 | `fc32` codename       | `blyt` (project) / `Blyt32` (initial variant)|
 | ELF OSABI (unassigned)| `ELFOSABI_NONE` (0) — see ADR-0119           |
@@ -48,10 +48,10 @@ it, replacing every placeholder named in `docs/pending-name.md`.
 
 - **Project / runtime / repo / libretro core / native player:** **Blyt**
   (repo identifier: `blyt`, lowercase).
-- **Distributed native player binary:** `blyt`. End users run
-  `blyt mygame.blyt`.
-- **Developer tooling binary:** `blytbuild`. Subcommands: `blytbuild pack`,
-  `blytbuild new`, `blytbuild run`, `blytbuild watch`, `blytbuild info`. Includes
+- **Distributed native player binary:** `blytrun`. End users run
+  `blytrun mygame.blyt`.
+- **Developer tooling binary:** `blyt`. Subcommands: `blyt pack`,
+  `blyt new`, `blyt run`, `blyt watch`, `blyt info`. Includes
   the ELF toolchain, asset pipeline, and project scaffolding; not shipped
   to end users.
 - **Host runtime library** (embedded by frontends — SDL, libretro adapter,
@@ -204,7 +204,7 @@ in both languages.
   noise-free — a Blyt32 cart's manifest needs no `console:` line at all.
   When BlyTTY ships, BlyTTY carts must declare `console: blytty`
   explicitly. Future versions may make the field mandatory; that would
-  be a backwards-incompatible change but acceptable, and `blytbuild`
+  be a backwards-incompatible change but acceptable, and `blyt`
   tooling can migrate older carts automatically by inserting the
   default.
 - **Non-interactive extension (placeholder):** `.blyt.demo` for
@@ -232,7 +232,7 @@ in both languages.
 
 ### Runtime / variant relationship
 
-One runtime can host any cart variant. The native `blyt` runner reads the
+One runtime can host any cart variant. The native `blytrun` reads the
 `console:` field from `.cart.info` (defaulting to `blyt32` if absent),
 then provides the matching variant library (and Lua library, for Lua
 carts) at load time. The libretro core follows the same model. There is
@@ -242,11 +242,11 @@ three variants.
 ## Consequences
 
 - The project ships under one identity (Blyt) with one runner binary
-  (`blyt`), one libretro core, and one set of distribution channels.
+  (`blytrun`), one libretro core, and one set of distribution channels.
   Per-variant artefacts are libraries, not products.
 - Carts are portable across runtime distributions but locked to their
   declared variant. A Blyt32 cart cannot be played on a runtime that only
-  ships `libblytty.so`; the mainstream `blyt` runner ships all variants.
+  ships `libblytty.so`; the mainstream `blytrun` ships all variants.
 - The variant boundary is a real architectural seam, not a hypothetical
   one. Drawing it correctly during Blyt32 implementation makes BlyTTY
   cheap to add later. Mistakes (Blyt32 assumptions leaking into shared
@@ -288,8 +288,8 @@ three variants.
   libretro frontends don't use per-extension metadata for icons or
   per-content-type display, so the only effect would be more extensions
   to register and more confusion for users with mixed libraries.
-- **Single `blyt` binary for both runner and dev tooling.** Rejected:
-  the distributed native binary should be lean (runtime + frontend, no
-  toolchain) and end-user-facing; the dev tool is a separate audience
-  and footprint. Splitting cleanly is closer to rust/cargo or node/npm
+- **Single binary for both runner and dev tooling.** Rejected:
+  `blytrun` is lean (runtime + frontend only, no toolchain or debug
+  scaffolding); `blyt` is the heavier dev tool with a different footprint
+  and audience. Splitting cleanly is closer to rust/cargo or node/npm
   than to pico8/love.
