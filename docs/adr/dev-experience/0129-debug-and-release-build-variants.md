@@ -2,7 +2,23 @@
 
 ## Status
 
-Accepted — implementation pending.
+Accepted — implemented; merged to blyt `main`, CI green.
+
+Carts build release `-O2`/stripped vs debug `-O0 -g`/`.dbg.blyt`; the RV32 libs
+and libc++ build release + debug variants (`lib/` + `lib/debug/`); frontends
+split into release (`blytplay`, `blyt_libretro`) and debug (`blytdebug`) with the
+debug transports gated out of release; the devtool exposes `blyt run` (release)
+and `blyt debug` (debug); and the VS Code extension drives debugging via
+`blyt debug`. Release `-O2` is bit-identical to debug `-O0` on the determinism
+path (ADR-0007 invariant verified).
+
+Landed as ADR-0129 phases 1–6 plus follow-ups: removal of libretro-core
+debugging (the shipped core is release-only; debugging is via `blytdebug` and the
+debug WASM); and `-O2`-exposed fixes (Lua runtime `fputs`/`fputc`/`__floatundisf`,
+`-fno-builtin` for the hand-rolled native lib, and `-fsemantic-interposition` so
+the emulated↔native symbol-preemption override survives optimization). Verified
+across the full integration suite locally, in the Linux Docker CI-mirror, and on
+GitHub CI (including the native RISC-V QEMU trusted-exec gate).
 
 Builds on ADR-0073/ADR-0065 (the long-intended cart `debug` metadata field),
 ADR-0120 (runtime libc), ADR-0121 and ADR-0127 (C++ / libc++ and SDK
