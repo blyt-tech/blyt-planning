@@ -114,7 +114,12 @@ the cart binary budget.
 **LTO is mandatory in release builds.** The SDK's release toolchain
 configuration enables LTO by default. Cart authors must not disable it.
 LTO is what makes the static-libc++ model viable; without it, dead
-standard-library code is not eliminated.
+standard-library code is not eliminated. The form libc++ is shipped in
+(machine-code archive vs LLVM bitcode vs fat LTO objects) governs how far LTO
+can reach and whether it ties authors to the bundled toolchain — see ADR-0127.
+Note that `-ffunction-sections` + `--gc-sections` already eliminates dead
+standard-library code at function granularity; whole-program LTO is an
+additional optimisation beyond that (ADR-0127 records the current status).
 
 ### The API boundary is C
 

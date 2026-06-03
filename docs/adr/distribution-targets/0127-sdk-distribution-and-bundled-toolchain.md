@@ -148,6 +148,57 @@ ADR-0121's mandatory cart compilation flags). Building libc++ from source
 is slow; the `libc++.a` and `libc++abi.a` artifacts are cached in CI and
 rebuilt only when the `third_party/libcxx` submodule pointer changes.
 
+### libc++ distribution form (machine code vs bitcode) and LTO
+
+ADR-0121 mandates LTO in release builds to eliminate dead standard-library
+code. The form in which libc++ is shipped determines how far that LTO can
+reach, and — importantly — whether cart authors are tied to the bundled
+toolchain. There are two distinct tiers of LTO:
+
+- **Cart-only LTO** optimises the cart's own translation units as a whole
+  program. It needs no special libc++ form: libc++ stays a machine-code
+  archive and its dead code is removed by `-ffunction-sections` +
+  `-Wl,--gc-sections`. LTO cannot inline *into* libc++, but the cart code is
+  fully optimised and unused libc++ is stripped.
+- **Whole-program LTO** additionally inlines libc++ into cart code and
+  optimises libc++ with cart context. LTO only crosses boundaries between
+  LLVM-bitcode modules, so this requires libc++ to be shipped **as bitcode**.
+
+The shipping forms and their trade-offs:
+
+| Form | LTO reach | Bring-your-own compiler? |
+|---|---|---|
+| Machine-code static archive (`.a`) | cart-only (+ gc-sections DCE) | Yes — any toolchain targeting the ABI |
+| LLVM bitcode archive | whole-program | No — bundled Clang only |
+| Fat LTO objects (`-ffat-lto-objects`) | both, chosen by link mode | Yes for normal link; bundled Clang for LTO |
+
+**The toolchain-lock point.** LLVM bitcode is LLVM-specific and
+version-sensitive: GCC cannot consume it, and even across Clang versions
+bitcode compatibility is not guaranteed. A bitcode libc++ therefore
+effectively requires the SDK's bundled Clang at a matching version, and the
+artifact must be rebuilt whenever the bundled LLVM is bumped. A machine-code
+`libc++.a`, by contrast, is toolchain-agnostic at the link level — any
+compiler/linker targeting `riscv32imafc` ILP32F can link it. (In either form,
+C++ authors must still compile against the SDK's libc++ headers so the
+`__config_site`/ABI matches; they are tied to the SDK's libc++ library and
+headers and to the ABI, but not necessarily to the SDK's compiler binary.)
+
+**Decision.** The SDK will ship libc++ as **fat LTO objects** — each object
+carrying both machine code and LLVM bitcode. This is the chosen form because
+it keeps both paths open: a normal link uses the machine code (so an author
+may target the ABI with their own Clang), while the bundled toolchain performs
+whole-program LTO (ADR-0121) from the embedded bitcode. A pure bitcode libc++
+is rejected — it would drop bring-your-own-compiler support; a plain
+machine-code archive is rejected — it cannot satisfy ADR-0121's whole-program
+LTO. The cost (≈2× libc++ archive size, longer libc++ build) is accepted as
+the price of keeping both paths open.
+
+**Status — not yet implemented.** The fat-object libc++ build is pending. In
+the interim the SDK ships a machine-code `libc++.a` and release dead-code
+elimination is handled by `-ffunction-sections` + `-fdata-sections` +
+`--gc-sections`, which already satisfies ADR-0121's dead-code goal;
+whole-program LTO across libc++ lands when the fat-object build does.
+
 ## Consequences
 
 - Cart authors download the SDK for their platform, unzip, add `bin/` to
@@ -172,3 +223,9 @@ rebuilt only when the `third_party/libcxx` submodule pointer changes.
   emsdk's own tooling is self-contained.
 - The universal macOS binary covers both Apple Silicon and Intel Macs with
   a single download. No per-architecture selection is required of users.
+- libc++ ships as fat LTO objects: the machine code keeps the "bring your own
+  compiler targeting the ABI" path open, while the embedded bitcode lets the
+  bundled toolchain do whole-program LTO. The trade-off accepted is a libc++
+  artifact roughly double the size of a plain machine-code archive. Until the
+  fat-object build is implemented, the SDK ships a machine-code `libc++.a` and
+  `--gc-sections` provides the dead-code elimination ADR-0121 calls for.
