@@ -148,6 +148,9 @@ ADR-0121's mandatory cart compilation flags). Building libc++ from source
 is slow; the `libc++.a` and `libc++abi.a` artifacts are cached in CI and
 rebuilt only when the `third_party/libcxx` submodule pointer changes.
 
+Debug and release variants of libc++ (and of the RV32 dynamic libraries) — and
+which of them ship in the SDK vs the runtime — are specified by ADR-0129.
+
 ### libc++ distribution form (machine code vs bitcode) and LTO
 
 ADR-0121 mandates LTO in release builds to eliminate dead standard-library

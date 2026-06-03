@@ -82,9 +82,11 @@ load (see ADR-0047); it is not needed before runtime initialization.
 
 The `debug` field is set by the packer — `true` for debug builds, absent
 (treated as `false`) for release builds. It is not authored in
-`cart.info.yaml`; the packer derives it from the `--release` flag. Frontends
+`cart.info.yaml`; the packer derives it from the build mode. Frontends
 use it to display a visible "DEBUG BUILD" warning; the runtime uses it to
-gate dev features (ADR-0065).
+gate dev features (ADR-0065). ADR-0129 specifies this field (its addition to
+`cart_info.fbs`) and the debug frontend's use of it — combined with actual
+DWARF presence — to verify a cart is debuggable before attaching.
 
 ```yaml
 # yaml-language-server: $schema=.console/schemas/cart.info.json

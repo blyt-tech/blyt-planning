@@ -18,3 +18,4 @@ dev-mode instrumentation that compiles away to nothing in release builds.
 | [0117](0117-adversarial-testing-strategy.md) | Adversarial testing strategy — fuzzing harnesses, corpus, sanitisers, upstream monitoring |
 | [0126](0126-implementation-repository-structure.md) | Implementation repository structure — monorepo layout, build systems, schemas, forked upstreams, integration tests |
 | [0128](0128-version-file-convention.md) | Version file convention — version.txt, build/version.txt, local dev vs CI vs buildbot stamping |
+| [0129](0129-debug-and-release-build-variants.md) | Debug and release build variants — carts, RV32 libraries, and frontends (debug/release split, blytdebug, blyt debug) |
