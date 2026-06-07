@@ -94,6 +94,37 @@ compile time and rejects any non-primitive argument or return type. This
 constraint eliminates the class of bugs where a pointer into host address
 space (e.g. `*mut lua_State`) crosses the host/guest boundary.
 
+## Amendment (ADR-0130, 2026-06-07)
+
+**Bridge opcode allowlist is the WASM-side analogue of the restricted
+export surface.** ADR-0130 introduces an ECALL-bridged Lua C API on the
+WASM target. Its single-dispatch opcode table is the enforcement point
+for this ADR's restrictions on that target: the loading/compiling class
+on the do-not-export list above has no opcodes by construction, and —
+unlike the rv32 export-surface restriction, which native cart code can
+bypass by calling exported symbols directly — the bridge is
+host-mediated on every operation. On WASM, Layer 2 is therefore
+*enforced* for the native portions of a hybrid cart, strictly stronger
+than the rv32 posture described above.
+
+**Window and token rules.** The bridge ECALL is valid only while a
+bridged Lua→native call is in flight; out-of-window traffic, unknown
+opcodes, and call-token mismatches are fatal traps. In-window validation
+failures (bad stack index, out-of-bounds guest pointer, stack-headroom
+exhaustion, metamethod errors, step-limit expiry) surface as catchable
+Lua errors per ADR-0084. Pseudo-indices (registry, upvalues) are
+rejected in v1.
+
+**rv32 export-surface additions.** So that the same wrapper source
+links on both targets, the `libblyt32lua.so` export list gains:
+`lua_geti`, `lua_seti`, `lua_rawlen`, `lua_next`. (`lua_gettop`,
+`lua_pushnil`, `lua_pushstring`, `lua_pushlstring`, `lua_tolstring`,
+`lua_error`, `lua_typename` were already on the allowed list above but
+missing from the implementation's `blyt32lua.sym`; they are added
+there.) All remain within the spirit of the allowed list: value access
+and table manipulation, no code loading. `lua_gettable` / `lua_settable`
+remain unexported.
+
 ## Consequences
 
 - The security claim for hybrid carts is clearly scoped: Layer 1 is the

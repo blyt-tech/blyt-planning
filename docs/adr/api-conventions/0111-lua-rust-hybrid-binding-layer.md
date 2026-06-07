@@ -224,6 +224,30 @@ LOAD segments and string-field bounds checking.
 a maximum instruction count per invocation to prevent infinite-loop guest
 code from hanging the WASM host. See ADR-0115.
 
+## Amendment (ADR-0130, 2026-06-07)
+
+**Type constraints superseded for bridged exports.** The "Type
+constraints" section above — in particular the rationale that "functions
+that need to interact with the Lua VM directly do not belong in the Rust
+binding layer" — is superseded by ADR-0130. The WASM target gains an
+ECALL-bridged Lua C API: per-export opt-in (`flags` bit in
+`.lua_exports`) wrappers run in the guest against the restricted Lua C
+API (ADR-0118 surface), with each operation serviced by the host against
+the real `lua_State`. Strings, tables, arbitrary arity, multiple
+returns, and `luaL_error` cross the boundary on both targets with the
+same wrapper source. Host pointers (including `*mut lua_State`) still
+never cross — the guest-side `lua_State *` is an opaque call token.
+
+**Typed path demoted to fast path.** The host-trampoline path described
+above (typed conversion, args in guest registers) remains as the fast
+path for primitive ≤4-argument signatures and stays the recommendation
+for hot per-element calls (ADR-0039). It is no longer the only path.
+
+**`.lua_exports` layout.** `wrap_sym` — previously recorded but unused
+by the host — is now resolved and validated (ADR-0112) for bridged
+entries. The first padding byte becomes `flags` (bit 0 =
+`BLYT_LUA_EXPORT_BRIDGED`); existing carts carry 0 and are unaffected.
+
 ## Consequences
 
 - Rust code stays inside the rv32emu sandbox on all targets, including

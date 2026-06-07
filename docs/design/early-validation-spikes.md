@@ -38,6 +38,7 @@ Each spike letter links to its section below.
 | [Q](#spike-q--luarust-hybrid-binding-rv32-path-and-wasm-call-on-demand)<br>- Rust `extern "C"` Lua C API calls resolve correctly against `libconsolelua.so` in the RV32IMAFC guest<br>- rv32emu operates as a per-call function server via a sentinel-ECALL mechanism (i32 and f32 confirmed)<br>- a single WASM module interleaves Lua-direct and rv32emu call-on-demand; cross-path determinism is byte-exact | done | — | — | yes | — |
 | [R](#spike-r--two-phase-seccomp-with-raw-bpf-for-rv32-ilp32)<br>- raw BPF correctly dispatches on both `AUDIT_ARCH_RISCV64` and `AUDIT_ARCH_RISCV32` in a single installed filter<br>- LIFO multi-filter semantics compose correctly across phase-1 (pre-exec) and phase-2 (post-exec)<br>- production rv32emu allowlist (`seccomp_allowlist.h`, 23 syscalls) committed | done | — | — | yes | libseccomp `SCMP_ARCH_RISCV32` gap |
 | [S](#spike-s--hardware-trusted-native-exec-seccomp-path)<br>- `seccomp_data.arch = AUDIT_ARCH_RISCV32` for natively exec'd ILP32 processes (3 kernel patches required on c-sky 6.5-rc1)<br>- the arch-dispatch filter applies correct per-arch rules across the LP64→ILP32 exec boundary<br>- `libblyt32.so`'s constructor installs phase-2 before cart code runs (socket → SIGSYS, execve → SIGSYS, write → exit 0) | done | RISC-V (QEMU; real hardware pending) | — | yes | 3 kernel patches required for ILP32 `seccomp_data.arch` |
+| [T](#spike-t--ecall-bridged-lua-c-api-on-the-wasm-target)<br>- exchange-thread bridged Lua C API from rv32emu guest wrappers: >4 args, multi-return, strings (>4 KiB retry, embedded NUL), tables, fixed-seed `lua_next` order — all byte-exact rv32 vs WASM<br>- guest `luaL_error` surfaces as catchable Lua error; 1000 consecutive error unwinds with register snapshot/restore<br>- bridged 10-op call ≈ 10.6 µs vs typed ≈ 4.6 µs vs pure Lua ≈ 0.6 µs (node/arm64) | done | — | — | yes | — |
 
 ---
 
@@ -2161,6 +2162,110 @@ SIGSYS; write → rc=0; full spike-i cart runs without SIGSYS. Commit
 **Dependency:** Spike R (raw BPF mechanics validated; LIFO semantics
 confirmed; Fedora 42 QEMU infrastructure reused). Requires a RISC-V
 kernel with the ILP32 ELF loader — this is the only external dependency.
+
+---
+
+## Spike T — ECALL-bridged Lua C API on the WASM target
+
+**Status:** PASS. Implementation in [`spikes/spike-t/`](../../spikes/spike-t/)
+(carts + run scripts; runtime changes on the blyt `spike-t-lua-bridge`
+branch); results in [`spike-t-results.md`](spike-t-results.md). All five
+stages pass (2026-06-07): fixed-seed `pairs()` parity; bridged scalar ops
+(>4 args, multi-return); strings (>4 KiB arena retry, embedded NUL) +
+catchable `luaL_error` with 1000-error register-restore soak; table ops
+with cross-path-identical `lua_next` order; 10-frame combined byte-exact
+gate.  Overhead: bridged 10-op call ≈ 10.6 µs vs typed ≈ 4.6 µs vs pure
+Lua ≈ 0.6 µs.  Full integration suite green (124 tests).  ADR-0130
+flipped to Accepted.
+
+**The question:** Can the rv32emu guest manipulate the host-side Lua VM
+through an ECALL-bridged subset of the Lua C API (ADR-0130), such that
+the same generated wrapper source — strings, tables, multiple returns,
+`luaL_error` — runs correctly and deterministically on both the rv32 and
+WASM execution paths?
+
+**Why this is a risk:** ADR-0130 reverses ADR-0111's primitives-only
+constraint for the WASM target. Three of its mechanisms are unproven:
+
+1. **The exchange thread.** The game coroutine is suspended in
+   `lua_yieldk` while the guest wrapper runs; ADR-0130 asserts that
+   direct C API access to a suspended thread is unsafe (metamethod
+   errors panic the WASM module) and that a registry-anchored exchange
+   thread with `lua_xmove` in/out is the correct execution context.
+   Both halves need empirical confirmation.
+2. **The error model.** Guest `luaL_error` cannot longjmp through the
+   host; ADR-0130's halt-restore-and-raise-from-continuation design
+   (host halts emulation without advancing PC, restores a register
+   snapshot, raises inside the coroutine from the trampoline
+   continuation) must surface as a catchable Lua error without
+   corrupting the coroutine or leaking guest stack across repeated
+   errors.
+3. **Cross-path determinism.** Bridged `lua_next` iteration is only
+   deterministic if the Lua string-hash seed is fixed in every build;
+   the Spike Q byte-exact gate must extend to a hybrid cart exercising
+   strings, tables, and errors.
+
+**What to build:**
+
+**Stage 1 — Seed fix and `pairs()` order parity.** Define
+`luai_makeseed()` to a fixed constant in all Lua builds (guest library,
+host WASM Lua, `blyt-luac`). A pure-Lua cart prints `pairs()` iteration
+order over a string-keyed table; output must be identical on the rv32
+path and the WASM path. (This also repairs a pre-existing pure-Lua
+divergence.)
+
+**Stage 2 — Bridge skeleton and scalar ops.** Bridge-stub variant of
+`libblyt32lua.so` (every `lua_*` export is an ECALL stub; no Lua VM
+inside). `BLYT_ECALL_LUA_OP = 10` host dispatch with opcode allowlist,
+validity window, and call-token check. Exchange thread + bridged
+trampoline + `__blyt_lua_bridge_invoke` shim. `wrap_sym` resolution and
+the `.lua_exports` `flags` byte. Port one existing typed export to the
+bridged path; verify identical behaviour vs the rv32 path. Side
+experiment: demonstrate the suspended-thread panic that justifies the
+exchange thread.
+
+**Stage 3 — Strings and the error model.** `PUSHLSTRING` / `TOLSTRING`
+with the guest scratch arena and retry path. `ERRMSG` / `ERROR` with
+register snapshot/restore and `BLYT_RUN_FN_ERROR`.
+
+**Stage 4 — Tables.** `CREATETABLE` / `GETFIELD` / `SETFIELD` / `GETI` /
+`SETI` / `RAWLEN` / `NEXT`; a guest wrapper that reads a config table
+and returns a result table.
+
+**Stage 5 — Gate and measurements.** Full hybrid cart exercising
+strings, table access, `lua_next` iteration, multiple returns, and a
+caught error; Spike-Q-style byte-exact gate (frame digest + debug-log
+stream) rv32 vs WASM. Overhead measurement: bridged call with ~10 ops vs
+typed fast path vs pure-Lua baseline (10k iterations).
+
+**Success criterion (headline questions):**
+
+- (a) Exchange-thread round-trip (xmove in, `pcall`'d ops, xmove out,
+  multiple returns) works while the game coroutine is suspended.
+- (b) Guest `luaL_error` surfaces as a catchable Lua error; coroutine
+  resumable; no guest register/stack drift over 1000 consecutive error
+  calls.
+- (c) String argument and return round-trip byte-exact, including the
+  >4 KiB retry path and embedded-NUL `PUSHLSTRING`.
+- (d) Table get/set/`geti`/`next` from a guest wrapper; fixed-seed
+  `next` order identical across paths.
+- (e) Byte-exact determinism gate passes for the full hybrid cart.
+  **Hard block for ADR-0130 Accepted status.**
+- (f) Overhead numbers recorded (µs/call, µs/op).
+
+**Failure implications:** (a) fails → fall back to read-only/push-only
+raw-op access to the suspended frame (metamethod-free ops only; much
+weaker API — `GETFIELD` degrades to raw semantics). (b) fails → fall
+back to errors-are-fatal (host terminates the cart on wrapper error;
+ADR-0084 degradation documented in ADR-0130). (c)/(d) fail → protocol
+bug-fixing, not a design failure. (e) fails → bisect with per-op
+digests; if seed-related, revisit the constant; the gate is a hard block
+for Accepted. (f) worse than ~100 µs per 10-op call → keep the feature,
+strengthen ADR-0130's typed-fast-path guidance.
+
+**Dependency:** Spike Q (call-on-demand mechanism, `.lua_exports`
+parsing, byte-exact gate methodology). Runs against the production blyt
+runtime on a local branch, not the spike-q harness.
 
 ---
 

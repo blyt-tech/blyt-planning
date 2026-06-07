@@ -36,6 +36,24 @@ which is required for the browser frontend. A single Lua build that runs
 everywhere (native, emulated, WASM) is prioritized over JIT performance
 (see ADR-0039).
 
+## Amendment (ADR-0130, 2026-06-07)
+
+**Vendored version is 5.5.1.** The implementation vendors Lua 5.5.1
+(the "deliberate, tested migration" anticipated below has effectively
+already happened in the codebase). The rationale of this ADR carries
+over unchanged — `LUA_32BITS`, native bitwise operators, `_ENV`
+sandboxing, integer/float distinction — and in 5.5 the string-hash seed
+became a `lua_newstate` parameter, which the next point relies on.
+
+**Fixed hash seed.** All Lua builds (guest `libblyt32lua.so`, host-side
+WASM Lua, `blyt-luac`) define `luai_makeseed()` to a fixed constant.
+The default seed (ASLR + time) makes `pairs()` iteration order,
+`table.sort` pivot selection, and default `math.random` streams differ
+per run and between the rv32 and WASM execution paths, violating the
+determinism requirements (ADR-0007, Spike D/Q gates). Hash-DoS
+randomisation has no threat model here: a cart can only degrade its own
+hash tables. See ADR-0130.
+
 ## Consequences
 
 - All Lua carts use 32-bit integers and floats natively — no accidental 64-bit

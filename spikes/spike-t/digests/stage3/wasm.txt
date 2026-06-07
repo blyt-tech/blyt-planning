@@ -1,0 +1,6 @@
+str_small:HELLO, BLYT!|12
+str_big:5400|395712
+str_nul:5|97,0,98,0,99
+err_caught:false|boom: once
+err_repeat:1000
+str_after_errors:STILL ALIVE

@@ -1,0 +1,6 @@
+tbl_name:blyt
+tbl_total:30
+tbl_keys:name;items;flag;scale;extra;
+tbl_n:5
+tbl_fill:42,first
+tbl_err:false|summarize: items must be a table

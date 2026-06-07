@@ -1,0 +1,5 @@
+# Spike T (f) overhead — 2026-06-07 11:30
+# 10k calls, node WASM path, best of 3, baseline 374 ms subtracted
+bench-lua: 6 ms net → 0.60 µs/call
+bench-typed: 46 ms net → 4.60 µs/call
+bench-bridged: 106 ms net → 10.60 µs/call

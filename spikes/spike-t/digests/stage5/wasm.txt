@@ -1,0 +1,11 @@
+gate:init
+gate:1|ok|376630507|ODD|1
+gate:2|ok|1826146287|EVEN|5
+gate:3|err|step: deliberate error on frame 3
+gate:4|ok|-1913676154|EVEN|21
+gate:5|ok|2074875153|ODD|46
+gate:6|err|step: deliberate error on frame 6
+gate:7|ok|1911729935|ODD|95
+gate:8|ok|-1629003454|EVEN|159
+gate:9|err|step: deliberate error on frame 9
+gate:10|ok|1885001144|EVEN|259

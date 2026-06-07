@@ -1,0 +1,3 @@
+# Cart build artifacts — reproducible via run-stage*.sh against the blyt
+# spike-t-lua-bridge branch.  digests/ and results/ are committed evidence.
+carts/*/build/
