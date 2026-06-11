@@ -182,3 +182,11 @@ records:
 The distinction between `type:` (inline embed) and `ref:` (index reference)
 is explicit in the YAML key, making the two very different semantics
 impossible to confuse.
+
+*Implementation note (2026-06):* `ref:` fields are implemented; on the wire
+(`.cart.layouts`) they are plain u32 fields — ref-ness lives in packer
+validation, generated-constant annotations, and the canonical schema-hash
+text (`name:ref<target>`). The ref helpers landed in the core buffer API
+(`blyt_buffer_ref` / `blyt_buffer_ref_valid` / `blyt_buffer_ref_slot`), and
+generations are always-on with the opt-out deferred — see the
+implementation-notes amendment on ADR-0096.
