@@ -112,8 +112,12 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
     standalone (its own `Makefile`) — use the standalone build + its arch-test
     harness for fast Stage 1 iteration; the blyt-side rebuild is the integration
     check.
-- [ ] **Stage 2 — `ilp32d` ABI witness.** `double` in `fa0` →
-  `3fe0000000000000` on arm64+amd64; Spike Q `__extendsfdf2` `"0.0"` resolved.
+- [~] **Stage 2 — `ilp32d` ABI witness.** ✅ arm64 PASS. A `double` 0.5 crossing
+  a `noinline` call boundary lands as `3fe0000000000000`; disassembly confirms
+  the `double` arg is passed in `fa0` (`fsd fa0,…`) per ilp32d, not split across
+  GPRs. Probe cart + host oracle saved in `probe-cart/`. **Deferred:** amd64
+  side (cross-host) → folds into Stage 5 (needs Docker); Spike Q `__extendsfdf2`
+  `"0.0"`→`"0.5"` is Lua's float→double number-string path → folds into Stage 3.
 - [ ] **Stage 3 — Lua int32 + float64.** `LUA_INT_INT` + `LUA_FLOAT_DOUBLE`
   across cart `build.rs` + `frontends/wasm/CMakeLists.txt`. *Gate:* Lua digests
   byte-equal rv32 (arm64/amd64) + WASM Lua-direct.
@@ -144,5 +148,9 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
   compressed implemented (`244cfb3`); host loader accepts ILP32D + submodule
   bumped (`a885912`). Double cart digests match a host IEEE oracle exactly;
   F unchanged; deterministic under reset-every-frame. Formal riscv-arch-test
-  deferred (no riscof/Sail locally). Next: Stage 2 (formal ABI witness:
-  `fa0=3fe0000000000000`) then Stage 3 (Lua `LUA_FLOAT_DOUBLE`).
+  deferred (no riscof/Sail locally).
+- 2026-06-14 — **Stage 2 ABI witness PASS (arm64).** `double 0.5 →
+  3fe0000000000000` across a call boundary; disasm confirms `fa0` passing.
+  Probe cart + host oracle archived under `probe-cart/`. Next: Stage 3
+  (Lua `LUA_INT_INT`+`LUA_FLOAT_DOUBLE`; also resolves the Q `__extendsfdf2`
+  symptom).
