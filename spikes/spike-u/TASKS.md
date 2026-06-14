@@ -176,8 +176,17 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
     quad-constant builtin path.
   - **Gate not yet met** (cross-path digests) — blocked for any test that
     stringifies a float; pure-numeric Lua digests would pass.
-- [ ] **Stage 4 — save-state across widened FP file.** Snapshot absorbs 64-bit
-  FP regs; bump format/version; regen digests. Spike K cross-host round-trip.
+- [x] **Stage 4 — save-state across widened FP file.** ✅ PASS (emulated).
+  **Non-issue by architecture: no blyt save/restore path serializes `F[]`** —
+  `blyt_reset_every_frame_cycle` snapshots the *state buffers* + preserves only
+  the 32 integer regs + `csr_fcsr`; the ADR-0130 bridged-call snapshot likewise.
+  So the 64-bit widening needs no snapshot-format change or version bump.
+  State buffers have no f64 type (max f32) → persisted doubles truncate to f32
+  deterministically (f32 SET canonicalises NaN, ADR-0010). Verified: an f64
+  Basel-sum-derived value persists **byte-identically** under
+  `--reset-every-frame` (`1549767731`/`1596163243`/`1612150117`), matching a
+  host IEEE oracle. Cross-host (amd64) state-buffer equality = Spike K's result
+  (unaffected by FP widening); needs Docker → Stage 5.
 - [ ] **Stage 5 — determinism + libm parity.** Basic-op byte-equal across 3
   paths; transcendental rv32-softfloat vs WASM characterised (remediate libm
   source if it diverges).
