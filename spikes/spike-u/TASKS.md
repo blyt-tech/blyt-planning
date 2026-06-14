@@ -118,7 +118,25 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
   GPRs. Probe cart + host oracle saved in `probe-cart/`. **Deferred:** amd64
   side (cross-host) → folds into Stage 5 (needs Docker); Spike Q `__extendsfdf2`
   `"0.0"`→`"0.5"` is Lua's float→double number-string path → folds into Stage 3.
-- [~] **Stage 3 — Lua int32 + float64.** CORE ✅ / number→string OPEN.
+- [x] **Stage 3 — Lua int32 + float64.** ✅ PASS (emulated path). Number→string
+  bug FIXED (`342c9e9`): the vendored Berkeley SoftFloat was built without
+  `LITTLEENDIAN`, so `float128_t` used big-endian word order (high 64 bits at
+  `v[0]`) on this LE target. f32/f64 are single-word (unaffected), but quad
+  (`tf`) values silently mismatched the compiler's IEEE binary128 layout (high
+  at `v[1]`) — SoftFloat↔SoftFloat roundtrips worked, but reading a
+  compiler-materialised quad (the long-double constants in musl's `vfprintf`
+  `fmt_fp`) swapped hi/lo → exponent read 0 → all float printf = 0. Fix: define
+  `LITTLEENDIAN` in the generated softfloat `platform.h`.
+  - Verified after fix: C `snprintf("%g",0.5)`→`0.5`; Lua `tostring(0.5)`→`"0.5"`
+    (**Spike Q `__extendsfdf2` symptom resolved**), `tostring(1/3)`→
+    `0.33333333333333331`, `math.type` float/integer, `%.14g` precision correct;
+    Lua double cart deterministic incl. `--reset-every-frame`; hello/hello-rust/
+    hello-c all run, no regression.
+  - **Remaining for full gate:** cross-path digest equality (rv32 amd64 + WASM
+    Lua-direct) — folds into Stage 5 (Docker/WASM). Emulated arm64 path complete.
+  - *(superseded notes below kept for the diagnosis trail)*
+
+- [~] ~~Stage 3 — number→string OPEN~~ (resolved, see above).
   Commits: lua `28bfe00` (luaconf `BLYT_LUA_I32_F64` branch), blyt `1428bc7`
   (build define swap + `__floatundidf` builtin + lua gitlink bump).
   - `LUA_32BITS=1` → `BLYT_LUA_I32_F64=1` across cart `build.rs`, guest-libs
@@ -189,10 +207,12 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
 - 2026-06-14 — **Stage 2 ABI witness PASS (arm64).** `double 0.5 →
   3fe0000000000000` across a call boundary; disasm confirms `fa0` passing.
   Probe cart + host oracle archived under `probe-cart/`.
-- 2026-06-14 — **Stage 3 core PASS, number→string OPEN.** Lua flipped to
-  int32+float64; values/arithmetic/comparisons/`math.type` all correct. Blocked
-  on a musl `vfprintf` variadic-double bug (reads 0) that also breaks C-side
-  `%g`/`%f` — pre-existing ilp32d issue, not Lua-caused, fully characterized,
-  needs gdb to root-cause. This is exactly the kind of leaked-ABI-seam the spike
-  exists to surface. Resume: debug musl `vfprintf` va_arg(double); then redo the
-  Stage 3 cross-path digest gate.
+- 2026-06-14 — **Stage 3 PASS (emulated).** Lua flipped to int32+float64; all
+  values/arithmetic/comparisons/`math.type` correct. The number→string bug was
+  root-caused (not musl, not va_arg) to a **SoftFloat `float128_t` endianness
+  word-order mismatch** — guest softfloat lacked `LITTLEENDIAN`, so quad word
+  order was big-endian and mismatched the compiler's binary128 when musl's
+  long-double `fmt_fp` read quad constants. One-line fix (`LITTLEENDIAN` in
+  softfloat platform.h, `342c9e9`). `tostring(0.5)="0.5"` (Q symptom resolved),
+  precision/`math.type` correct, deterministic. Cross-path (amd64/WASM) digest
+  gate folds into Stage 5.
