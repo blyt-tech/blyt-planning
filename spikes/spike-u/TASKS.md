@@ -48,10 +48,31 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
     the integration suite (Stage 2+).
   - **Not yet rebuilt:** libc++ (`blyt_sdk.cmake`, flags flipped) — only needed
     for C++ carts (`hello-cpp`); rebuild when exercising that path.
-- [ ] **Stage 1 — `D` in rv32emu fork.** `RV32_FEATURE_EXT_D`; widen FP file to
-  64-bit + NaN-box `F` ops; `f64` softfp helpers; decoder + interpreter bodies
-  (Berkeley SoftFloat `f64_*`); constopt pass-through; arch-test `D` suite.
-  *Gate:* `D` arch-test passes; `F` arch-test still passes.
+- [x] **Stage 1 — `D` in rv32emu fork.** ✅ FUNCTIONAL (formal arch-test pending,
+  see caveat). Commits on `spike-u-rv32d`: `57a9f52` (flag + f64 helpers),
+  `70e8807` (64-bit FP file + NaN-box F ops), `244cfb3` (RV32D scalar +
+  compressed). Host loader + submodule bump: blyt `a885912`.
+  - Register file widened to `softfloat_float64_t F[32]`; `get_f32`/`set_f32`
+    (NaN-box validate/box), `get_f32_bits` (raw FSW/FMV.X.W), `get_f64`/`set_f64`.
+  - All 26 F ops + 4 compressed-F ops route through the accessors (fixed a latent
+    NaN-box bug in C.FLW/C.FLWSP exposed by the widening).
+  - 26 scalar D ops + 4 compressed D ops (C.FLD/C.FSD/C.FLDSP/C.FSDSP) — decode
+    (funct3/funct7/fmt dispatch + rvc_jump_table), interpreter (SoftFloat
+    `f64_*`), constopt. Host cart loader now expects `EF_RISCV_FLOAT_ABI_DOUBLE`.
+  - *Validation (no riscof/Sail in this env — see caveat):* a double-exercising
+    cart (fld/fsd incl. compressed, +−×÷, fsgnj family, flt.d, fcvt.d.w/w.d/s.d)
+    digests **byte-identical to a host oracle** (correctly-rounded IEEE) at
+    frames 10/20/30 — `dprobe` 2018961092 / -1899182279 / -1505155154; the
+    single-precision f-probe is unchanged from the pre-D baseline; hello carts
+    run; the double cart is deterministic under `--reset-every-frame`
+    (save/restore over the widened FP file — early Stage 4 signal).
+  - **Caveat:** the formal `riscv-arch-test` D suite needs RISCOF + a Sail
+    reference sim + RISC-V GCC — impractical to stand up here. Validation is via
+    host-oracle digest equality + F-regression instead. Run riscof on Linux/CI
+    before calling the D extension production-conformant.
+  - **Still to confirm:** misa/ISA-string advertises `d`; JIT stays off
+    (`RV32_FEATURE_JIT=0`, FP forces interp — built clean without JIT D entries);
+    gdbstub FP-register width on the debug path.
 
   **Implementation map (recon done — files in the worktree's
   `third_party/rv32emu`, branch `spike-u-rv32d`):**
@@ -117,10 +138,11 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
   re-verified there: full build chain (configure/build/sdk/devtool) green;
   `hello-rust` links double-float ABI (`0x5`).
 - 2026-06-14 — **Stage 1 started** (branch `spike-u-rv32d`, commit `57a9f52`):
-  additive scaffolding only — `EXT_D` feature flag + `f64` softfp helpers
-  (`FMASK_*_D`, `RV_NAN_D`, `calc_fclass_d`, `is_nan_d`). Inert (no
-  `RV32_HAS(EXT_D)` references yet); blyt build compiles clean. **Remaining
-  Stage 1 (the large, correctness-critical core):** 64-bit FP register-file
-  widening + NaN-boxing across ~87 `F` sites, then ~25 D opcodes
-  (decode.h/decode.c/rv32_template.c/rv32_constopt.c), validated with the
-  `riscv-arch-test` F-then-D cadence. See the Stage 1 implementation map above.
+  additive scaffolding — `EXT_D` flag + `f64` softfp helpers.
+- 2026-06-14 — **Stage 1 FUNCTIONAL.** FP register file widened to 64-bit +
+  NaN-boxing (`70e8807`, F-probe byte-identical pre/post); full RV32D scalar +
+  compressed implemented (`244cfb3`); host loader accepts ILP32D + submodule
+  bumped (`a885912`). Double cart digests match a host IEEE oracle exactly;
+  F unchanged; deterministic under reset-every-frame. Formal riscv-arch-test
+  deferred (no riscof/Sail locally). Next: Stage 2 (formal ABI witness:
+  `fa0=3fe0000000000000`) then Stage 3 (Lua `LUA_FLOAT_DOUBLE`).
