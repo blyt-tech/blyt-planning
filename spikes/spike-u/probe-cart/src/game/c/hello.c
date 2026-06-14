@@ -1,6 +1,18 @@
 #include "blyt.h"
 #include "cart_state.h"
 #include <stdio.h>
+#include <stdarg.h>
+
+/* cart-side va_arg(double) — isolates compiler va_arg from musl's vfprintf */
+__attribute__((noinline)) static uint64_t va_read_double(int n, ...) {
+    va_list ap;
+    va_start(ap, n);
+    double d = va_arg(ap, double);
+    va_end(ap);
+    uint64_t b;
+    __builtin_memcpy(&b, &d, 8);
+    return b;
+}
 
 /* s_frame is deliberately plain static state (not a state buffer) to
  * demonstrate serialising static state in on_save_state/on_load_state. */
@@ -32,6 +44,28 @@ void blyt_cart_on_new_state(void) {
         snprintf(wb, sizeof(wb), "abi witness double 0.5 -> %08x%08x",
                  (uint32_t) (bits >> 32), (uint32_t) bits);
         blyt_console_debug(wb);
+        char fb[64];
+        volatile double dv = 0.5, dv2 = 1.5;
+        snprintf(fb, sizeof(fb), "C printf double: %g %g %f", dv, dv2, dv2);
+        blyt_console_debug(fb);
+        char ib[64];
+        snprintf(ib, sizeof(ib), "interleaved: %d %g %d", 7, dv, 9);
+        blyt_console_debug(ib);
+        /* Isolate the long-double (quad soft-float) path used by printf: */
+        volatile long double ld = (long double) dv; /* __extenddftf2 */
+        ld = ld + (long double) 1;                  /* __addtf3 + __floatsitf */
+        volatile double back = (double) ld;         /* __trunctfdf2 */
+        uint64_t bb;
+        __builtin_memcpy(&bb, (void *) &back, 8);
+        char qb[80];
+        snprintf(qb, sizeof(qb), "quad roundtrip 0.5+1 bits=%08x%08x",
+                 (uint32_t) (bb >> 32), (uint32_t) bb);
+        blyt_console_debug(qb);
+        uint64_t vb = va_read_double(1, 0.5);
+        char vbuf[80];
+        snprintf(vbuf, sizeof(vbuf), "cart va_arg double 0.5 bits=%08x%08x",
+                 (uint32_t) (vb >> 32), (uint32_t) vb);
+        blyt_console_debug(vbuf);
     }
 }
 

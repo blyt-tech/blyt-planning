@@ -118,9 +118,33 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
   GPRs. Probe cart + host oracle saved in `probe-cart/`. **Deferred:** amd64
   side (cross-host) → folds into Stage 5 (needs Docker); Spike Q `__extendsfdf2`
   `"0.0"`→`"0.5"` is Lua's float→double number-string path → folds into Stage 3.
-- [ ] **Stage 3 — Lua int32 + float64.** `LUA_INT_INT` + `LUA_FLOAT_DOUBLE`
-  across cart `build.rs` + `frontends/wasm/CMakeLists.txt`. *Gate:* Lua digests
-  byte-equal rv32 (arm64/amd64) + WASM Lua-direct.
+- [~] **Stage 3 — Lua int32 + float64.** CORE ✅ / number→string OPEN.
+  Commits: lua `28bfe00` (luaconf `BLYT_LUA_I32_F64` branch), blyt `1428bc7`
+  (build define swap + `__floatundidf` builtin + lua gitlink bump).
+  - `LUA_32BITS=1` → `BLYT_LUA_I32_F64=1` across cart `build.rs`, guest-libs
+    cmake, `blyt-luac`, `frontends/wasm`. lua_Number = double, lua_Integer = i32.
+  - Added `__floatundidf` (u64→double) to `softfloat_builtins.c` (needed by the
+    Lua VM under double).
+  - **✅ Verified correct:** `math.floor(0.5*1000)=500`, `(1/3)*1e6 floor
+    =333333`, `0.5==0.5`/`0.5<1.0` true, harmonic H₁₀ floor=2928;
+    `math.type(0.5)=float`, `math.type(3)=integer`. Lua + double arithmetic,
+    comparisons, and the int/float subtype split all work on the emulated path.
+  - **🔴 OPEN — number→string formatting.** `tostring(0.5)`→`"0.0"`,
+    `string.format("%g",…)`→`0`; the Spike Q `__extendsfdf2` symptom is NOT yet
+    resolved. **Root-caused to musl, not Lua:** a C cart's
+    `snprintf("%g",0.5)`→`"0"` too (pre-existing since Stage 0's ilp32d musl).
+    Diagnosis chain (all verified by disasm/probes): double *values* correct
+    everywhere; quad soft-float builtins correct (long-double roundtrip
+    0.5+1→`3ff8…`); the cart's own `va_arg(double)` reads 0.5 correctly; the
+    caller passes the variadic double correctly in GPR pair `a4:a5` per ilp32d;
+    integer varargs read correctly and *in position* (`"7 0 9"`); a variadic
+    callee saves only GPRs and `va_arg(double)` reads the GPR save area — ABI is
+    fully self-consistent. Yet musl's `vsnprintf`/`vfprintf` reads the variadic
+    double as 0. Needs gdb-level tracing of va_arg inside musl's `vfprintf`
+    (next step); not resolvable by static analysis. Probe carts:
+    `probe-cart/` (C) and `probe-cart-lua/` (Lua).
+  - **Gate not yet met** (cross-path digests) — blocked on the formatting bug
+    for any test that stringifies a float; pure-numeric Lua digests would pass.
 - [ ] **Stage 4 — save-state across widened FP file.** Snapshot absorbs 64-bit
   FP regs; bump format/version; regen digests. Spike K cross-host round-trip.
 - [ ] **Stage 5 — determinism + libm parity.** Basic-op byte-equal across 3
@@ -151,6 +175,11 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
   deferred (no riscof/Sail locally).
 - 2026-06-14 — **Stage 2 ABI witness PASS (arm64).** `double 0.5 →
   3fe0000000000000` across a call boundary; disasm confirms `fa0` passing.
-  Probe cart + host oracle archived under `probe-cart/`. Next: Stage 3
-  (Lua `LUA_INT_INT`+`LUA_FLOAT_DOUBLE`; also resolves the Q `__extendsfdf2`
-  symptom).
+  Probe cart + host oracle archived under `probe-cart/`.
+- 2026-06-14 — **Stage 3 core PASS, number→string OPEN.** Lua flipped to
+  int32+float64; values/arithmetic/comparisons/`math.type` all correct. Blocked
+  on a musl `vfprintf` variadic-double bug (reads 0) that also breaks C-side
+  `%g`/`%f` — pre-existing ilp32d issue, not Lua-caused, fully characterized,
+  needs gdb to root-cause. This is exactly the kind of leaked-ABI-seam the spike
+  exists to surface. Resume: debug musl `vfprintf` va_arg(double); then redo the
+  Stage 3 cross-path digest gate.
