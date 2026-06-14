@@ -233,6 +233,24 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
 - [ ] **Stage 6 — metal confirmation (optional, hardware-gated).** Deferred
   unless rv64 ILP32 substrate is on hand.
 
+## Validation (2026-06-14)
+
+- **lint** (clang-format 22.1.5 / cmake-format / cargo fmt / yamllint): clean.
+- **ctest**: 3/3 C unit tests pass.
+- **cargo nextest run --workspace**: **264/264 pass**, incl. the QEMU native
+  ilp32d gate, the wasm playwright browser test, and the new f64 buffer
+  round-trip (native + wasm + libretro legs).
+- f64 integration test added to `state_buffer.rs` (`ALL_TYPES_CONFIG` + all-types
+  round-trip stores/saves/restores `0.123456789012345`, asserts exact equality).
+- **Two more bugs caught by the tests:**
+  - `save.c` had a *second* field-size table that defaulted f64 to 4 bytes →
+    truncated across `blyt_save_write/read`. Fixed (8-byte f64 case).
+  - the native (bare-metal) libblyt32 variant stored 32 bits/field and lacked
+    f64 stubs → `libblyt32lua.so` relocation failure on the QEMU gate. Widened
+    its SOA to 64-bit + added `blyt_buffer_get_f64/set_f64` + `canon_f64`.
+- **Still open (documented):** WASM *bridged* f64 path (hybrid Lua+C on WASM);
+  `.fbs` doc comment; amd64 cross-host determinism (Docker); formal riscv-arch-test.
+
 ## Progress log
 
 - 2026-06-14 — Spike kicked off. Branches created in both repos; tracker added.
