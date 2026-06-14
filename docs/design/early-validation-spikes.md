@@ -39,6 +39,8 @@ Each spike letter links to its section below.
 | [R](#spike-r--two-phase-seccomp-with-raw-bpf-for-rv32-ilp32)<br>- raw BPF correctly dispatches on both `AUDIT_ARCH_RISCV64` and `AUDIT_ARCH_RISCV32` in a single installed filter<br>- LIFO multi-filter semantics compose correctly across phase-1 (pre-exec) and phase-2 (post-exec)<br>- production rv32emu allowlist (`seccomp_allowlist.h`, 23 syscalls) committed | done | — | — | yes | libseccomp `SCMP_ARCH_RISCV32` gap |
 | [S](#spike-s--hardware-trusted-native-exec-seccomp-path)<br>- `seccomp_data.arch = AUDIT_ARCH_RISCV32` for natively exec'd ILP32 processes (3 kernel patches required on c-sky 6.5-rc1)<br>- the arch-dispatch filter applies correct per-arch rules across the LP64→ILP32 exec boundary<br>- `libblyt32.so`'s constructor installs phase-2 before cart code runs (socket → SIGSYS, execve → SIGSYS, write → exit 0) | done | RISC-V (QEMU; real hardware pending) | — | yes | 3 kernel patches required for ILP32 `seccomp_data.arch` |
 | [T](#spike-t--ecall-bridged-lua-c-api-on-the-wasm-target)<br>- exchange-thread bridged Lua C API from rv32emu guest wrappers: >4 args, multi-return, strings (>4 KiB retry, embedded NUL), tables, fixed-seed `lua_next` order — all byte-exact rv32 vs WASM<br>- guest `luaL_error` surfaces as catchable Lua error; 1000 consecutive error unwinds with register snapshot/restore<br>- bridged 10-op call ≈ 10.6 µs vs typed ≈ 4.6 µs vs pure Lua ≈ 0.6 µs (node/arm64) | done | — | — | yes | — |
+| [U](#spike-u--hardware-doubles-end-to-end-ilp32d-and-rv32d-in-rv32emu) — move the stack to `rv32imafdc` / `ilp32d` with hardware doubles end-to-end (rv32emu `D` + custom Rust target + int32/float64 Lua), preserving cross-host determinism; no backing ADR — would feed proposals to ADR-0001/0005/0108 + a new `ilp32d` ADR. Full brief: [`spike-u-hardware-doubles.md`](spike-u-hardware-doubles.md) | proposed | rv64 silicon (Stage 6, optional) | — | — | — |
+| [V](#spike-v--language-onboarding-generality-swift-as-probe) — architecture probe (depends on Spike U): use Embedded Swift, a deliberately `Double`-/stdlib-leaning non-Rust LLVM language, to test whether the language-onboarding seams are language-agnostic. Produces a friction log, not a Swift adoption. Full brief: [`spike-v-swift-carts.md`](spike-v-swift-carts.md) | proposed | — | — | — | — |
 
 ---
 
@@ -2269,6 +2271,76 @@ runtime on a local branch, not the spike-q harness.
 
 ---
 
+## Spike U — Hardware doubles end-to-end: `ilp32d` and RV32D in rv32emu
+
+**Status:** Not started — proposed. Full brief in
+[`spike-u-hardware-doubles.md`](spike-u-hardware-doubles.md).
+
+Unlike spikes A–T, this one is **not backed by an existing ADR** — it runs ahead
+of the decision to produce the evidence (and a functional `spike-u-ilp32d`
+branch) a future ADR would be written against.
+
+**The question:** Can the whole stack move to `rv32imafdc` / `ilp32d` with
+hardware double-precision, end-to-end on all three execution paths (emulated,
+WASM Lua-direct, metal), while preserving the cross-host bit-determinism the
+project depends on? Concretely: add `D` to the `blyt-tech/rv32emu` fork (decode +
+interpreter + 64-bit FP register file + NaN-boxing, wired to the already-vendored
+Berkeley SoftFloat `f64` kernels); a custom `riscv32imafdc` / `ilp32d` Rust
+target via `build-std`; and Lua flipped to `LUA_INT_INT` + `LUA_FLOAT_DOUBLE`
+(int32 + float64) with digests staying byte-equal.
+
+**Why now:** the `f32`-everywhere model (ADR-0005) was an early default never
+driven by a particular need; a language-onboarding probe (Spike V) surfaced it,
+the original non-determinism rationale no longer load-bears (Berkeley SoftFloat
+gives bit-identical IEEE results), and the pre-cart window makes it a
+rebuild-and-regenerate exercise rather than a migration. The spike makes the
+option real and cheap to choose; whether the project *adopts* doubles remains the
+ADR-level identity decision. If it passes it feeds proposals to amend ADR-0001
+(ISA), ADR-0005 (numeric model), ADR-0108 (Rust target), plus a new ADR for the
+`ilp32d` ABI choice.
+
+**Dependency:** Spike O (Rust cart pipeline + ABI-witness methodology), Spikes
+D/K (cross-host determinism + save-state round-trip harness), Spike T (WASM
+Lua-direct bridge + fixed-seed parity), and the `blyt-tech/rv32emu` fork. Stage 6
+(metal confirmation) additionally needs the Spike S / Spike H ILP32-capable rv64
+substrate and is optional — emulator + WASM are sufficient to answer the design
+question.
+
+---
+
+## Spike V — Language-onboarding generality (Swift as probe)
+
+**Status:** Not started — proposed. **Depends on Spike U.** Full brief in
+[`spike-v-swift-carts.md`](spike-v-swift-carts.md).
+
+Also **not backed by an ADR, and not a proposal to ship Swift.** It is an
+architecture probe whose output informs a *meta* question — whether a
+language-onboarding extension point should be formalised.
+
+**The question:** Does adding a non-Rust LLVM language exercise *only* the
+intended per-language extension points, and what assumptions does it expose? For
+every place the integration touches the system, is that a clean, language-agnostic
+seam — or is it secretly Rust-/`no_std`-/f32-shaped and in need of generalising?
+Swift is the probe vehicle precisely because its defaults are awkward for this
+stack (path-of-least-resistance `Double`, a heavier stdlib than `no_std` Rust).
+The method has already paid off once: Spike U exists *because* Swift's
+`Double`-leaning defaults made the f32-everywhere omission look arbitrary — that
+discovery is entry zero in this spike's friction log.
+
+**Deliverable:** a **friction log** classifying every integration touch as an
+expected extension point or a leaked assumption to generalise, plus a functional
+`spike-v-swift` branch running an Embedded Swift probe cart (verified `ilp32d`,
+linking the Spike U sysroot, ARC lowering to native AMOs, and Swift = Rust = C
+byte-equal per-frame digests). A green result means "the architecture can take
+another language," not "we are taking this one."
+
+**Dependency:** Spike U (the `ilp32d` stack + rv32emu `D` — hard dependency),
+Spikes O/P (Rust cart pipeline, ABI-witness + digest harness, atomics result, and
+the comparison baseline), Spike I (cart format and packing). No new hardware
+required.
+
+---
+
 ## Ordering
 
 A → B → C and D and E and F (B is the dependency for C, D, and E; F
@@ -2386,6 +2458,17 @@ does not require hardware — the same Fedora 42 QEMU environment used in
 Spike H is sufficient. Its output (a committed `seccomp_allowlist.h`
 and a proven two-phase filter mechanism) unblocks the production
 implementation of the standalone OS sandbox.
+
+Spikes U and V are the first that run *ahead* of the ADR log rather than
+behind it — neither has a backing ADR; each would *produce* proposals. U
+moves the stack to `ilp32d` / hardware doubles, reusing the Spike O Rust
+pipeline, the Spike D/K determinism harness, and the Spike T WASM bridge,
+and adding `D` to the `blyt-tech/rv32emu` fork. V depends hard on U: it
+reuses U's `ilp32d` sysroot to run an Embedded Swift probe cart as an
+architecture-generality test, and exists because U was itself surfaced by
+V's probing method (Swift's `Double` defaults). Both run on the existing
+Docker/QEMU/Node infrastructure; U's optional Stage 6 is the only part
+needing the Spike S / H rv64 hardware substrate.
 
 ---
 
