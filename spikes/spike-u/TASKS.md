@@ -207,15 +207,25 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
     the error-unwind would leave `F[]` corrupted. Now snapshots/restores the
     full 64-bit FP file. (Needs a targeted hybrid-Lua+C error-path test on the
     WASM target to exercise it.)
-  - **f64 state-buffer field type (PROPOSED, not implemented).** Storage side is
-    trivial (tag `8=f64`, size 8, NaN-canon `0x7FF8…`). The real work: the
-    buffer scalar get/set path is **32-bit** (`blyt_state_set(uint32_t
-    value_bits)`; i8…f32 all fit) — f64 is the first 64-bit scalar field, so it
-    needs a 64-bit value path across the ECALL/bridge ABI, plus the typed Lua
-    proxy and Rust binding codegen, the tag in 3 spots (state_buffer.c /
-    ecall.h / devtool config.rs) + the `.fbs` doc, and tests. A clean focused
-    task (own ADR), not a one-liner. Without it, carts persist doubles as f32
-    (lossy but deterministic).
+  - **f64 state-buffer field type (DONE — C/Lua/Rust).** Commits blyt `b8da371`
+    (C path) + `eb9a93e` (Lua/Rust + lua_Number fix). Added type tag `8=f64`
+    across config.rs / ecall.h / state_buffer.c; a dedicated 64-bit value path
+    (`blyt_state_set64/get64`, `BUF_OP_GET_F64/SET_F64` with the value as a
+    lo/hi register pair, since the scalar buf ABI is 32-bit); guest C API
+    `blyt_buffer_set_f64/get_f64`; cart_load import allowlist; Lua
+    `blyt.buf.get_f64/set_f64` + generated-proxy f64 branches; Rust
+    `buffer::get_f64/set_f64`. **Verified:** C, Lua, and Rust carts store/read an
+    f64 Basel sum at full double precision (`1.5497677311665408…`, matches host
+    oracle); C+Lua persist byte-identically across `--reset-every-frame`.
+    - **Bonus fix (latent Stage-3 bug):** `blyt_lua_internal.h` (cart-side
+      minimal Lua API decl) still hardcoded `typedef float lua_Number`. Under
+      double Lua + RV32D, any hybrid-Lua+C glue's `lua_tonumber` read a double
+      returned in `fa0` as a NaN-boxed single → canonical NaN. Fixed to
+      `double`. This affected all hybrid Lua+C carts, not just f64 buffers.
+    - **Remaining:** WASM **bridged** f64 path (hybrid Lua+C on WASM — the
+      BLYT_LUA_OP bridge doesn't yet carry a 64-bit buffer value; pure-Lua on
+      WASM uses host state buffers, already covered); `.fbs` doc comment;
+      integration-suite tests across the 3 legs.
 
 - [ ] ~~Stage 5 (orig)~~ Basic-op byte-equal across 3
   paths; transcendental rv32-softfloat vs WASM characterised (remediate libm
