@@ -129,22 +129,35 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
     =333333`, `0.5==0.5`/`0.5<1.0` true, harmonic H₁₀ floor=2928;
     `math.type(0.5)=float`, `math.type(3)=integer`. Lua + double arithmetic,
     comparisons, and the int/float subtype split all work on the emulated path.
-  - **🔴 OPEN — number→string formatting.** `tostring(0.5)`→`"0.0"`,
-    `string.format("%g",…)`→`0`; the Spike Q `__extendsfdf2` symptom is NOT yet
-    resolved. **Root-caused to musl, not Lua:** a C cart's
-    `snprintf("%g",0.5)`→`"0"` too (pre-existing since Stage 0's ilp32d musl).
-    Diagnosis chain (all verified by disasm/probes): double *values* correct
-    everywhere; quad soft-float builtins correct (long-double roundtrip
-    0.5+1→`3ff8…`); the cart's own `va_arg(double)` reads 0.5 correctly; the
-    caller passes the variadic double correctly in GPR pair `a4:a5` per ilp32d;
-    integer varargs read correctly and *in position* (`"7 0 9"`); a variadic
-    callee saves only GPRs and `va_arg(double)` reads the GPR save area — ABI is
-    fully self-consistent. Yet musl's `vsnprintf`/`vfprintf` reads the variadic
-    double as 0. Needs gdb-level tracing of va_arg inside musl's `vfprintf`
-    (next step); not resolvable by static analysis. Probe carts:
-    `probe-cart/` (C) and `probe-cart-lua/` (Lua).
-  - **Gate not yet met** (cross-path digests) — blocked on the formatting bug
-    for any test that stringifies a float; pure-numeric Lua digests would pass.
+  - **🔴 OPEN — number→string formatting** (`tostring(float)`/`%g`/`%f`→0; Q
+    `__extendsfdf2` symptom). Affects C carts too (`snprintf("%g",0.5)`→`"0"`),
+    so it's **not Lua-specific** and predates Stage 3 (Stage-0 ilp32d musl).
+    **Root cause (verified by probes):** musl's `vfprintf`/`fmt_fp` formats ALL
+    floats via 128-bit `long double` (binary128 on RISC-V; `%f`/`%g` promote
+    double→long double). The guest's **quad (`tf`) soft-float path is broken for
+    quad *constants*:** a runtime-built quad converts correctly
+    (`(long double)12345 → u32 12345`, `f64 40c81c80…`; volatile too), but a
+    quad *constant* converts to 0 (`(double)2.0L → 0`) even though `2.0L` is
+    materialized inline with correct bytes `[0,0,0,0x40000000]`. `fmt_fp` mixes
+    the runtime value with quad constants (`2/LDBL_EPSILON`, `0x1p120`, etc.) →
+    those read 0/inf → digit extraction emits all zeros.
+    **Ruled out:** `va_arg` (cart va_arg(double) works; ints read in-position),
+    variadic ABI, quad compares (`__gttf2` ok), and quad arithmetic
+    (roundtrip `0.5+1→3ff8…` ok). musl `vfprintf.c` is stock upstream;
+    `arch/riscv32/bits/float.h` correctly declares binary128 (`LDBL_MANT_DIG
+    113`). The quad builtins live in `runtime/guest/src/libblyt32lua/
+    softfloat_builtins.c` (by-pointer ABI, Berkeley SoftFloat f128).
+    **Next:** disasm the quad-constant→`__trunctfdf2`/`__fixunstfsi` call to see
+    why the inline-materialized constant reaches the builtin as 0 (codegen of
+    128-bit constant store vs the by-ref builtin ABI), OR sidestep musl's
+    long-double float path entirely. Probe carts: `probe-cart/` (C),
+    `probe-cart-lua/` (Lua).
+  - **Open design question (per Tom):** the determinism work that made Lua-C and
+    Rust float output identical may bear on the right fix — e.g. whether to make
+    `long double == double` so musl printf avoids the quad path, vs fixing the
+    quad-constant builtin path.
+  - **Gate not yet met** (cross-path digests) — blocked for any test that
+    stringifies a float; pure-numeric Lua digests would pass.
 - [ ] **Stage 4 — save-state across widened FP file.** Snapshot absorbs 64-bit
   FP regs; bump format/version; regen digests. Spike K cross-host round-trip.
 - [ ] **Stage 5 — determinism + libm parity.** Basic-op byte-equal across 3
