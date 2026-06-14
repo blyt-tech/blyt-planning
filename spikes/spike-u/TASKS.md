@@ -233,6 +233,12 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
 - [ ] **Stage 6 — metal confirmation (optional, hardware-gated).** Deferred
   unless rv64 ILP32 substrate is on hand.
 
+## Merge-readiness
+
+Tracked in **[blyt-planning#1](https://github.com/blyt-tech/blyt-planning/issues/1)**
+— blockers (lua submodule isn't a fork; push the rv32emu D branch), ADRs,
+`test-linux-docker`, docs, and coverage gaps.
+
 ## Validation (2026-06-14)
 
 - **lint** (clang-format 22.1.5 / cmake-format / cargo fmt / yamllint): clean.
