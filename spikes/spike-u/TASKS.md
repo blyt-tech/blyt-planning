@@ -113,6 +113,14 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
 - 2026-06-14 — **Process fix:** Stage 0 was initially committed on a branch in
   the *main* `~/code/blyt` checkout, against blyt's worktree workflow. Relocated:
   reset main checkout to `main`, created `wtp` worktree at
-  `~/code/blyt-worktrees/spike-u-ilp32d` (carries commit `9578d7b`). Stage 1
-  work continues there. Next: Stage 1 (D extension, branch `spike-u-rv32d` in the
-  worktree's rv32emu submodule).
+  `~/code/blyt-worktrees/spike-u-ilp32d` (carries commit `9578d7b`). Stage 0
+  re-verified there: full build chain (configure/build/sdk/devtool) green;
+  `hello-rust` links double-float ABI (`0x5`).
+- 2026-06-14 — **Stage 1 started** (branch `spike-u-rv32d`, commit `57a9f52`):
+  additive scaffolding only — `EXT_D` feature flag + `f64` softfp helpers
+  (`FMASK_*_D`, `RV_NAN_D`, `calc_fclass_d`, `is_nan_d`). Inert (no
+  `RV32_HAS(EXT_D)` references yet); blyt build compiles clean. **Remaining
+  Stage 1 (the large, correctness-critical core):** 64-bit FP register-file
+  widening + NaN-boxing across ~87 `F` sites, then ~25 D opcodes
+  (decode.h/decode.c/rv32_template.c/rv32_constopt.c), validated with the
+  `riscv-arch-test` F-then-D cadence. See the Stage 1 implementation map above.
