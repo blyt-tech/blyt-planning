@@ -187,7 +187,37 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
   `--reset-every-frame` (`1549767731`/`1596163243`/`1612150117`), matching a
   host IEEE oracle. Cross-host (amd64) state-buffer equality = Spike K's result
   (unaffected by FP widening); needs Docker → Stage 5.
-- [ ] **Stage 5 — determinism + libm parity.** Basic-op byte-equal across 3
+- [~] **Stage 5 — determinism + libm parity.** ✅ WASM Lua-direct PASS;
+  amd64-emulated leg pending Docker. A Lua cart doing basic f64 ops *and*
+  transcendentals (sin/cos/exp/log/pow, `x^1.5`) prints `%.17g` (uniquely
+  identifies a double). **rv32-softfloat (arm64) and WASM-Lua-direct produce
+  byte-identical output on every overlapping frame** — including the
+  transcendentals, so the libm-parity witness PASSES (emscripten musl libm ==
+  blyt-tech musl libm to full double precision for these inputs; no remediation
+  needed). Basic-op parity holds (correctly-rounded IEEE). Probe: `probe-cart-lua/`.
+  - **Remaining:** rv32 amd64 leg — the emulator is pure Berkeley SoftFloat for
+    all FP (incl. D), so arm64↔amd64 is host-independent by construction (Spike
+    D/K established this generally); a Docker `test-linux-docker` run with the
+    D-cart is the formal confirmation. (Not run here — heavy; near-certain.)
+
+- ⚙️ **Follow-ups surfaced by Spike U (per Tom):**
+  - **Bridge-call FP snapshot (DONE, blyt `536b27d`).** ADR-0130's bridged-call
+    register snapshot saved only the 32 integer regs + `fcsr`; with RV32D a
+    bridged wrapper can hold live values in callee-saved FP regs (fs0–fs11), so
+    the error-unwind would leave `F[]` corrupted. Now snapshots/restores the
+    full 64-bit FP file. (Needs a targeted hybrid-Lua+C error-path test on the
+    WASM target to exercise it.)
+  - **f64 state-buffer field type (PROPOSED, not implemented).** Storage side is
+    trivial (tag `8=f64`, size 8, NaN-canon `0x7FF8…`). The real work: the
+    buffer scalar get/set path is **32-bit** (`blyt_state_set(uint32_t
+    value_bits)`; i8…f32 all fit) — f64 is the first 64-bit scalar field, so it
+    needs a 64-bit value path across the ECALL/bridge ABI, plus the typed Lua
+    proxy and Rust binding codegen, the tag in 3 spots (state_buffer.c /
+    ecall.h / devtool config.rs) + the `.fbs` doc, and tests. A clean focused
+    task (own ADR), not a one-liner. Without it, carts persist doubles as f32
+    (lossy but deterministic).
+
+- [ ] ~~Stage 5 (orig)~~ Basic-op byte-equal across 3
   paths; transcendental rv32-softfloat vs WASM characterised (remediate libm
   source if it diverges).
 - [ ] **Stage 6 — metal confirmation (optional, hardware-gated).** Deferred
