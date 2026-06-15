@@ -249,6 +249,16 @@ Tracked in **[blyt-planning#1](https://github.com/blyt-tech/blyt-planning/issues
   to RV32IMAFDC / i32+f64 / BLYT_LUA_I32_F64. Same commit.
 - ✅ **`.fbs` doc comment** — `schemas/cart_layouts.fbs` `8=f64` added. Committed
   to `spike-u-ilp32d` as `743e16c`, pushed.
+- ✅ **Docker build fix + riscv32 target check** — committed `f6bd483`, pushed.
+  - `Dockerfile.testing`: add empty `gnu/stubs-ilp32d.h` stub (Ubuntu 24.04
+    `libc6-dev-riscv64-cross` ships only `stubs-ilp32f.h`; bridge build uses
+    `--target=riscv32-linux-gnu -mabi=ilp32d -nostdlib` so clang searches the
+    riscv64-linux-gnu sysroot); remove stale `rustup target add riscv32imafc`.
+  - `tests/integration/tests/common/mod.rs`: `has_rust_riscv_target()` now
+    checks for the pinned nightly toolchain by name (custom JSON targets never
+    appear in `rustup target list`). Stage 0 caveat resolved.
+  - `ci.yml`: remove stale `rustup target add` workaround.
+  - `devtool/src/build.rs`: update stale comment.
 
 **Still to do:**
 - **lua fork** — create `blyt-tech/lua` fork manually on GitHub (MCP fork API
@@ -256,8 +266,8 @@ Tracked in **[blyt-planning#1](https://github.com/blyt-tech/blyt-planning/issues
   1. `git -C …/third_party/lua remote set-url origin https://github.com/blyt-tech/lua`
   2. `git -C …/third_party/lua push origin spike-u-lua-i32f64`
   3. Update `.gitmodules` submodule URL in superproject + re-commit gitlink
-- **test-linux-docker** — run `cmake --build build --target test-linux-docker`
-  in the `spike-u-ilp32d` worktree.
+- **test-linux-docker** — Docker build running; blocked on `gnu/stubs-ilp32d.h`
+  fix landing (committed `f6bd483`). Re-run after current build completes.
 - **Coverage gaps** (lower priority) — WASM bridged f64, bridge-FP-snapshot
   test, lua_Number hybrid test, Pure-Lua-on-WASM f64 coverage.
 
