@@ -187,18 +187,20 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
   `--reset-every-frame` (`1549767731`/`1596163243`/`1612150117`), matching a
   host IEEE oracle. Cross-host (amd64) state-buffer equality = Spike K's result
   (unaffected by FP widening); needs Docker → Stage 5.
-- [~] **Stage 5 — determinism + libm parity.** ✅ WASM Lua-direct PASS;
-  amd64-emulated leg pending Docker. A Lua cart doing basic f64 ops *and*
-  transcendentals (sin/cos/exp/log/pow, `x^1.5`) prints `%.17g` (uniquely
-  identifies a double). **rv32-softfloat (arm64) and WASM-Lua-direct produce
-  byte-identical output on every overlapping frame** — including the
+- [x] **Stage 5 — determinism + libm parity.** ✅ FULL PASS (2026-06-15).
+  WASM Lua-direct + rv32 amd64 (Docker) both confirmed. A Lua cart doing basic
+  f64 ops *and* transcendentals (sin/cos/exp/log/pow, `x^1.5`) prints `%.17g`
+  (uniquely identifies a double). **rv32-softfloat (arm64) and WASM-Lua-direct
+  produce byte-identical output on every overlapping frame** — including the
   transcendentals, so the libm-parity witness PASSES (emscripten musl libm ==
   blyt-tech musl libm to full double precision for these inputs; no remediation
   needed). Basic-op parity holds (correctly-rounded IEEE). Probe: `probe-cart-lua/`.
-  - **Remaining:** rv32 amd64 leg — the emulator is pure Berkeley SoftFloat for
-    all FP (incl. D), so arm64↔amd64 is host-independent by construction (Spike
-    D/K established this generally); a Docker `test-linux-docker` run with the
-    D-cart is the formal confirmation. (Not run here — heavy; near-certain.)
+  - **amd64 Docker leg confirmed** — `test-linux-docker` ran to completion on
+    2026-06-15. Fixes needed en route: (a) `gnu/stubs-ilp32d.h` stub in
+    Dockerfile.testing (Ubuntu 24.04 `libc6-dev-riscv64-cross` ships only the
+    ilp32f stub); (b) stale ilp32f libc++ in build volume (wiped; rebuilt clean
+    with ilp32d). Post-fix: **all integration tests pass** across state_buffer
+    (56), trace (9), wasm (4) suites (and all other suites in the workspace).
 
 - ⚙️ **Follow-ups surfaced by Spike U (per Tom):**
   - **Bridge-call FP snapshot (DONE, blyt `536b27d`).** ADR-0130's bridged-call
@@ -260,14 +262,15 @@ Tracked in **[blyt-planning#1](https://github.com/blyt-tech/blyt-planning/issues
   - `ci.yml`: remove stale `rustup target add` workaround.
   - `devtool/src/build.rs`: update stale comment.
 
+- ✅ **test-linux-docker PASS** — all integration tests green on amd64 Linux
+  (Docker, Ubuntu 24.04 + LLVM 22). Stage 5 amd64 leg confirmed. `BLYT_SKIP_QEMU_GATE=1`.
+
 **Still to do:**
 - **lua fork** — create `blyt-tech/lua` fork manually on GitHub (MCP fork API
   returned 403), then:
   1. `git -C …/third_party/lua remote set-url origin https://github.com/blyt-tech/lua`
   2. `git -C …/third_party/lua push origin spike-u-lua-i32f64`
   3. Update `.gitmodules` submodule URL in superproject + re-commit gitlink
-- **test-linux-docker** — Docker build running; blocked on `gnu/stubs-ilp32d.h`
-  fix landing (committed `f6bd483`). Re-run after current build completes.
 - **Coverage gaps** (lower priority) — WASM bridged f64, bridge-FP-snapshot
   test, lua_Number hybrid test, Pure-Lua-on-WASM f64 coverage.
 
