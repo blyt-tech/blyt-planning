@@ -265,14 +265,12 @@ Tracked in **[blyt-planning#1](https://github.com/blyt-tech/blyt-planning/issues
 - ✅ **test-linux-docker PASS** — all integration tests green on amd64 Linux
   (Docker, Ubuntu 24.04 + LLVM 22). Stage 5 amd64 leg confirmed. `BLYT_SKIP_QEMU_GATE=1`.
 
-**Still to do:**
-- **lua fork** — create `blyt-tech/lua` fork manually on GitHub (MCP fork API
-  returned 403), then:
-  1. `git -C …/third_party/lua remote set-url origin https://github.com/blyt-tech/lua`
-  2. `git -C …/third_party/lua push origin spike-u-lua-i32f64`
-  3. Update `.gitmodules` submodule URL in superproject + re-commit gitlink
-- **Coverage gaps** (lower priority) — WASM bridged f64, bridge-FP-snapshot
-  test, lua_Number hybrid test, Pure-Lua-on-WASM f64 coverage.
+- ✅ **lua fork** — `blyt-tech/lua` fork created; `spike-u-lua-i32f64` pushed;
+  `.gitmodules` updated to `blyt-tech/lua` in superproject (`4b13778`).
+
+**Still to do (lower priority, not merge-blocking per issue #1):**
+- **Coverage gaps** — WASM bridged f64, bridge-FP-snapshot test, lua_Number
+  hybrid test, Pure-Lua-on-WASM f64 coverage.
 
 ## Validation (2026-06-14)
 
