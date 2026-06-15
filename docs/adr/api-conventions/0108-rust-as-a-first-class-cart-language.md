@@ -8,6 +8,10 @@ the primary native cart language alongside Lua. ADRs with API ergonomics
 implications should treat Rust as a first-class consumer alongside Lua;
 C is supported for interoperability and library bindings.
 
+Amended 2026-06-15 (Spike U): Rust target changed from the upstream
+`riscv32imafc-unknown-none-elf` to the custom `riscv32imafdc-blyt-none-elf`
+JSON target (see amendment below).
+
 ## Context
 
 The console's authoring story is: **Lua** for approachable scripting,
@@ -21,7 +25,8 @@ growing category.
 
 Rust compiles to `riscv32imafc-unknown-none-elf` (the A extension is
 required by the target; there is no `riscv32imfc` Rust target in upstream
-nightly — see ADR-0001). Rust provides memory safety, a strong type system,
+nightly — see ADR-0001). *(Amended 2026-06-15: target changed to
+`riscv32imafdc-blyt-none-elf` — see amendment below.)* Rust provides memory safety, a strong type system,
 and zero-cost abstractions without a runtime, all compatible with the
 console's constraints (no dynamic allocation required, fixed timestep, POD
 state buffers).
@@ -376,3 +381,46 @@ in `on_load`.
 - Rust's sequence model (explicit step arrays) is more honest than Lua's
   recording abstraction about the underlying data structure, at the cost
   of being slightly more verbose for simple cases.
+
+## Amendment — custom `riscv32imafdc-blyt-none-elf` Rust target (Spike U, 2026-06-15)
+
+**Motivation.** Spike U adds the D extension to the ISA (ADR-0001 amendment,
+ADR-0132). There is no upstream Rust nightly target for `riscv32imafdc`, so a
+custom target JSON is required.
+
+**Target.** The new Rust cart target is `riscv32imafdc-blyt-none-elf`, defined
+in `devtool/targets/riscv32imafdc-blyt-none-elf.json`:
+
+```json
+{
+  "llvm-target": "riscv32",
+  "features": "+m,+a,+f,+d,+c",
+  "llvm-abiname": "ilp32d",
+  "relocation-model": "pic",
+  "panic-strategy": "abort"
+  // ... (matching the prior target otherwise)
+}
+```
+
+Custom targets require `-Zunstable-options` in `RUSTFLAGS` even on nightly;
+this is added to `cart_rustflags` in the devtool. The target is discovered via
+`RUST_TARGET_PATH`, which the devtool materializes into each cart's
+`--target-dir`.
+
+**ABI change.** Under `ilp32d`, a `double` argument passes in an FP register
+(`fa0`) as a 64-bit value, not split across GPRs. Spike U validated this: a
+`double 0.5` crossing an `extern "C"` boundary lands as `3fe0000000000000` in
+`fa0` on both arm64 and amd64 hosts. The upstream `riscv32imafc-unknown-none-elf`
+target used `ilp32f` (f32 in FP registers).
+
+**Rust Spike O findings still apply.** The five load-bearing questions Spike O
+answered (float ABI correctness, packer–Cargo integration, compile-time
+guarantees, semantic transparency, API findings) all carry forward. The
+build-std machinery (`-Z build-std=core,alloc`, pinned nightly + `rust-src`)
+is unchanged; the custom target slots in with near-zero marginal toolchain cost
+because the project was already in build-std territory.
+
+**Integration tests.** The integration suite `common/mod.rs` previously gated
+on `rustup target list` containing `riscv32imafc-unknown-none-elf`. Custom JSON
+targets do not appear in `rustup target list`; this check was updated to match
+the custom target file directly.

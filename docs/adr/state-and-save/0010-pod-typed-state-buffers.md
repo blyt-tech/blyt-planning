@@ -1,7 +1,8 @@
 # ADR-0010: Persistent state in POD typed buffers
 
 ## Status
-Accepted
+Accepted — amended 2026-06-15 (Spike U): f64 added as a POD type; NaN
+canonicalization extended to f64 fields (see amendment below and ADR-0133).
 
 ## Context
 
@@ -68,3 +69,36 @@ the canonicalization is silent.
   gameplay; the full working set is known and committed upfront.
 - Field access uses compile-time integer constants (ADR-0009), not string
   lookups — zero overhead beyond the API call itself.
+
+## Amendment — f64 field type (Spike U, 2026-06-15)
+
+**f64 is added as a POD primitive type** (type tag `8`, alongside the
+existing i8/u8/i16/u16/i32/u32/f32/bool set). See ADR-0133 for the full
+design rationale and API surface.
+
+**Wire protocol.** The existing state-buffer scalar bus is 32-bit (ECALL
+arguments are 32-bit registers). f64 fields use a dedicated 64-bit value path:
+`blyt_state_set64`/`get64` and the `BUF_OP_GET_F64`/`SET_F64` opcodes carry
+the value as a lo+hi register pair. The guest C API exposes
+`blyt_buffer_set_f64`/`get_f64`; the Lua proxy adds `blyt.buf.get_f64`/
+`set_f64`; the Rust binding adds `buffer::get_f64`/`set_f64`.
+
+**NaN canonicalization on f64 field writes.** Writing a NaN to an f64 state
+buffer field canonicalizes it to `0x7FF8000000000000` — the standard
+double-precision quiet NaN (positive quiet NaN, zero mantissa payload),
+consistent with the IEEE 754 canonical NaN and the rv32emu `RV_NAN_D`
+constant. The same dev-mode warning policy as f32 applies: a NaN write
+triggers a source-location warning in debug builds; silent in release.
+
+**Save-state format.** f64 fields are serialized as 8 bytes (little-endian
+`uint64_t`). The existing 4-byte path is unchanged for all prior types.
+The native (bare-metal) `libblyt32` variant's SOA was widened from
+`uint32_t[N]` to `uint64_t[N]` per field to accommodate f64; this doubles
+the static array footprint (128 KB → 256 KB per buffer at maximum field
+count) — acceptable within native-target memory limits.
+
+**FP register file.** The rv32emu FP register file was widened to 64-bit
+(`softfloat_float64_t F[32]`) as part of Spike U (ADR-0001 amendment). No
+blyt save/restore path serializes `F[]` directly — state buffers are the
+persistence primitive — so the 64-bit widening required no snapshot-format
+version bump.

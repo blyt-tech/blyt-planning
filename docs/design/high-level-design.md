@@ -81,7 +81,7 @@ the expected native path for most games. Cart authors should reach for Lua
 (scripting, rapid iteration) or Rust (performance, type safety, ecosystem
 access) as their default choices.
 
-Zig and other RV32IMAFC-targeting languages work as-is; the format imposes
+Zig and other RV32IMAFDC-targeting languages work as-is; the format imposes
 no language restriction. Approachable entry (Lua), professional ceiling
 (Rust or C). Same cart format, same API, same distribution regardless of
 language.
@@ -100,7 +100,10 @@ in as identity.
 
 ## 2. Hardware Target
 
-### Decision: RV32IMAFC, little-endian, no D extension.
+### Decision: RV32IMAFDC, little-endian, `ilp32d` hard-float ABI.
+
+*(Amended 2026-06-15, Spike U: D extension added. See ADR-0001 amendment and
+ADR-0132.)*
 
 **Rationale:**
 - RISC-V chosen for license cleanliness (vs. ARM's ambiguity — consequential
@@ -109,20 +112,21 @@ in as identity.
   growing ecosystem with cheap available hardware, and momentum going
   into the late 2020s.
 - 32-bit integer base (I) plus multiply (M), atomics (A), single-precision
-  FP (F), and compressed instructions (C). Explicitly no D (double FP), no
-  V (vector — not in hardware floor). A (atomics) is included: Rust's
+  FP (F), double-precision FP (D), and compressed instructions (C). No V
+  (vector — not in hardware floor). A (atomics) is included: Rust's
   standard `AtomicU32`, `Once`, and many ecosystem crates require A-extension
-  instructions even in single-threaded code; the correct Rust bare-metal
-  target is `riscv32imafc-unknown-none-elf` (no `imfc` variant exists); and
-  A is present in every shipping RISC-V SBC and is supported by rv32emu.
-  Excluding it served no purpose.
+  instructions even in single-threaded code. A is present in every shipping
+  RISC-V SBC and is supported by rv32emu. Excluding it served no purpose.
 - F included (not no-FP as originally considered) because the MCU-class
   hardware that motivated no-FP was dropped from the support matrix. At the
   SBC floor, FP is universally available; fixed-point-only would impose
   author ergonomic cost for no remaining benefit.
-- f32 (not f64) because it covers every realistic use case at this
-  fidelity, matches game-industry convention, enables better SIMD in
-  emulators, and keeps state buffer layouts compact.
+- **D (hardware doubles)** added in Spike U: the metal target is rv64 silicon
+  in compat mode — the hardware physically has D. `ilp32d` is the standard
+  rv32-Linux baseline ABI; `ilp32f` was the niche choice. Berkeley SoftFloat
+  already provides bit-determinism, so D adds hardware FP paths without
+  introducing new non-determinism. There is no upstream `riscv32imafdc` Rust
+  target; the console uses a custom `riscv32imafdc-blyt-none-elf` target JSON.
 - Little-endian matches every shipping RISC-V implementation and aligns with
   WASM, x86, and ARM.
 
@@ -303,17 +307,23 @@ zero-budget toolchain.
 
 ---
 
-## 4. Numeric Model: 32-bit Everywhere
+## 4. Numeric Model: i32 + f64 (with f32)
 
-### Decision: i32 and f32 throughout the system.
+### Decision: i32, f32, and f64 throughout the system.
 
-- **Native (RV32IMAFC):** i32 and f32 first-class in the ISA.
-- **Lua:** Built with `LUA_32BITS` (or equivalent: `LUA_INT_TYPE=LUA_INT_INT`,
-  `LUA_FLOAT_TYPE=LUA_FLOAT_FLOAT`). Lua numbers are i32 and f32.
-- **State buffers:** Field types i8/u8/i16/u16/i32/u32/f32/bool plus
-  fixed-size arrays.
-- **64-bit types:** Available via userdata library (`i64.new()`, arithmetic
-  via metamethods) for rare cases. Not first-class in language or state.
+*(Amended 2026-06-15, Spike U: f64 promoted to first-class. See ADR-0005
+amendment and ADR-0132.)*
+
+- **Native (RV32IMAFDC):** i32, f32, and f64 first-class in the ISA under
+  the `ilp32d` ABI (doubles in FP registers).
+- **Lua:** Built with `BLYT_LUA_I32_F64` (`LUA_INT_TYPE=LUA_INT_INT`,
+  `LUA_FLOAT_TYPE=LUA_FLOAT_DOUBLE`). `lua_Integer` = i32; `lua_Number` = f64.
+- **State buffers:** Field types i8/u8/i16/u16/i32/u32/f32/f64/bool plus
+  fixed-size arrays. f64 (type tag `8`) uses a lo/hi register pair on the
+  32-bit scalar bus (see ADR-0133).
+- **64-bit integer types:** Available via userdata library (`i64.new()`,
+  arithmetic via metamethods) for rare cases. Not first-class in language or
+  state.
 
 **Rationale:**
 - Eliminates precision-loss conversion at Lua ↔ state buffer boundary.
@@ -450,7 +460,7 @@ is handled as follows:**
 
 - **Hidden behind the API.** Cart code does not see byte order,
   pointer size, OS, hardware model, or any platform-specific detail.
-  The abstract machine (RV32IMAFC + console API) is identical everywhere.
+  The abstract machine (RV32IMAFDC + console API) is identical everywhere.
 
 ### Save state / hot reload
 
@@ -493,7 +503,7 @@ is handled as follows:**
 - **Cross-platform replay tests.** Record inputs on platform A,
   replay on platform B, verify end state matches.
 - **RISC-V conformance suite.** Interpreter passes all relevant
-  `riscv-tests` for RV32IMAFC.
+  `riscv-tests` for RV32IMAFDC.
 
 **Result:** save states, rewind, deterministic replay, and netplay
 all work correctly across platforms as a structural property.
@@ -1648,7 +1658,9 @@ one distribution story.
 
 **Properties:**
 - Single file (`.blyt`).
-- Standard ELF structure (RV32IMAFC, little-endian, statically linked).
+- Standard ELF structure (RV32IMAFDC, `ilp32d`, little-endian, dynamically
+  linked against `libblyt32.so`). *(Amended 2026-06-15: was RV32IMAFC / ilp32f.
+  See ADR-0001 amendment, ADR-0024 amendment, ADR-0132.)*
 - Resources embedded in ELF sections under the `.blyt.*` namespace.
 - Metadata distributed across `.cart.info` (frontend-facing — title, author,
   API version, size class, etc.) and `.cart.config` (runtime-facing — state
@@ -1685,7 +1697,7 @@ one distribution story.
   documentation.
 - Resources in ELF sections enable zero-copy mmap on hardware — a real
   performance and simplicity win over a custom container format.
-- Language extensibility is natural: any language that targets RV32IMAFC
+- Language extensibility is natural: any language that targets RV32IMAFDC
   ELF can be a cart; there's no "Lua is special" in the format itself.
 
 ### Decision: Lua carts are ELF carts that use the runtime's Lua-host API.
@@ -3376,7 +3388,7 @@ CI runs. Integration tests validate save state cross-platform portability.
 ### Conformance
 
 RISC-V interpreter validated against upstream `riscv-tests` conformance
-suite for RV32IMAFC. Determinism validated via cross-platform bit-identity
+suite for RV32IMAFDC. Determinism validated via cross-platform bit-identity
 tests for representative cart workloads.
 
 ---
@@ -3528,7 +3540,7 @@ tests for representative cart workloads.
 
   This is now a concrete near-term goal, not a v2 abstraction. The project
   ships as **Blyt** with three planned variants sharing the runtime
-  infrastructure (RV32IMAFC, Lua, state, audio, lifecycle) and varying only
+  infrastructure (RV32IMAFDC, Lua, state, audio, lifecycle) and varying only
   in graphics and input (see ADR-0105):
 
   - **Blyt32** — initial focus. 320×240 paletted, dpad+4face+2shoulder
@@ -3590,7 +3602,7 @@ tests for representative cart workloads.
 ### Phase 3: Native Carts and Debugging (weeks 10-18)
 
 9. **RISC-V interpreter** embedded in core. Start simple (decode/dispatch
-    loop), validate against `riscv-tests`. Target RV32IMAFC.
+    loop), validate against `riscv-tests`. Target RV32IMAFDC.
 10. **Native cart SDK.** Compiler toolchain config, linker script with
     `.blyt.*` section conventions, API header for C/Rust/Zig cart
     authors, layout-declaration helpers (macros emitting `.cart.layouts`
@@ -3705,7 +3717,7 @@ case of the "scripting is optional" principle.
 | Libretro API constraints conflict with core design | Build libretro frontend early (before browser even) to catch assumptions; core API designed frontend-agnostic from day one |
 | Buildroot / Linux image proves fragile on new SBCs | Start with K230D only; add others as community demand emerges |
 | Save state / rewind / netplay determinism bugs | CI tests for bit-identity across platforms; controlled math library; strict FP mode enforcement |
-| Cart authoring friction from 32-bit-only numerics | Ship good patterns / libraries; f64 can be added later if genuine need emerges (non-breaking) |
+| Cart authoring friction from integer-only 64-bit | i64 available via userdata library; f64 is now first-class (Spike U) |
 | Hot-reload state migration surprises authors | Default migration (copy matching fields, zero new) handles most cases; author migration hooks for complex cases; clear docs on "state stays, closures don't" boundary |
 | Packer rebuild too slow to feel "live" | Target <500ms for Lua edits, <100ms for asset-only; profile and optimize the packer if it regresses; native rebuild is acceptably slower (<3s) |
 
@@ -3718,8 +3730,8 @@ case of the "scripting is optional" principle.
    core, browser, hardware image are thin adapters.
 3. **Same cart everywhere.** One `.blyt` file runs natively on RISC-V,
    interpreted on desktop/browser, via libretro wherever RetroArch runs.
-4. **32-bit everywhere.** Unified numeric model; no precision boundaries
-   inside the system.
+4. **Unified numeric model.** i32 + f64 (plus f32); no precision boundaries
+   inside the system. *(Amended 2026-06-15: was "32-bit everywhere" / i32+f32.)*
 5. **Determinism is structural, not optional.** Strict FP, controlled
    math library, fixed timestep, tracked state. Save/rewind/replay/netplay
    all work as a consequence.

@@ -1,7 +1,8 @@
 # ADR-0001: ISA choice — RV32IMAFC, little-endian, no D extension
 
 ## Status
-Accepted — amended 2026-05-09 to add A (atomics) extension.
+Accepted — amended 2026-05-09 to add A (atomics) extension; amended
+2026-06-15 to add D (hardware doubles) extension (Spike U).
 
 ## Context
 
@@ -33,9 +34,9 @@ Use **RISC-V** as the ISA, specifically the **RV32IMAFC** profile:
 - **Little-endian** (matches every shipping RISC-V implementation, WASM, x86,
   and ARM).
 
+*(Amended 2026-06-15: the D extension is now included — see below.)*
+
 Explicitly excluded:
-- **D** (double-precision FP) — f64 is not part of the console's numeric
-  model; including D would add interpreter complexity for no benefit.
 - **V** (vector) — not present in the reference hardware floor.
 
 ## Consequences
@@ -61,9 +62,44 @@ Explicitly excluded:
 - RISC-V conformance can be validated against the upstream `riscv-tests`
   suite.
 - f32 (single-precision) covers every realistic use case at 320×240
-  fidelity; the decision to exclude D is consistent with the 32-bit
-  everywhere numeric model (ADR-0005).
+  fidelity. *(Superseded 2026-06-15: D extension added, f64 is now
+  hardware-supported — see amendment below.)*
 - Cheap reference hardware (K230D, ~$29) is available now; the SBC
   ecosystem is growing.
 - Cart binaries are standard RV32IMAFC ELF files, debuggable with GDB and
   LLDB without custom tooling.
+
+## Amendment — D extension (Spike U, 2026-06-15)
+
+The ISA is extended from **RV32IMAFC** to **RV32IMAFDC**:
+
+- **D** — double-precision floating point (f64), `ilp32d` hard-float ABI
+  (doubles in FP registers, `FLEN=64`).
+
+**Rationale.** The metal target is rv64 silicon running RV32 in compat mode;
+the hardware physically has D regardless. The original `ilp32f` choice was a
+definition decision, not a hardware constraint — and `ilp32f` is the niche
+float ABI while `rv32imafdc`/`ilp32d` is the standard rv32-Linux baseline.
+Spike U validated the full stack (all three execution paths, cross-host
+bit-determinism, Lua int32+float64) and produced a functional branch; D is
+reachable, cheap, and correct (see `docs/design/spike-u-hardware-doubles.md`
+and ADR-0132).
+
+**Implementation.** The `blyt-tech/rv32emu` fork adds the D extension on a
+`spike-u-rv32d` branch (64-bit FP register file + NaN-boxing of F results +
+26 scalar D ops + 4 compressed D ops, wired to Berkeley SoftFloat `f64_*`).
+All FP remains routed through Berkeley SoftFloat — determinism is unaffected.
+
+**ISA / ABI change.** Cart ELF headers now report:
+- `e_flags = EF_RISCV_RVC | EF_RISCV_FLOAT_ABI_DOUBLE`
+- arch attributes: `rv32i…f2p2_d2p2_c…zcd…`
+
+The host loader enforces `EF_RISCV_FLOAT_ABI_DOUBLE` at cart load time (see
+ADR-0024 amendment).
+
+**Rust target.** There is no upstream `riscv32imafdc` Rust target; the console
+uses a custom target JSON `riscv32imafdc-blyt-none-elf` (see ADR-0108
+amendment and ADR-0132).
+
+**Numeric model.** f64 is promoted to a first-class numeric type alongside
+f32 (see ADR-0005 amendment and ADR-0132). V (vector) remains excluded.

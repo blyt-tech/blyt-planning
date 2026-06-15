@@ -84,8 +84,10 @@ is parsed:
 - `e_ident[EI_CLASS]` = `ELFCLASS32` — 32-bit.
 - `e_ident[EI_DATA]` = `ELFDATA2LSB` — little-endian.
 - `e_machine` = `EM_RISCV` (0xF3) — RISC-V ISA.
-- `e_flags` = `EF_RISCV_RVC | EF_RISCV_FLOAT_ABI_SINGLE` — confirms the
-  RV32IMAFC profile; a runtime built for a different subset rejects here.
+- `e_flags` = `EF_RISCV_RVC | EF_RISCV_FLOAT_ABI_DOUBLE` — confirms the
+  RV32IMAFDC profile and `ilp32d` ABI; a runtime built for a different subset
+  rejects here. *(Amended 2026-06-15: was `EF_RISCV_FLOAT_ABI_SINGLE`; see
+  below.)*
 - `e_ident[EI_OSABI]` — set to `0x42` ('B' for Blyt) to distinguish carts
   from arbitrary RISC-V ELF binaries. Value sits in the OS-specific range
   (64–127). If the project later registers a formal value with the RISC-V
@@ -260,3 +262,23 @@ path; ADR-0119 adds the trusted path.
   applies only to emulated platforms. On native hardware, `libblyt32.so`
   function calls are the API boundary; seccomp enforces that no other host
   effects are reachable. ADR-0038 requires an annotation.
+
+## Amendment — ILP32D float ABI (Spike U, 2026-06-15)
+
+**`e_flags` field updated.** The required cart ELF flags change from:
+
+```
+EF_RISCV_RVC | EF_RISCV_FLOAT_ABI_SINGLE   (old — ILP32F)
+```
+
+to:
+
+```
+EF_RISCV_RVC | EF_RISCV_FLOAT_ABI_DOUBLE   (new — ILP32D)
+```
+
+This reflects the ISA change to RV32IMAFDC / `ilp32d` (see ADR-0001 amendment
+and ADR-0132). The host loader's ELF identity check at
+`runtime/host/src/libblyt/elf32.h` enforces the new value; a cart built
+against the old `ilp32f` sysroot is rejected at load time with a float-ABI
+mismatch error. All prior consequences and DT_NEEDED rules are unchanged.
