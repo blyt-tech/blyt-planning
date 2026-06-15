@@ -235,9 +235,31 @@ Per blyt's CLAUDE.md, all blyt work lives in a **`wtp`-managed worktree** under
 
 ## Merge-readiness
 
-Tracked in **[blyt-planning#1](https://github.com/blyt-tech/blyt-planning/issues/1)**
-— blockers (lua submodule isn't a fork; push the rv32emu D branch), ADRs,
-`test-linux-docker`, docs, and coverage gaps.
+Tracked in **[blyt-planning#1](https://github.com/blyt-tech/blyt-planning/issues/1)**.
+
+### Progress (2026-06-15)
+
+**Done:**
+- ✅ **rv32emu branch pushed** — `spike-u-rv32d` (`244cfb3`) pushed to
+  `blyt-tech/rv32emu`. Superproject gitlink already correct.
+- ✅ **ADRs** — amended ADR-0001/0005/0010/0024/0108; new ADR-0132
+  (ilp32d decision) + ADR-0133 (f64 state-buffer field type). Committed +
+  pushed to blyt-planning `c584023`.
+- ✅ **Docs** — `high-level-design.md` and `CLAUDE.md` (repo-overlay) updated
+  to RV32IMAFDC / i32+f64 / BLYT_LUA_I32_F64. Same commit.
+- ✅ **`.fbs` doc comment** — `schemas/cart_layouts.fbs` `8=f64` added. Committed
+  to `spike-u-ilp32d` as `743e16c`, pushed.
+
+**Still to do:**
+- **lua fork** — create `blyt-tech/lua` fork manually on GitHub (MCP fork API
+  returned 403), then:
+  1. `git -C …/third_party/lua remote set-url origin https://github.com/blyt-tech/lua`
+  2. `git -C …/third_party/lua push origin spike-u-lua-i32f64`
+  3. Update `.gitmodules` submodule URL in superproject + re-commit gitlink
+- **test-linux-docker** — run `cmake --build build --target test-linux-docker`
+  in the `spike-u-ilp32d` worktree.
+- **Coverage gaps** (lower priority) — WASM bridged f64, bridge-FP-snapshot
+  test, lua_Number hybrid test, Pure-Lua-on-WASM f64 coverage.
 
 ## Validation (2026-06-14)
 
