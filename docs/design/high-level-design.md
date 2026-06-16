@@ -49,7 +49,7 @@ open question, set aside until foundational design is stable.
   a solo artist can produce a full game's worth of art, where AI-generated
   or off-the-shelf sprite sheets fit the visual budget, and where the shared
   palette naturally gives games visual coherence.
-- **32-bit numerics everywhere**: one consistent numeric model across Lua,
+- **Unified numeric model (i32/f64/f32)**: one consistent numeric model across Lua,
   native code, and saved state. No precision boundaries, no conversion
   surprises, no subtle cross-platform determinism bugs.
 - **RISC-V ISA for native carts**: license-clean, restrictable to a minimal

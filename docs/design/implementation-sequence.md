@@ -250,7 +250,7 @@ baseline that grows alongside the API.
 **SDK packaging pipeline:**
 - Build pipeline assembles the four platform SDK downloads per ADR-0127:
   per-host binaries (Clang, LLD, `blyt`) combined with shared
-  RV32IMAFC target artefacts (headers, `libblyt32.so`, `libblyt32lua.so`,
+  RV32IMAFDC target artefacts (headers, `libblyt32.so`, `libblyt32lua.so`,
   `libblytc.so`, `libc++.a`, `BlytToolchain.cmake`, `BlytConfig.cmake`,
   linker scripts)
 - Pipeline runs in CI and produces versioned archives
@@ -261,7 +261,7 @@ Written in Rust using `assert_cmd` and `tempfile` (per ADR-0126). The
 test sequence has four steps, run per platform:
 
 1. **Build SDKs.** The main CI build (Linux x64) produces the shared
-   RV32IMAFC target artefacts. Each platform's SDK is assembled and
+   RV32IMAFDC target artefacts. Each platform's SDK is assembled and
    archived.
 
 2. **Execute SDKs on each platform to build test carts.** On each host
