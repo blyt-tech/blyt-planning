@@ -1,6 +1,6 @@
 # Spike V — Language-onboarding generality (Swift as probe)
 
-**Status:** Not started — proposed. **Depends on Spike U.**
+**Status:** Not started — proposed. Spike U dependency satisfied (PR #66, 2026-06-16); ready to execute.
 
 > **Not backed by an existing ADR, and not a proposal to ship Swift.** This
 > spike runs ahead of any decision and carries its own context so it can be

@@ -1,6 +1,6 @@
 # Spike U — Hardware doubles end-to-end: `ilp32d` and RV32D in rv32emu
 
-**Status:** Not started — proposed.
+**Status:** PASS — Stages 0–5 complete; Stage 6 (metal) deferred (hardware-gated, optional). Merged to blyt main as PR #66 (`rv32d-f64-support`, 2026-06-16). ADR proposals for ADR-0001/0005/0108 + new `ilp32d` ABI ADR pending.
 
 > **This spike is not backed by an existing ADR.** Every other spike in this
 > series validates a decision already recorded in the ADR log and leans on those
