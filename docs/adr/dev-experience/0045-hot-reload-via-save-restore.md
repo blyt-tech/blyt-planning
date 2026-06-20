@@ -7,6 +7,14 @@ diagnostic format, rejected-reload-preserves-state rule,
 and `on_retype` mandatory-for-retypes rule added.  See "Amendment —
 Spike N findings" at the bottom of this document.
 
+**Amended 2026-06-20 (issue #87):** the `hot_reload` custom DAP command
+(see "Signal protocol" below) is **superseded** by a dedicated dev control
+channel carrying `{"id":N,"cmd":"reload"}`.  DAP is now reserved purely for
+Lua step-debugging; all runtime lifecycle commands (reload, save_state,
+load_state, reset, and eventually rewind) move to the new channel so the
+release player — which has no DAP server — can hot-reload too.  See
+"Amendment — dedicated dev control channel" at the bottom of this document.
+
 ## Context
 
 A fast edit–run iteration loop requires hot reload: apply code and asset
@@ -62,11 +70,14 @@ that retype fields SHOULD register `on_retype` to avoid unexpected data
 loss.  The production packer (ADR-0009) SHOULD emit a build-time
 diagnostic when a retype edit is detected without a registered callback.
 
-**Signal protocol:** packer watch mode signals the runtime via the existing
+**Signal protocol:** ~~packer watch mode signals the runtime via the existing
 DAP passthrough connection (`hot_reload` custom command). The runtime
 intercepts this command before forwarding — it is the one DAP message the
 runtime acts on directly rather than piping to the VM. Alternative channels
-(Unix socket, filesystem marker) available for non-DAP setups.
+(Unix socket, filesystem marker) available for non-DAP setups.~~
+**Superseded by the dedicated dev control channel (issue #87)** — see the
+2026-06-20 amendment at the bottom of this document.  The reload signal is
+now `{"id":N,"cmd":"reload"}` on that channel, not a DAP custom command.
 
 The packer signals RELOAD only after all output files in `build/` are
 coherent (every write-then-rename complete).  The runtime's RELOAD listener
@@ -172,3 +183,72 @@ coherent.
 - Lua-callback shape for `on_retype` (N's callbacks are C functions).
 - Schema-migration DSL if retype frequency increases in production carts.
 - Coroutine-mid-resume save (out of N's scope; all saves at frame boundaries).
+
+## Amendment — dedicated dev control channel (2026-06-20, issue #87)
+
+The original "Signal protocol" routed the reload signal through the DAP
+passthrough as a `hot_reload` custom command.  This is **superseded**: all
+runtime lifecycle commands move to a dedicated **dev control channel**, and
+DAP returns to being purely a Lua step-debugging transport.
+
+**Why a dedicated channel:**
+- `blytplay` (the release, non-debug player) has no DAP server.  Hot reload
+  must work on the release player too; tying it to DAP made that impossible.
+- save_state, load_state, reset, and rewind have no relationship to Lua
+  step-debugging — folding them into DAP was a semantic mismatch.
+- A dedicated channel is independently testable, always-on in project-dir
+  mode (`blyt run ./dir` / `blyt debug ./dir`), and does not couple the dev
+  loop to the debugger's lifetime.
+
+**Transport:** mirrors the existing DAP/GDB relay pattern in the devtool
+(`devtool/src/run.rs`): a TCP face for external tools (`blyt debug`'s file
+watcher and the VS Code extension) plus a WebSocket relay for the WASM browser
+runtime.  Ports
+follow the established `N+k` scheme alongside the HTTP server: dev control
+WebSocket on `N+5`, dev control TCP on `N+6` (both with OS-fallback binding).
+
+**Protocol:** newline-delimited single-line JSON (the WebSocket frames each
+message, so no Content-Length framing is needed).
+
+- Commands (devtool → runtime):
+  ```json
+  {"id":1,"cmd":"reload"}
+  {"id":2,"cmd":"save_state","slot":1}
+  {"id":3,"cmd":"load_state","slot":1}
+  {"id":4,"cmd":"reset"}
+  ```
+  `slot` is optional on save/load (defaults to slot 0).  An optional `kind`
+  hint on `reload` is reserved for future partial-reload optimisation and is
+  ignored for now.
+- Responses (runtime → devtool) echo the `id` and `cmd`:
+  ```json
+  {"id":1,"status":"ok","cmd":"reload"}
+  {"id":1,"status":"error","cmd":"reload","reason":"…"}
+  ```
+
+**Request IDs:** an incrementing integer `id` enables out-of-sequence
+detection — if a response `id` does not match the last command `id`, the
+devtool logs a warning (the runtime is misbehaving or the channel desynced).
+
+**Reload semantics are unchanged** from the body of this ADR (save → load new
+cart → restore state → resume); only the *signal carrier* changes.  The fixed
+diagnostic format and the rejected-reload-preserves-state rule still apply;
+the error text simply travels in the response `reason` field instead of a
+`FAILED <reason>` line.
+
+**Native runtime:** the native player (`blytplay` / `blytdebug`) implements the
+protocol directly.  Given `--dev-ctrl-port N` it listens on a loopback TCP port
+(announced on stdout, OS-assigned when N=0) and services the same command set
+against its live `blyt_session` — reset recreates the session, save/load drive
+the cart's `on_save_state`/`on_load_state` to disk slots, and reload reopens the
+freshly rebuilt cart from disk while preserving the state buffers across the
+code swap.  This is the native counterpart to the browser runtime's WebSocket
+handler: the release player supports it too, so hot reload is not tied to the
+debugger.  (There is no separate `blyt watch` command — file watching folds
+into `blyt debug`, which connects to this port to drive reloads.)
+
+**Rollout (issue #87):** the channel infrastructure (devtool relay, WASM
+runtime handler + browser wiring, and the native player server) lands together.
+Remaining follow-ups: the `blyt debug` file watcher that emits reloads on source
+change, VS Code integration, and DAP/GDB reattach across a native reload (the
+recreated session does not currently re-listen for a debugger).
