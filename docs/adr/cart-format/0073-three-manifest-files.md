@@ -110,7 +110,8 @@ Read by the runtime at cart load time. Not read by the frontend.
 Contains: fps (ADR-0047), state buffer schemas (ADR-0009), voice groups
 (ADR-0054), palette cycles (ADR-0061), mutable tilemaps (ADR-0060),
 persistent resources (ADR-0028), inputs_used (ADR-0043), pause_items
-(ADR-0064), credits_file, locale_keys (ADR-0062), font_charsets (ADR-0072).
+(ADR-0064), credits_file, locale_keys (ADR-0062), font_charsets (ADR-0072),
+save_version (ADR-0125).
 
 ```yaml
 # yaml-language-server: $schema=.console/schemas/cart.config.json
@@ -287,3 +288,24 @@ pattern with their own `cart.<lang>.yaml` and `.blyt.<lang>` ELF section.
 - Packer errors clearly attribute to the correct file (e.g.,
   "`cart.build.yaml` line 12: font file not found"), reducing authoring
   confusion.
+
+## Amendment — info vs. config placement rule
+
+The split between `cart.info.yaml` and `cart.config.yaml` is decided by
+**consumer and timing**, not by how a field reads:
+
+- A field belongs in **`cart.info.yaml`** only if a **frontend** needs it
+  **before/without** initializing the runtime (display in a cart browser,
+  size-class enforcement, deciding whether to load the runtime).
+- A field the **runtime** consumes at or after cart load belongs in
+  **`cart.config.yaml`** — even if it reads like "metadata."
+
+Resembling identity data, or co-locating naturally with a frontend field, is
+**not** sufficient justification for `.cart.info`. The concrete case that
+prompted this rule: `save_version` (ADR-0125) looks like a sibling of the
+human-readable `version` and was originally placed in `cart.info.yaml`, but
+its only consumer is the runtime at save-write time — no frontend ever reads
+it (libretro keeps save contents opaque to the frontend, and blyt's saves are
+internal files the cart reads via ECALL). It therefore belongs in
+`cart.config.yaml`. The human-readable `version`, which a frontend *does*
+display, stays in `cart.info.yaml`.
