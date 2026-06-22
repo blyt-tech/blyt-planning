@@ -71,14 +71,18 @@ fade curve type without bumping the envelope version.
 
 ### Cart save version
 
-Cart authors declare a monotonically increasing integer in `cart.info.yaml`:
+Cart authors declare a monotonically increasing integer in `cart.config.yaml`
+(see the placement amendment below):
 
 ```yaml
-version:      "1.2.0"  # human-readable; not interpreted by the runtime
+# cart.config.yaml
 save_version: 3        # monotonic integer; increment when migration is needed
 ```
 
-The packer compiles `save_version` into `.cart.info`. The runtime stores it
+The human-readable `version: "1.2.0"` (not interpreted by the runtime) stays
+in `cart.info.yaml`, where a frontend displays it.
+
+The packer compiles `save_version` into `.cart.config`. The runtime stores it
 verbatim in the save header and passes it to `on_load_state` via
 `blyt_load_info_t.saved_cart_version` (ADR-0087). Cart code uses it to run
 version-specific migration:
@@ -141,3 +145,28 @@ and field offsets are recomputed from the `.cart.config` ELF section.
 - Save files are self-describing enough for a standalone tool to inspect
   them: the header identifies the runtime and cart versions, and section
   tags identify subsystem payloads.
+
+## Amendment — `save_version` is declared in `cart.config.yaml`
+
+The original decision placed `save_version` in `cart.info.yaml` / `.cart.info`,
+co-located with the human-readable `version`. On review this was corrected to
+**`cart.config.yaml` / `.cart.config`**, per ADR-0073's consumer/timing
+placement rule. Rationale:
+
+- **The frontend never reads it.** libretro treats save data (SRAM via
+  `retro_get_memory_data`/`_size`; save states via `retro_serialize`/
+  `retro_unserialize`) as opaque byte blobs — the only validation surface is
+  the core's boolean return; the frontend does persistence and screenshot
+  thumbnails, never content introspection. blyt's saves are not even libretro
+  SRAM/save-states: they are internal `.blys` files the cart reads via the
+  `SAVE_READ` ECALL, with the libretro core returning `NULL`/`0` from
+  `retro_get_memory_data`. No frontend, present or future, consumes
+  `save_version`.
+- **The runtime is the sole consumer, at save-write time**, where it stamps the
+  running cart's `save_version` into the `BLYS` header. The value reported to
+  `on_load_state` comes from that save header (the version that *wrote* the
+  save), not from the loading cart's manifest — so the manifest field is never
+  read on the load path either.
+- The human-readable `version` (frontend-displayed via `blyt_cart_version()`)
+  remains in `cart.info.yaml`. `version` and `save_version` look like siblings
+  but have different consumers, so they live in different manifests.

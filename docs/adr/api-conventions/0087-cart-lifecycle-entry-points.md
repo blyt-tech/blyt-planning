@@ -469,7 +469,7 @@ end
 ### `saved_cart_version`
 
 `blyt_load_info_t.saved_cart_version` carries the `save_version` integer
-declared in `cart.info.yaml` by the cart that wrote the save (ADR-0125).
+declared in `cart.config.yaml` by the cart that wrote the save (ADR-0125).
 It is 0 when `reason` is not `BLYT_LOAD_SAVE_GAME`, or when the save
 predates `save_version` being declared.
 
