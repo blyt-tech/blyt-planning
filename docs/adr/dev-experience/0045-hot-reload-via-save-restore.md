@@ -252,3 +252,29 @@ runtime handler + browser wiring, and the native player server) lands together.
 Remaining follow-ups: the `blyt debug` file watcher that emits reloads on source
 change, VS Code integration, and DAP/GDB reattach across a native reload (the
 recreated session does not currently re-listen for a debugger).
+
+## Amendment — native reattach across reload, validated (2026-06-23, Spike W)
+
+The deferred "DAP/GDB reattach across a native reload" follow-up above is now
+designed and validated end-to-end (see
+`docs/design/spike-w-cart-module-swap.md`).
+
+Key finding: the cart is lldb-dap's **`program`** (read off disk), so it is a
+permanent main-executable module that can never be unloaded — a reload leaves a
+stale duplicate breakpoint location.  The validated fix:
+
+1. lldb-dap `program` → a **stub ELF**; the cart is never the executable.
+2. The cart is presented **purely as a shared library** (`qXfer:libraries-svr4`),
+   **announced at attach** so breakpoints bind before `init()`.
+3. Reload re-reports the cart-library at a **unique (checksum) path + new base**
+   and fires a library event; lldb re-reads the new DWARF and rebinds breakpoints
+   to the new addresses — one clean location, no stale module.  A full `r_debug`
+   rendezvous was shown to be **unnecessary**.
+4. **Hybrid carts** need a *reload-time* equivalent of the startup gate
+   (`dap_wait_ready` → `gdb_wait_attached`): the native view blinks while the Lua
+   view stays live, so the recreated `init()` must wait for **both** to re-sync
+   before running (Lua-first), or `init()`-time breakpoints are dropped.
+
+This is filed as its own spec (follow-up to VS Code dev-mode issue #90, which it
+does not replace).  Lua-only transparent reload (the player's DAP server re-arms
+source-line breakpoints, no lldb/DWARF) is independent and cheaper.

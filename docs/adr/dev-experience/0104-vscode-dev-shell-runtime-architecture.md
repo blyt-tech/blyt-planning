@@ -141,3 +141,8 @@ work either accepts this with concrete API surface or supersedes.
 - ADR-0004: Audio format tiers.
 - Spike G.3 results — `docs/design/spike-g.3-results.md`
   (accumulated-debt mechanism PASS under the 100 µs renderer floor).
+- Spike W — `docs/design/spike-w-cart-module-swap.md`: seamless native
+  reload-while-debugging requires the lldb-dap `program` to be a **stub ELF**
+  with the cart loaded **as a shared library** (never the executable), so it is
+  cleanly unloadable/reloadable across reloads. A debug-session-structure
+  consequence for this dev-shell architecture; filed as a follow-up to #90.
