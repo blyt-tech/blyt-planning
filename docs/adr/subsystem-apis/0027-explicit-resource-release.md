@@ -71,7 +71,9 @@ blyt32.resource.unpin(R.MY_ANIM_CLIP)
 - Increments an internal pin count for that resource ID.
 - Returns a `const void*` pointer and byte size.
 - While the pin count is greater than zero the runtime guarantees the
-  pointer is stable: the resource will not be evicted or moved.
+  pointer is stable **within the current frame**: the resource will not be
+  evicted or moved before the frame boundary. The guarantee does **not**
+  extend across frames (see "Frame scope" below).
 
 **`unpin` semantics:**
 - Decrements the pin count.
@@ -82,12 +84,27 @@ blyt32.resource.unpin(R.MY_ANIM_CLIP)
 
 **Reference counting:** each `pin` call must be matched by exactly one
 `unpin`. Multiple concurrent `pin` calls on the same ID are valid; the
-resource remains stable until all corresponding `unpin` calls complete.
+resource remains stable (within the frame) until all corresponding `unpin`
+calls complete.
 
-**Persistent resources** (ADR-0028) are permanently pinned by the
-runtime; `pin`/`unpin` calls on them increment and decrement a reference
-count but eviction never occurs regardless. The returned pointer is always
-valid.
+**Frame scope (clarified 2026-06-23):** a pin is valid only for the frame in
+which it was taken. Any pin still held at the frame boundary is force-released
+by the runtime, and its pointer must not be accessed in a later frame. The
+runtime cannot promise a stable address across frames because dev-mode asset
+hot-reload (ADR-0088) may replace a resource's bytes between frames; an
+unbounded cross-frame pointer guarantee would conflict directly with it.
+`pin`/`unpin` is a raw-access *window*, not a lifetime extension — the
+canonical use (parse-then-close, below) already lives within a single frame.
+A cart that needs the bytes to outlive the frame copies them into its own
+buffer while pinned. (Keeping a resource *resident* across frames is what
+`load`/`release` and persistent resources provide; that is about caching
+bytes, not about a stable pointer.)
+
+**Persistent resources** (ADR-0028) are permanently resident; `pin`/`unpin`
+calls on them adjust a reference count but eviction never occurs regardless.
+The frame-scope rule above still applies to the *pointer* returned by `pin`
+— re-pin each frame to obtain a valid pointer — even though the underlying
+bytes are never evicted.
 
 **Typical pattern — parse-then-close:**
 
