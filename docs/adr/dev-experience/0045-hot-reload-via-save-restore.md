@@ -278,3 +278,51 @@ stale duplicate breakpoint location.  The validated fix:
 This is filed as its own spec (follow-up to VS Code dev-mode issue #90, which it
 does not replace).  Lua-only transparent reload (the player's DAP server re-arms
 source-line breakpoints, no lldb/DWARF) is independent and cheaper.
+
+## Amendment — native reattach implemented (2026-06-25, issue #119)
+
+The deferred "DAP/GDB reattach across a native reload" follow-up is now
+**implemented** for the player/native and hybrid paths (issue #119, building on
+the in-VM cart swap from #127).  The Spike W architecture above holds, with one
+load-bearing refinement discovered during implementation:
+
+**The two-phase solib swap.**  The spike's "unique path suffices, no `r_debug`
+needed" result was validated only for the *pending-breakpoint* case (the cart
+library appearing for the first time).  A **true rebind** — a breakpoint already
+**bound at attach**, then the module swapped — needs the swap expressed as a
+**two-phase add-then-remove** sequence (publish the new cart-library entry at a
+fresh base + unique path, fire a library event, wait for the client to
+re-resolve and continue; *then* drop the old entry and publish again).  A single
+combined library event makes lldb **unload the old module without loading the
+new one**, leaving the breakpoint unbound.  lldb treats each library-change stop
+as a stop and does **not** auto-continue, so the runtime drives the sequence on
+the client's `continue` (`continue_gen` in `gdb_stub.c`); the client must
+auto-continue these stops.
+
+**Client-side reload window.**  lldb reports each reload library-stop as
+`reason:"exception", description:"signal SIGTRAP"` (real user breakpoints are
+`reason:"breakpoint"`).  The VS Code extension auto-continues exception/SIGTRAP
+stops transparently, but **only within a bounded window after a reload**
+broadcast it observes on the dev-control hub — so genuine signals outside a
+reload still surface.
+
+**Rebind must precede the post-swap `init()`** or `init()`-time breakpoints
+(native, and the Lua side of hybrids) are missed.  For hybrids the Lua DAP
+breakpoints persist host-side across the swap, so both views are armed before
+`init()` re-runs by construction — satisfying the §5f reload-time gate.
+
+**Latent bug surfaced (filed separately):** the in-VM swap originally only ran
+at base 0; at a fresh base the runtime libraries' GOT entries into the cart
+(`blyt_main` → `blyt_cart_init`) were stale and jumped into freed memory.  Fixed
+by retaining the runtime-lib images on the session and re-resolving their PLT on
+each swap — a coverage gap that had been latent since the loader was written.
+
+**Wiring:** lldb-dap's `program` is `<sdk>/lib/debug/blyt-debug-stub.elf`; the
+cart is announced as an SVR4 shared library at attach; the devtool's dev-control
+hub (`blyt debug <dir>`) drives reloads, with the native player dialing it via
+`--dev-ctrl-connect` and the lldb-dap proxy observing the same hub.  Acceptance
+criteria 1–5 are covered by the `lldb_dap` integration suite (including a
+dual-client hybrid reload test asserting both the Lua and native `init()`
+breakpoints re-fire after a reload).  **Standalone Lua-only-cart
+reload-while-debug remains a separate, cheaper follow-up** (no lldb/DWARF; the
+player's DAP server re-arms source-line breakpoints and keeps its socket).

@@ -131,6 +131,34 @@ work either accepts this with concrete API surface or supersedes.
    stub absent. Worth confirming in a later ADR that this is the
    intended overlap.
 
+## Amendment — native/hybrid debug-session structure (2026-06-25, issue #119)
+
+Spike W's debug-session-structure consequence is now **implemented** for the
+player/native and hybrid dev paths (issue #119).  It pins how a VS Code
+native/hybrid debug session is shaped, independent of the renderer-vs-Node
+question above:
+
+- **lldb-dap's `program` is a stub ELF** (`<sdk>/lib/debug/blyt-debug-stub.elf`),
+  never the cart.  The cart is presented **purely as an SVR4 shared library**
+  (announced at attach so breakpoints bind before `init()`), so it is cleanly
+  unloadable/reloadable across a hot reload — no permanent main-executable
+  module, no stale duplicate breakpoint location.
+- **Reload is driven by the dev-control hub**, not a bespoke debugger channel:
+  `blyt debug <dir>` runs the file watcher + dev-control hub (ADR-0045's
+  channel); the native player dials it via `--dev-ctrl-connect` to perform the
+  in-VM cart swap, and the extension's lldb-dap proxy observes the **same** hub
+  (a second client — the hub broadcasts to any number) to auto-continue the
+  swap's library-change stops within a bounded reload window.  This reuses the
+  established multi-client relay pattern rather than adding a debugger-specific
+  transport.
+- **Hybrid carts** run two debug views over one player process — native lldb-dap
+  + a companion Lua DAP session — coordinated by the runtime's reload-time
+  both-armed-before-`init()` gate (ADR-0045 amendment, §5f of Spike W).
+
+The renderer/Node-bridge architecture (Option C) is unchanged; this amendment
+concerns only the *native player* debug path the extension launches for
+C/Rust/C++ and hybrid carts, which does not use the renderer-side WASM runtime.
+
 ## References
 
 - ADR-0103: Dev-mode Pi-parity feedback — Open Question 5 (renderer
