@@ -317,10 +317,49 @@ at base 0; at a fresh base the runtime libraries' GOT entries into the cart
 by retaining the runtime-lib images on the session and re-resolving their PLT on
 each swap — a coverage gap that had been latent since the loader was written.
 
-**Wiring:** lldb-dap's `program` is `<sdk>/lib/debug/blyt-debug-stub.elf`; the
-cart is announced as an SVR4 shared library at attach; the devtool's dev-control
-hub (`blyt debug <dir>`) drives reloads, with the native player dialing it via
-`--dev-ctrl-connect` and the lldb-dap proxy observing the same hub.  Acceptance
+**The stub `program` must be a fixed-address ET_EXEC, not ET_DYN.**  The stub
+only exists to keep the cart off the `program` slot, but it must not *overlap*
+the cart, which the emulated loader maps at guest **base 0**.  An ET_DYN stub
+does not work: lldb treats a shared object as relocatable and rebases it to ~0
+regardless of its link-time `--image-base` (lldb 22 loads an ET_DYN stub's
+`.text` at ~`0x1250`), re-overlapping the cart so it misattributes the cart's
+code to the stub and native frames resolve to **line 0** — worst for hybrid
+carts, whose text spans the stub's range.  A **static ET_EXEC linked at
+`0x40000000`** (above the cart and the runtime libs at `0x08000000`) has fixed
+vaddrs lldb honours on every platform.  The stub is never mapped into the guest
+VM (it is purely lldb-side metadata), so the address only needs to be a valid
+rv32 vaddr no real module uses.  This bug was platform-specific — macOS lldb
+happened to honour the ET_DYN vaddr; the Linux CI lldb did not — so it surfaced
+only in the CI-mirror container.
+
+**The hybrid startup gate must wait for the native client's breakpoint inserts.**
+The startup hybrid gate (`dap_wait_ready` → `gdb_wait_attached`) originally
+force-cleared the GDB initial halt the instant lldb-dap connected, so an early
+native call (a hybrid cart's `on_new_state` → a Lua-exported C function) could
+run and have its block translated **before** lldb-dap inserted its breakpoint
+ebreak.  rv32emu — a single-VM-per-process interpreter (cf. #42) — does **not**
+re-translate an already-cached block when the GDB stub patches an ebreak into it,
+so the breakpoint was silently skipped, on slow hosts only where the insert loses
+the race (Linux CI; macOS won it).  The gate now waits for the native client's
+**first `continue`** (`continue_gen > 0`, which always follows its `Z0` inserts)
+before releasing the cart, with a timeout fallback so a missing native client
+cannot wedge boot.  Pure-native sessions already waited for the client's continue
+implicitly; this gives hybrid the same guarantee.  A more robust alternative —
+having the GDB stub invalidate the translated block on ebreak insertion — is
+filed as a follow-up.
+
+**An earlier cart-relocation approach was reverted.**  Relocating the *cart* off
+base 0 (so it could never overlap a base-0 stub) was implemented and merged, then
+reverted: doing it via the in-VM `blyt_session_swap_cart` at attach perturbs
+rv32emu's single-VM globals (block chain, `need_clear_block_map`) and broke hybrid
+native debugging on Linux.  Relocating the **stub** (above) leaves the VM
+untouched and is the shipped fix.
+
+**Wiring:** lldb-dap's `program` is `<sdk>/lib/debug/blyt-debug-stub.elf` (a
+fixed-address ET_EXEC, see above); the cart is announced as an SVR4 shared
+library at attach; the devtool's dev-control hub (`blyt debug <dir>`) drives
+reloads, with the native player dialing it via `--dev-ctrl-connect` and the
+lldb-dap proxy observing the same hub.  Acceptance
 criteria 1–5 are covered by the `lldb_dap` integration suite (including a
 dual-client hybrid reload test asserting both the Lua and native `init()`
 breakpoints re-fire after a reload).  **Standalone Lua-only-cart

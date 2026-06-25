@@ -142,7 +142,12 @@ question above:
   never the cart.  The cart is presented **purely as an SVR4 shared library**
   (announced at attach so breakpoints bind before `init()`), so it is cleanly
   unloadable/reloadable across a hot reload — no permanent main-executable
-  module, no stale duplicate breakpoint location.
+  module, no stale duplicate breakpoint location.  The stub is a **static
+  ET_EXEC linked at a fixed high vaddr** (`0x40000000`), *not* an ET_DYN: lldb
+  rebases a shared object to ~0 regardless of `--image-base`, re-overlapping the
+  cart (which loads at guest base 0) and resolving native frames to line 0.  See
+  the ADR-0045 amendment for the full reasoning (and the reverted
+  cart-relocation alternative).
 - **Reload is driven by the dev-control hub**, not a bespoke debugger channel:
   `blyt debug <dir>` runs the file watcher + dev-control hub (ADR-0045's
   channel); the native player dials it via `--dev-ctrl-connect` to perform the
@@ -153,7 +158,12 @@ question above:
   transport.
 - **Hybrid carts** run two debug views over one player process — native lldb-dap
   + a companion Lua DAP session — coordinated by the runtime's reload-time
-  both-armed-before-`init()` gate (ADR-0045 amendment, §5f of Spike W).
+  both-armed-before-`init()` gate (ADR-0045 amendment, §5f of Spike W).  At
+  **startup** the hybrid gate must also wait for the native client's first
+  `continue` before releasing the cart, so lldb's breakpoint ebreaks are inserted
+  before any cart code is translated — rv32emu does not re-translate a cached
+  block on ebreak insertion, so an early native call would otherwise skip the
+  breakpoint (ADR-0045 amendment; surfaced on slow CI hosts only).
 
 The renderer/Node-bridge architecture (Option C) is unchanged; this amendment
 concerns only the *native player* debug path the extension launches for
