@@ -345,3 +345,129 @@ Exact UX (in-place vs. separate frozen directory, selective freeze) is deferred.
   ambiguity — no silent transforms or guessed intent.
 - Single-palette mode eliminates palette management code for the common case
   and simplifies save thumbnail display.
+
+## Amendment (2026-06-26): raw resource type, explicit asset declaration, and as-built corrections (#162)
+
+The thin-slice asset pipeline (#91) shipped text (`.txt`) only. Issue #162 adds
+the **`raw`/opaque** resource type — the one type addable with zero new runtime
+or ECALL API, because the runtime already serves uninterpreted bytes and the
+hot-reload path is type-agnostic. Implementing it settled several questions this
+ADR left under-specified and corrected several places where the original prose
+no longer matches the code. This amendment supersedes the conflicting parts
+above.
+
+### Membership is explicit; type is by extension
+
+The original "by file extension" table (above) doubled as both a *type* map and
+an *auto-inclusion* rule, and listed `.bin` → raw / `.json` → raw as
+auto-recognized. That conflation is removed:
+
+- **There are no default passthrough types.** Nothing is auto-scanned for
+  passthrough — *not even `.txt`*. Every asset a cart ships must be declared
+  explicitly via an `include:` glob (see schema below). The `.bin` → raw and
+  `.json` → raw rows are withdrawn; those extensions are raw only because, when
+  included, anything without a dedicated processor is raw.
+- **Auto-scan is reserved for *processed* types.** When a real transform exists
+  for an extension (sprite/audio/font/tilemap — all still deferred until their
+  subsystem APIs land), that extension is auto-scanned across the asset dirs as
+  if `**/*.<ext>` were implicitly declared, because the packer knows how to
+  process it. Until such a processor lands, the auto-scan set is empty.
+- **A resource's *type* is decided by its extension, independent of how it
+  became a member.** `.txt` → `text`; every other extension → `raw`. `include:`
+  controls membership only — it never forces a type. Declaring `**/*.txt` in
+  `include:` yields `text` resources, not raw. When an extension later gains a
+  processor, the same already-included files upgrade from `raw` to the typed
+  form with no manifest change.
+
+`text` and `raw` are both passthrough transforms today (identity copy); the
+distinction is the `.meta` `type=` field (`type=text` vs `type=raw`), which is
+descriptive only — the runtime never reads `.meta` (it serves `.data` bytes via
+`resource-id-index`). `blyt_resource_text_get` is a guest-side convenience that
+NUL-terminates a copy; its `len` out-param is authoritative, so it works for any
+resource, `raw` included.
+
+### `assets:` manifest schema (in `blyt.build.yaml`)
+
+The asset-declaration block lives in **`blyt.build.yaml`** (the name
+`cart.build.yaml` used throughout this ADR is the old name for the same file).
+The `additional_dirs:` shape sketched earlier is replaced by a uniform
+`assets.dirs` list — there is nothing special about `assets/` except that it is
+the default directory, so adding globs to it and to any other directory look
+identical:
+
+```yaml
+assets:
+  dirs:
+    - dir: assets/            # the default dir; entry optional unless you need
+                              # include/exclude/constant_prefix on it
+      include:
+        - "**/*.txt"          # ship these as text resources
+        - "**/*.lvl"          # custom format → raw
+      exclude:
+        - "wip/**"            # drop matches from the membership set
+    - dir: other_assets/
+      constant_prefix: DATA   # REQUIRED for any non-assets/ dir (see below)
+      include:
+        - "**/*.dat"
+```
+
+- `assets:` is a map (a `dirs:` list plus room for future cross-cutting asset
+  config). `dirs` is a list of `{ dir, include?, exclude?, constant_prefix? }`.
+- `assets/` is the implicit default directory: it is a member dir even when
+  `dirs` is omitted or does not list it. Listing it lets you attach
+  `include`/`exclude`/`constant_prefix`.
+- `include`/`exclude` globs are **relative to that dir's root** (`**/*.foo`
+  matches `<dir>/**/*.foo`), keeping every dir symmetric. This supersedes the
+  earlier project-root-relative examples (`assets/wip/**`).
+- Membership of a dir = (auto-scanned processed-type files) + (files matching
+  any `include` glob) − (files matching any `exclude` glob). `exclude` applies
+  to the whole set, so it can drop an auto-scanned file too, not only includes.
+- Globs are matched with the `globset` crate (supports `**`); add it to the
+  packer crate table above.
+
+### `constant_prefix` (folded in from the directory-prefix rules above)
+
+The directory-prefix rules from §"Resource constant naming" apply per `dirs`
+entry as the optional `constant_prefix` field: empty default for `assets/`,
+**required** for any other directory (omission is a build error), must already
+be `[A-Z0-9_]*` (empty permitted) and is not transformed by the packer. It is
+prepended to the derived name, and the existing duplicate-name → build-error
+check spans all declared dirs (so `assets/level.bin` and `other/level.bin`
+without distinct prefixes are a build error, as specified).
+
+### Dev-mode watch
+
+`blyt run` / dev mode watches **every declared asset directory** (recursively),
+not just `assets/`, so edits to assets in additional dirs hot-swap via
+`update_assets` like assets in `assets/` (#88/#91/#122).
+
+### As-built corrections to the staging description
+
+The staging/​tracking prose above predates the implemented engine and is stale;
+the implementation is authoritative:
+
+- **Input tracking is not `build/packer-state.json`.** There is no such file.
+  Staging is **content-addressed** — each asset is written to
+  `resources/<name>-<fingerprint>.data` (xxh3 of the bytes) so a changed asset
+  produces a new file alongside the old; up-to-date checking is handled by the
+  devtool build engine's per-task state under `build/.blyt-tasks/`.
+- **Staging is flat and fingerprinted, not a mirror of the source subtree.**
+  Files are `resources/<name>-<fp>.data` (+ `.meta`), not
+  `resources/sprites/npcs/gnome_king.data`.
+- **`resource-id-index` lines carry the fingerprinted filename**, e.g.
+  `1 resources/greeting-<fp>.data` — not the extension-less,
+  fingerprint-less `42 → resources/sprites/npcs/gnome_king` shown above.
+
+### Known deviation: constant-name derivation (#164)
+
+The implemented `resource_name_from_rel` does not yet perform the NFD /
+diacritic-stripping of step 3, nor the "leading digit" / "residual non-ASCII"
+build-error checks of the build-errors table; only the empty-stem error is
+enforced. This pre-existing gap is tracked in #164 and is out of scope for #162.
+
+### Still deferred (unchanged by #162)
+
+All typed transforms (sprite/image, audio + path-keyword subtyping, font,
+tilemap), ADR-0068 typed handles, Phase 2 bundling (`index.fb`, compression),
+single-palette mode, and `console freeze` remain deferred until their subsystem
+APIs exist. #162 is **text + raw only**.
