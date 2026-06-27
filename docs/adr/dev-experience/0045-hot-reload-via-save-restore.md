@@ -345,8 +345,21 @@ the race (Linux CI; macOS won it).  The gate now waits for the native client's
 before releasing the cart, with a timeout fallback so a missing native client
 cannot wedge boot.  Pure-native sessions already waited for the client's continue
 implicitly; this gives hybrid the same guarantee.  A more robust alternative —
-having the GDB stub invalidate the translated block on ebreak insertion — is
+having the GDB stub invalidate the translated block on ebreak insertion — was
 filed as a follow-up.
+
+*Update (2026-06-27, issue #155):* that follow-up — #146 (PR #153) — has
+**landed**.  Inserting or removing a breakpoint now flushes rv32emu's
+translated-block cache, so a late insert always re-translates and fires the next
+time its address executes.  The **block-cache rationale above is therefore
+superseded**: the gate is no longer a correctness barrier and is retained purely
+as a first-launch *ordering* guarantee — a breakpoint set before launch, notably
+one in `blyt_cart_init()` (the first place most authors set one), still stops on
+the first launch rather than only the next time its address runs.  Its timeout
+fallback is now best-effort: a lost race costs at most one launch's ordering,
+never a silently missed breakpoint, so the bound need not be conservative.  The
+`continue_gen` wait and force-clear fallback themselves are unchanged; only their
+justification is.
 
 **An earlier cart-relocation approach was reverted.**  Relocating the *cart* off
 base 0 (so it could never overlap a base-0 stub) was implemented and merged, then
