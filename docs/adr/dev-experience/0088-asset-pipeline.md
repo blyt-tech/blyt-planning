@@ -471,3 +471,75 @@ All typed transforms (sprite/image, audio + path-keyword subtyping, font,
 tilemap), ADR-0068 typed handles, Phase 2 bundling (`index.fb`, compression),
 single-palette mode, and `console freeze` remain deferred until their subsystem
 APIs exist. #162 is **text + raw only**.
+
+## Amendment (2026-06-27): typed text/raw handles, declared text extensions, text-only NUL termination (#162→#166)
+
+Issue #166 turns the build-side `text`/`raw` tag (#162, descriptive only) into a
+typed handle enforced through codegen, and hardens text for C-string safety. It
+does **not** change the runtime's resource model: the runtime remains byte-blind
+— it serves `.data` bytes and never reads `.meta` or interprets a resource's
+type. The cross-language typed-handle scheme lives in ADR-0068's 2026-06-27
+amendment; the build-pipeline parts are here.
+
+### Text-extension declaration (replaces the hardcoded `.txt` mapping)
+
+The `.txt`→text / everything-else→raw mapping becomes declarative via a new
+global `assets.text_extensions` list, default `["txt"]`:
+
+```yaml
+assets:
+  text_extensions: [txt]   # default ["txt"] when omitted
+  dirs: [...]
+```
+
+Type is still **by extension** (the 2026-06-26 amendment's principle): an
+extension in `text_extensions` is `text`, every other (without a dedicated
+processor) is `raw`. `include:`/`exclude:` still control membership only.
+Extension-granularity is intentional; a per-glob/per-file `type:` override is
+deferred until a concrete need appears.
+
+### Build-time text validation
+
+A `text` resource must be valid UTF-8 with **no embedded NUL** (`0x00`) byte;
+otherwise the build fails with the file path. (`0x00` is itself valid UTF-8 —
+U+0000 — but never appears inside a multi-byte sequence, so the two checks are
+orthogonal: `valid_utf8 && !contains(0x00)`.) This is honest-cart correctness,
+not a security boundary — see the threat-model note below.
+
+### Text-only NUL termination (C-string safety), runtime stays byte-blind
+
+The devtool appends exactly one `\0` byte to the staged `.data` of **text**
+resources only. **Raw resources stay byte-exact** — an unexpected trailing byte
+can break a binary parser (length-prefixed, checksummed, or EOF-delimited
+formats). Consequences:
+
+- The **reported length includes the NUL.** The emulated `blyt_resource_pin`
+  ECALL copies `len` bytes into guest scratch, so the terminator only reaches
+  the guest if it is inside `len`. The host serves stored bytes + size verbatim
+  and stays fully type-blind (`len` = content+1 for text, content for raw — it
+  neither knows nor cares which). The packed `.cart.resource.<id>` section
+  inherits the NUL from `.data`; dev-mode `read_whole_file` reports the file
+  size — both legs agree with **zero host change**.
+- Only the **guest text accessors** are text-aware. `blyt_resource_text_get`,
+  Rust `LoadedText`/`PinnedText`, and Lua `:text()` (in both the guest runtime
+  and the WASM host-Lua fast path) assert `len>=1 && data[len-1]==0`, then report
+  content length `len-1` (NUL stripped) so Rust `String` / Lua string lengths are
+  correct; the buffer is already NUL-terminated for C consumers. Because
+  build-time validation guarantees the trailing NUL is the *only* NUL,
+  `len-1 == strlen == content_len` holds exactly. This assertion doubles as the
+  runtime "is this really a text resource" check (a raw id fed to a text accessor
+  fails it).
+
+### Threat model (why no runtime resource-type validation)
+
+The earlier #166 proposal called for runtime hostile-cart text validation; this
+is **struck**. The real threat is a malicious cart breaking out of its sandbox by
+feeding a crafted payload (embedded NUL → C `strlen`/length disagreement;
+malformed UTF-8 → decoder bug) into a place where the *host* parses it. Such a
+payload can be constructed anywhere (a `raw` resource, a C array, computed
+bytes), so validating *text resources* specifically defends nothing. Defense
+belongs at string-consuming API boundaries, which are already `(ptr,len)`-based
+and reject embedded NUL where they parse (e.g. `BLYT_ECALL_CONSOLE_DEBUG`,
+`bridge_read_guest_str`). As long as the runtime treats every resource as an
+opaque bag of bits and never parses it, runtime resource-type validation buys
+nothing.
