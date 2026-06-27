@@ -36,10 +36,11 @@ that call `release` on collection. Carts that don't manage lifecycles
 explicitly still get reasonable behavior; explicit release is recommended for
 large resources like cutscene art.
 
-**Handle stability across save/restore:** resource handles encode logical
-identity (resource name + load generation), not physical address. Save state
-preserves which resources were loaded; restore re-establishes the physical
-mapping. Handles survive save/load, hot reload, and cross-platform transport.
+**Cache residency is advisory, not serialized state** (amended by #137 — see
+the v2 amendment below). The earlier claim that "handles survive save/load …
+and cross-platform transport" is **struck**: it was asserted with no use case
+and is at odds with the `load_gen` design, whose whole purpose is to *invalidate*
+a stale handle. Resource/cache state is **not** part of save state.
 
 **Persistent resources** (ADR-0028) are declared in the manifest and are
 never evicted; `release` on a persistent resource is a no-op.
@@ -122,6 +123,40 @@ blyt_resource_unpin(R_DIALOG_SCRIPT);
 The resource needs to remain pinned only for the duration of the library
 call. Once the library has built its own representation from the bytes,
 the resource can be unpinned and released.
+
+## Amendment (#137, 2026-06-27): v2 eviction — advisory cache + evict-before-fail
+
+Eviction is implemented as part of the resource-memory epic (#156, child #2).
+The mechanism and its determinism model:
+
+- **What eviction does.** It reclaims an entry's *owned, decompressed* bytes
+  when the entry is eviction-eligible — `load_count == 0 && pin_count == 0` and
+  not persistent (ADR-0028) — and re-points the entry to its "not resident"
+  state. An uncompressed resource aliases the cart mmap (no owned bytes), so
+  evicting it is a no-op. The eligibility predicate is single-sourced in
+  `runtime/shared/blyt_resource_lifecycle.h` (`blyt_rl_is_evictable`) so the host
+  and native bare-metal paths cannot drift (ADR-0007).
+- **Rehydration on next access.** A subsequent `load`/`pin`/`text_get` on an
+  evicted entry re-materialises a fresh owned buffer — re-decoding the cart
+  section (zstd) or re-reading the dev-staging file — **byte-identical**, because
+  decode is deterministic. A fresh `load` mints a new `load_gen`; eviction only
+  ever touches entries with no live reference, so it **never invalidates a handle
+  the cart still holds**.
+- **Policy: evict-before-fail, LRU-incremental.** Any allocation that would
+  exceed the 16 MB budget (ADR-0008) evicts evictable entries in
+  least-recently-used order, stopping the instant the allocation fits; it evicts
+  *every* evictable entry only as the terminal step before returning `nil`/NULL.
+  (The budget wiring and pressure trigger land in #158; #137 builds the
+  mechanism plus a deterministic "evict all evictable" test hook.)
+- **Determinism is carried by the non-evictable footprint, not by serialized
+  cache state.** Allocation success/failure depends only on
+  `non_evictable_footprint + incoming ≤ 16 MB` — identical across every
+  peer/platform without serializing anything, because everything evictable is
+  evicted before a failure. `resource_cache_used`, which entries are resident,
+  and LRU order are **advisory** and history-dependent; carts must not branch
+  game logic on them, and they are **not** part of save state. This is why the
+  struck "handles survive save/load / cross-platform transport" claim was both
+  unnecessary and wrong.
 
 ## Consequences
 
