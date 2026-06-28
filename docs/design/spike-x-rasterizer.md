@@ -1,6 +1,9 @@
 # Spike X — Host-side rasterizer: unified framebuffer mechanism + integer determinism across compile targets
 
-**Status:** proposed
+**Status:** done — validated 2026-06-28 (results below; both load-bearing
+assumptions hold). Implementation on branch `188-rasterizer-framebuffer-determinism`
+in `../blyt` (commits `c7511d8` → `cc57f11` → `f54379d` → `d0e65fb`; Q3 is a
+measurement, no commit).
 **Depends on:** Spikes D / K / U (cross-platform + cross-host FP determinism,
 hardware doubles) — all `done`. No new external blockers.
 **Hardware gate:** none (QEMU native leg suffices; real-silicon confirmation
@@ -256,6 +259,140 @@ effects — those are implementation once Q1/Q2 are green.
 
 Mirror the prior spikes' rigor: many runs, both cross-host directions
 (arm64 + amd64) as Spikes D/K/U did.
+
+---
+
+## Results — validated 2026-06-28
+
+**Verdict: both load-bearing assumptions hold. Option A (integer-only
+rasterizer) is confirmed. Graphics can be built on this foundation.** Q1 ✅,
+Q2 ✅, Q3 recorded (with a finding that overturns a brief assumption — see
+below). Full `test-integration` (341 tests incl. the QEMU native gate) green;
+lint clean.
+
+### Q2 (determinism) — ✅ proven across all four compile targets
+
+One integer rasterizer source — `runtime/shared/blyt_raster.c`
+(`clear`/`pixel`/`rect_fill`/`line`) — compiles into **(a)** the host runtime
+(`blytplay`, arm64 here), **(b)** the wasm module (emscripten), **(c)** the
+embedded libretro core, and **(d)** the native `libblyt32` variant (RV32,
+runs natively under the QEMU gate). A torture frame (every primitive plus
+off-screen / zero-size / negative / i32-overflowing-extent edge cases), an
+`acquire`-raw-write frame, and a pure-Lua torture frame all hash
+**bit-identically across every leg** (FNV-1a 64 over the 320×240 paletted
+buffer) and match a checked-in Rust reference golden
+(`tests/integration/tests/common/gfx`).
+
+- **The single-source host + native-RV32 + wasm structure is buildable** (a
+  Stage-0 open question): the rasterizer lives in `runtime/shared` (the
+  single-source-into-guest-libs layer) and is wired into each leg by *where it
+  is compiled*, which is what enforces the ADR-0086 Blyt32 scoping. The native
+  `libblyt32` (previously an empty placeholder) switched to a multi-source build
+  pulling in `blyt_raster.c` + `blyt_frame_hash.c`.
+- **Option A is divergence-free with no FP-flag dependence** — trivially, since
+  the rasterizer contains no floating point at all. Notably, **`-fwrapv` turned
+  out not to be required**: the code avoids signed-overflow UB by doing clip math
+  in `int64_t` intermediates, so all four targets already agree with the project
+  default flags (the header's `-fwrapv` note is belt-and-suspenders, not load-
+  bearing). This is a stronger result than the brief anticipated — there was no
+  integer hazard to control, only one to *not introduce*.
+
+### Q1 (mechanism) — ✅ proven, with a scoping refinement
+
+Two sub-contracts, validated separately:
+
+- **ECALL-primitive contract — universal.** Implemented and hashing identically
+  on **all three execution models** (emulated rv32emu, host-Lua fast path, native
+  bare-metal) for **both** C carts and Lua carts. The Lua surface is
+  `blyt32.gfx.*` (`clear`/`pixel`/`rect_fill`/`line`), bound in the guest
+  `libblyt32lua` (emulated-Lua → ECALL) *and* the host-Lua fast path
+  (`wasm_main.c`, direct host call). A pure-Lua cart drawing the torture frame
+  hashes to the same golden as the C cart across emulated-Lua (blytplay,
+  libretro) and host-Lua (wasm).
+- **`acquire`/`present` raw-pointer path — mechanism (a) chosen.** The runtime
+  reserves a stable 320×240 region at guest VA **`0x02000000`** — a 32 MiB free
+  gap between the exit trampoline (`0x01000000`) and the cart-heap arena
+  (`0x04000000`); the cart image is capped at 16 MiB and the guest stack sits
+  near the 256 MiB top, so the region collides with nothing. `acquire` returns
+  the VA; the cart writes palette indices directly (no per-pixel ECALL);
+  `present` copies the region into `session->pixels[]` and sets `cart_has_drawn`.
+  On native bare-metal the same entry points return the in-process back buffer
+  directly (no copy). **Proven on the emulated and native legs.**
+- **Scoping refinement (the one nuance worth recording):** the raw-pointer
+  `acquire` is inherently a **C/native escape hatch, not a Lua-surface feature** —
+  a guest VA does not map cleanly to Lua, and the host-Lua fast path only runs
+  *pure*-Lua carts (which have no raw pointers; a hybrid cart's C runs through the
+  emulator anyway). So the *primitive* contract is what is truly universal across
+  all execution models; the raw-pointer path spans the C/native models, which is
+  exactly its intended hot-loop use under ADR-0008. **No ADR-0008 amendment is
+  needed** — `acquire` stays as designed for C/Rust carts; Lua's drawing surface
+  is the primitives. (If a future Lua cart needs bulk pixel access, the natural
+  shape is a `blyt32.gfx` image/buffer object wrapping the region, not a raw
+  pointer — out of scope here.)
+
+### Capture mechanism (built, reusable by the subsystem)
+
+`BLYT_FRAME_HASH=1` makes the runtime emit one `[blyt:fbhash] <hex>` line per
+frame (FNV-1a 64 of the paletted buffer) on stdout — the one channel every
+leg's harness captures, so a single mechanism serves blytplay, libretro, wasm,
+and the QEMU gate. The host runtime emits it from its `frame_done` hook. On
+native bare-metal, `frame_done` lives in the *variant-agnostic* `libblytcommon`,
+which cannot reference the Blyt32 framebuffer directly; the emit therefore goes
+through a **weak `blyt_gfx_on_frame_boundary` hook** that the native `libblyt32`
+graphics variant defines strongly (the same cross-lib weak-ref pattern the Lua
+stubs already use for `blyt_console_debug`), keeping `libblytcommon`
+graphics-agnostic. The host-Lua fast path emits from its own present step.
+
+### Q3 (per-primitive ECALL cost) — recorded; overturns the ADR-0052 ~1 µs assumption
+
+Microbench on the **emulated path** (`blytplay`/rv32emu, this Mac, arm64), 8×8
+`rect_fill`, headless/unthrottled, draw cost isolated as `(T(N) − T(0)) / frames`
+(`.claude/q3_bench.py` in the worktree):
+
+| path | per-primitive | `rect_fill`s/frame @ 60 Hz |
+|---|---:|---:|
+| single-ECALL `blyt_gfx_rect_fill` | **~0.22 µs** | **~75,000** |
+| raw `acquire` + guest-write (64 px/rect) | ~0.37 µs | ~44,000 |
+
+- **Recommendation: batch variants (ADR-0052) are NOT needed in v1.** Single
+  ECALLs sustain ~75 k rect_fills/frame at 60 Hz on the *worst-case* emulated
+  path; native bare-metal has no ECALL at all (direct call, strictly cheaper),
+  and realistic 2D scenes are 100s–1000s of primitives — roughly two orders of
+  magnitude of headroom. The measured ~0.22 µs is well under ADR-0052's stated
+  "~1 µs" working figure, so the premise that made batch feel necessary does not
+  hold on current hardware. Batch is purely additive, so this stays a cheap
+  decision to revisit if a low-end target ever proves otherwise.
+- **Surprise finding (steers the eventual API):** the single-ECALL path is
+  ~1.7× *faster* than the raw `acquire`+guest-write path for bulk fills — the
+  trap (~0.22 µs) plus a *native* host fill of 64 pixels beats *interpreting* 64
+  guest store instructions. So `acquire`'s value is **not** bulk fills (the
+  primitives win there) but **per-pixel / read-modify-write** patterns the
+  primitive set doesn't cover. The "no per-pixel API overhead" framing in
+  ADR-0008 is right, but the win is for irregular pixel work, not for replacing
+  `rect_fill`/blit with hand-rolled loops.
+- Caveat: measured on one fast arm64 host on the emulated path; not run on a
+  Milk-V-Duo-class board (none available — the QEMU gate is itself emulated on
+  this Mac, so its absolute timings are not representative). The conclusion is
+  robust to that gap because native hardware removes the ECALL entirely.
+
+### Implementer notes / gotchas surfaced
+
+- **`acquire`-raw pixels are cart-produced** (deterministic via the §5 abstract
+  machine), whereas ECALL-primitive pixels are runtime-produced (Option A
+  integer). Both hash identically, as required.
+- The cross-compiled QEMU launcher (`build-riscv64/blyt_native`, built via the
+  Docker `blyt_native_riscv64` target) is **not reliably rebuilt by
+  `test-integration` when only `cart_load.c`'s import allowlist changes** — a
+  stale launcher rejects carts importing new symbols with "imported symbol not on
+  allowlist". Rebuild it explicitly after touching the allowlist.
+- A new `runtime/shared/*.c` must also be added to
+  `frontends/wasm/CMakeLists.txt` (it recompiles the libblyt sources rather than
+  linking the target); the native `libblyt32` needed musl `-isystem` paths for
+  `blyt_raster.c`'s `<string.h>` (`memset` resolves as a dynamic undef over the
+  DT_NEEDED chain, like the bundled zstd decode sources).
+- When benching, an empty draw (no `clear`/`present`) leaves `cart_has_drawn`
+  false → the runtime renders the (costly) PM5544 test card, which silently
+  dominated a baseline measurement until the probe was made to mark drawn.
 
 ---
 
