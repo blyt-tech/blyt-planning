@@ -266,9 +266,12 @@ Mirror the prior spikes' rigor: many runs, both cross-host directions
 
 **Verdict: both load-bearing assumptions hold. Option A (integer-only
 rasterizer) is confirmed. Graphics can be built on this foundation.** Q1 ✅,
-Q2 ✅, Q3 recorded (with a finding that overturns a brief assumption — see
-below). Full `test-integration` (341 tests incl. the QEMU native gate) green;
-lint clean.
+Q2 ✅. Q3 is only *partially* recorded — preliminary fast-host timings yield a
+durable *structural* finding (cost is per-call not per-pixel; `acquire` is for
+per-pixel work), but the batch-in-v1 question is **explicitly deferred** to a
+floor-representative measurement under the ADR-0082 MIPS cap (see Q3 below); it
+is not decided here. Full `test-integration` (341 tests incl. the QEMU native
+gate) green; lint clean.
 
 ### Q2 (determinism) — ✅ proven across all four compile targets
 
@@ -343,37 +346,58 @@ graphics variant defines strongly (the same cross-lib weak-ref pattern the Lua
 stubs already use for `blyt_console_debug`), keeping `libblytcommon`
 graphics-agnostic. The host-Lua fast path emits from its own present step.
 
-### Q3 (per-primitive ECALL cost) — recorded; overturns the ADR-0052 ~1 µs assumption
+### Q3 (per-primitive ECALL cost) — preliminary; NOT a floor-representative measurement
 
-Microbench on the **emulated path** (`blytplay`/rv32emu, this Mac, arm64), 8×8
-`rect_fill`, headless/unthrottled, draw cost isolated as `(T(N) − T(0)) / frames`
-(`.claude/q3_bench.py` in the worktree):
+Recorded as a single-host data point, but it does **not** answer the
+batch-in-v1 question and must not be read as doing so. Two reasons it is not
+floor-representative:
 
-| path | per-primitive | `rect_fill`s/frame @ 60 Hz |
+1. **Wrong host, and uncapped.** Measured on one fast arm64 host (this Mac),
+   `blytplay`/rv32emu, headless and **unthrottled**. The emulated path's
+   performance floor is the Pi Zero 2 W (Cortex-A53 @ 1 GHz; ADR-0002), and
+   **ADR-0082 mandates a MIPS cap** that throttles every emulator run to that
+   floor's throughput *precisely so dev-host speed cannot mislead*. That cap is
+   "left unset until Spike A measures the Pi value" — so this run is exactly the
+   "fast-host drift accepted" regime ADR-0082 exists to eliminate. The honest
+   unit is per-ECALL cost in guest cycles against the Pi-derived budget, plus the
+   host-side rasterize wall-clock on the floor's own A53 (native host code, which
+   the cap does not even model) — not fast-host wall-clock.
+2. **The two floors behave oppositely on this question.** Native execution
+   (K230D floor, ADR-0002) runs carts directly — *no emulator, no ECALL, no cap* —
+   so ECALL cost is irrelevant there. The ECALL question lives only on the
+   *emulated* path, whose floor is the Pi Zero 2 W. A Milk-V/K230D-class
+   measurement would characterise the native path (no ECALL), not this.
+
+Also unaddressed vs. the brief's Stage 5 / success criterion: no wasm-emulated
+run (only `blytplay`), no cross-host (arm64 + amd64) pass, no floor-target run.
+
+**Raw fast-host / uncapped numbers** (8×8 `rect_fill`, draw cost isolated as
+`(T(N) − T(0)) / frames`; `.claude/q3_bench.py`):
+
+| path (fast-host, uncapped) | per-call | calls/frame @ 60 Hz |
 |---|---:|---:|
-| single-ECALL `blyt_gfx_rect_fill` | **~0.22 µs** | **~75,000** |
+| single-ECALL `blyt_gfx_rect_fill` | ~0.22 µs | ~75,000 |
 | raw `acquire` + guest-write (64 px/rect) | ~0.37 µs | ~44,000 |
 
-- **Recommendation: batch variants (ADR-0052) are NOT needed in v1.** Single
-  ECALLs sustain ~75 k rect_fills/frame at 60 Hz on the *worst-case* emulated
-  path; native bare-metal has no ECALL at all (direct call, strictly cheaper),
-  and realistic 2D scenes are 100s–1000s of primitives — roughly two orders of
-  magnitude of headroom. The measured ~0.22 µs is well under ADR-0052's stated
-  "~1 µs" working figure, so the premise that made batch feel necessary does not
-  hold on current hardware. Batch is purely additive, so this stays a cheap
-  decision to revisit if a low-end target ever proves otherwise.
-- **Surprise finding (steers the eventual API):** the single-ECALL path is
-  ~1.7× *faster* than the raw `acquire`+guest-write path for bulk fills — the
-  trap (~0.22 µs) plus a *native* host fill of 64 pixels beats *interpreting* 64
-  guest store instructions. So `acquire`'s value is **not** bulk fills (the
-  primitives win there) but **per-pixel / read-modify-write** patterns the
-  primitive set doesn't cover. The "no per-pixel API overhead" framing in
-  ADR-0008 is right, but the win is for irregular pixel work, not for replacing
-  `rect_fill`/blit with hand-rolled loops.
-- Caveat: measured on one fast arm64 host on the emulated path; not run on a
-  Milk-V-Duo-class board (none available — the QEMU gate is itself emulated on
-  this Mac, so its absolute timings are not representative). The conclusion is
-  robust to that gap because native hardware removes the ECALL entirely.
+- **Structural finding — hardware-independent, keep.** The cost is **per *call*,
+  not per *pixel***: the ECALL trap dominates and the host's pixel work rides
+  along cheaply. A many-pixel primitive (`rect_fill`/`line`/blit) amortises the
+  trap; a one-pixel `gfx_pixel` pays the full trap for one pixel. The crossover —
+  **bulk via primitives, per-pixel / read-modify-write / full-screen procedural
+  via `acquire`** — follows from the *shape of the work*, not the clock, so it
+  holds on any host (on the floor it is *more* pronounced: a full-screen
+  per-pixel ECALL repaint is already ≈ one whole frame on this fast host, so it
+  is hopeless at the floor — reinforcing that `acquire` is mandatory for that
+  regime). This is the empirical backing for ADR-0008's "no per-pixel API
+  overhead" framing.
+- **Batch-in-v1 verdict — NOT decided here; deferred.** Projecting the fast-host
+  number down ~5–10× to a Cortex-A53 puts single-ECALL `rect_fill` at single-digit
+  µs and ~7–15 k calls/frame — *probably* still above realistic scene counts, but
+  that is a projection, not a measurement, and it ignores the host-side rasterize
+  cost that runs on the floor's own A53. The batch question properly belongs to
+  **Spike A** (which sets the ADR-0082 cap from CoreMark/Embench on the Pi) plus a
+  Doom-class workload, as ADR-0082 itself states. **ADR-0052 is left as-is** — its
+  "~1 µs" is a working figure, and nothing here is floor-grade enough to amend it.
 
 ### Implementer notes / gotchas surfaced
 
