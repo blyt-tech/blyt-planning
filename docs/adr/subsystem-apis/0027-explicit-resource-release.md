@@ -158,6 +158,38 @@ The mechanism and its determinism model:
   struck "handles survive save/load / cross-platform transport" claim was both
   unnecessary and wrong.
 
+## Amendment (#158, 2026-06-28): budget wiring — passive counters, no reclaim ECALL
+
+#137 (v2 above) deferred the production pressure *policy* to #158. The settled
+mechanism (see ADR-0008's #158 amendment for the budget model):
+
+- **The pressure trigger is the unified budget**, enforced via passive
+  guest-visible shared counters (`non_evictable_footprint`, `guest_heap_used`) —
+  **not** the guest→host reclaim ECALL originally sketched in #158. That ECALL is
+  dropped: a guest `malloc` decides locally against the host-published footprint,
+  and the resource ECALLs check the same predicate host-side. Eviction is
+  therefore **decoupled from the allocation decision** — `malloc` never evicts,
+  because evicting evictable (uncounted) bytes cannot change the success
+  predicate.
+- **Eviction sites.** (1) *In the resource ECALLs, required, intra-call*: before
+  decompressing, evict LRU-evictable until the bytes fit the current cache room
+  (`16 MB − guest_heap_used − non_evictable_footprint`). This is the
+  evict-before-fail, LRU-incremental response — it bounds resident cache as it
+  grows and is what lets a cart stream resources past 16 MB while holding none
+  loaded/pinned. (2) *Frame-boundary sweep, housekeeping*: re-bound evictable
+  cache to the current heap+footprint after each top-level callback; not
+  load-bearing (mid-frame worst case stays within the 32 MB runtime budget),
+  it tightens RSS and keeps `mem.stats` honest.
+- **Recency / LRU victim selection** uses a cheap local monotonic counter
+  stamped on each `load`/`pin`/`text_get` access; it is advisory and need not be
+  cross-platform identical (only the *non-evictable footprint* carries
+  determinism, so which evictable entry is sacrificed never affects
+  success/failure).
+- **The non-evictable footprint counts `e->len`** (the up-front decompressed
+  length, #157) for every `load`/`pin`/persistent entry, independent of
+  lazy-decode timing — so `load`/`pin` enforce the cap deterministically and the
+  footprint can never exceed 16 MB.
+
 ## Consequences
 
 - Authors with phase-specific large resources can proactively free memory at
