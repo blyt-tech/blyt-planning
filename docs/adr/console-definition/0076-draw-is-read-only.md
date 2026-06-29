@@ -3,6 +3,11 @@
 ## Status
 Accepted
 
+> **Forward note (2026-06-29):** spec **#195** extends this simulation/
+> presentation boundary to the framebuffer surface itself — the `screen` is
+> read *and* write only within `draw()` (enforced), generalizing ADR-0122's
+> prev-frame phase restriction. See #195.
+
 ## Context
 
 The runtime's fixed-timestep loop (ADR-0037) calls `update()` then `draw()`

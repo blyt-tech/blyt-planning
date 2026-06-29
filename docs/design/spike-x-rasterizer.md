@@ -9,6 +9,13 @@ hardware doubles) — all `done`. No new external blockers.
 **Hardware gate:** none (QEMU native leg suffices; real-silicon confirmation
 optional, deferrable like Spike U Stage 6).
 
+> **Follow-on (2026-06-29):** this spike proved the framebuffer mechanism +
+> integer determinism. The design then generalized to runtime-managed
+> **surfaces** with a two-tier (serviced-ops / `acquire`-`release` lock) access
+> model and the Lua fast-pixel path — captured in spec **#195**, which subsumes
+> #193. For the *current* graphics-buffer design, read #195; this document is
+> the originating spike, not the latest word.
+
 ---
 
 ## Self-contained context (read first)

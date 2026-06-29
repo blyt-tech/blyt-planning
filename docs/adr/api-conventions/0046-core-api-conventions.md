@@ -3,6 +3,11 @@
 ## Status
 Accepted
 
+> **Forward note (2026-06-29):** the `img:blit(x, y)` example (image as the
+> method receiver) is **superseded** by `gfx.blit(img, x, y)` — canvas-is-the-
+> receiver — per spec **#195**. Read #195 before following the blit shape here;
+> this ADR is not yet amended.
+
 ## Context
 
 The C API surface (`blyt32.h` and `blyt_runtime.h`) covers a large number of

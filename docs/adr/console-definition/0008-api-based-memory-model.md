@@ -3,6 +3,11 @@
 ## Status
 Accepted
 
+> **Forward note (2026-06-29):** spec **#195** generalizes `acquire_framebuffer`
+> from the framebuffer to *all* surfaces (the runtime owns every surface buffer,
+> reached via `acquire`/`release`). Read #195 before relying on the
+> framebuffer-only framing of `acquire` here; this ADR is not yet amended.
+
 ## Context
 
 Classic fantasy consoles (PICO-8, TIC-80) and classic real hardware expose a

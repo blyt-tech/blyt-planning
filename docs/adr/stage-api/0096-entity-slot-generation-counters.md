@@ -4,6 +4,11 @@
 Accepted — implemented in the core buffer API (see Amendment: implementation
 notes)
 
+> **Forward note (2026-06-29):** spec **#195** reuses this `gen|index` packing
+> for surface handles and **extends** it with a kind/index-space tag to
+> distinguish a runtime surface handle from a (non-passable, transient)
+> cart-side lock view. See #195.
+
 ## Context
 
 State buffers (ADR-0058) use slot indices for entity identity. When an

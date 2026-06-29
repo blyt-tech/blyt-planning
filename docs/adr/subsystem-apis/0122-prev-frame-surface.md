@@ -3,6 +3,11 @@
 ## Status
 Proposed — deferred post-v1
 
+> **Forward note (2026-06-29):** spec **#195** generalizes "surface" to
+> runtime-managed mutable surfaces (a writable `blyt_image_h`) with an
+> `acquire`/`release` access model; the previous-frame surface here is one
+> read-only instance of that. See #195.
+
 ## Context
 
 Frame-feedback effects are a cornerstone of demoscene-style rendering: a
