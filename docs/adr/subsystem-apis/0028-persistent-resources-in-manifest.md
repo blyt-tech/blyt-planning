@@ -66,3 +66,51 @@ be evicted after `release` (ADR-0027).
 - Persistent resources count against the 16 MB working memory budget from
   cart start; authors should be aware that large persistent sets reduce
   the available budget for runtime allocations.
+
+## Implementation amendment (issue #160, 2026-06-29)
+
+Realised as the last child of the resource-memory epic (#156), on top of the
+compression (#157), eviction (#137), and unified-budget (#158) machinery.
+
+**Manifest field & carrier.** The declaration lives in `blyt.build.yaml`
+(`persistent_resources: [name, …]`, the resource names ADR-0040/ADR-0088
+derive). The packer resolves each name to its integer resource id and emits the
+sorted id list as a dedicated **`.cart.persistent` ELF section** (little-endian
+`u32` ids). This is deliberately *not* carried in the FlatBuffers `.cart.config`
+schema: the native bare-metal path is `-nostdlib` and discovers resources by
+walking `.cart.resource.<id>` sections through the shared ELF reader
+(`blyt_elf32_*`), so a parallel section read the same way keeps the host and
+native paths in lockstep without pulling FlatBuffers into the metal path. The
+section is emitted into both the packed `.blyt` and the dev ELF.
+
+**Runtime.** A per-entry `persistent` bit ANDs on top of the single-sourced
+refcount eligibility predicate (`blyt_rl_is_evictable`): a persistent entry is
+excluded from eviction, from `evict_to_fit` victim selection, and from the
+resident-evictable cache total, and is counted in the **non-evictable
+footprint** from cart start. It is pre-loaded (materialised) before `init()`
+runs, at the point where `guest_heap_used == 0`. `release`/`unpin` (and Lua
+`__gc`) are no-ops on its residency by construction — eviction only ever touches
+entries the persistent bit excludes. `mem.stats().resources_loaded` (ADR-0029)
+lists persistent resources as resident from frame 0 (`load_count == 0`).
+
+**Over-budget set — layered, single sum check** (`Σ decompressed size > 16 MiB`;
+an individual oversized resource trips the same sum):
+
+1. **Build-time guard (primary).** The packer fails the build when the declared
+   set exceeds 16 MiB — deterministic and identical for every leg by
+   construction (same packer, before any cart ships), and also the point that
+   rejects an unknown resource name.
+2. **Load-time validation (defensive).** The runtime preload re-checks the
+   budget and refuses to start (host returns no session / native exits) — cover
+   for a hand-crafted cart that bypassed the packer; an honestly-built cart
+   never reaches it.
+3. **Preload always fits.** Because preload runs at `guest_heap_used == 0` and
+   the build guard bounded the set to ≤ 16 MiB, the reservation can never
+   over-subscribe at preload.
+
+A large-but-legal persistent set (e.g. 15 MiB) that starves the heap is *not* a
+preload failure — it degrades to the existing unified-budget (#158)
+deterministic allocation failure during `init()`, with the persistent bytes
+safely resident (never a mid-frame corruption). Cache residency stays advisory
+(ADR-0027 v2): persistence affects *which* entries are non-evictable, not the
+deterministic success/failure of any allocation.
