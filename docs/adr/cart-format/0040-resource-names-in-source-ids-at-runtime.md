@@ -1,7 +1,14 @@
 # ADR-0040: Resource addressing — names in source, compile-time constants at build, IDs at runtime
 
 ## Status
-Accepted
+Accepted — the runtime resource constant's bit layout is specified by ADR-0134
+(#196, 2026-07-01).
+
+> **Amendment (2026-07-01, ADR-0134/#196):** the packer-generated runtime
+> constant is no longer a bare integer id — it is the console-wide tagged `u32`
+> (kind `RESOURCE` in the top bits, provenance bit 24, 24-bit id), a
+> forward-compat contract shipped in the `.blyt`. The cart passes the constant
+> directly to the resource API (no `load` handle). See ADR-0134.
 
 ## Context
 

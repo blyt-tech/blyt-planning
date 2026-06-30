@@ -1,7 +1,15 @@
 # ADR-0088: Asset pipeline — packer architecture, resource types, and constant naming
 
 ## Status
-Accepted
+Accepted — the emitted resource constant's encoding is specified by ADR-0134
+(#196, 2026-07-01).
+
+> **Amendment (2026-07-01, ADR-0134/#196):** the packer emits each `R_<NAME>`
+> constant in the console-wide tagged `u32` encoding (kind `RESOURCE` +
+> provenance bit + 24-bit id) rather than a bare id. The asset *type* is still
+> resolved by registry lookup on the id (the runtime stays byte-blind, #166);
+> the provenance bit distinguishes cart-bundled from runtime-shipped assets
+> (population deferred). See ADR-0134.
 
 ## Context
 

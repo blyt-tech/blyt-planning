@@ -8,6 +8,12 @@ notes)
 > for surface handles and **extends** it with a kind/index-space tag to
 > distinguish a runtime surface handle from a (non-passable, transient)
 > cart-side lock view. See #195.
+>
+> **Forward note (2026-07-01, ADR-0134/#196):** the console-wide first-level
+> classifier `kind = h >> 29` is specified by **ADR-0134** (implemented in #196):
+> `NONE=0`, `RESOURCE=1`, with `SURFACE=2`/`LOCKVIEW=3` reserved for #195.
+> `blyt_entity_ref_t` keeps its own `gen|index` space, deliberately outside that
+> scheme (entity refs never flow into the resource/gfx APIs). See ADR-0134.
 
 ## Context
 

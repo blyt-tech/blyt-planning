@@ -1,7 +1,15 @@
 # ADR-0027: Explicit resource release API
 
 ## Status
-Accepted
+Accepted — **the `load`/`release` residency-handle layer is superseded** by
+ADR-0134 (#196, 2026-07-01).
+
+> **Amendment (2026-07-01, ADR-0134/#196):** the cart-held `load`/`release`
+> handle is removed. Resources are referenced by their baked compile-time
+> constant directly; the runtime owns residency end-to-end (demand-load into an
+> advisory cache, LRU eviction under the 16 MB budget #137/#158,
+> manifest-declared persistence #160). The within-frame `pin`/`unpin` raw-byte
+> window is retained unchanged. See ADR-0134.
 
 ## Context
 
