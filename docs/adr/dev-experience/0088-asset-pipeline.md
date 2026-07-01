@@ -4,6 +4,33 @@
 Accepted — the emitted resource constant's encoding is specified by ADR-0134
 (#196, 2026-07-01).
 
+> **Amendment (2026-07-01, palette epic #200 / #203):** single-palette mode
+> (below) commits a palette **source** and derives the working palette (`.pal`) +
+> index assignment **at build time** (nothing at runtime). The source is a palette
+> *file* (`.hex`/`.gpl`/`.pal`, used directly), a **swatch image** (a
+> `palette.png` that *is* the palette — read out to `.pal` in pixel order, exact),
+> or **reference art** (`blyt palette from <images…>` quantizes ≤256, sorts into
+> hue/luminance ramps, reserves index 255 per ADR-0049). The derived `.pal` **need
+> not be committed** — it's a reproducible build artifact — provided **(a)** the
+> source is a *dedicated* palette-reference (not the incidental union of all
+> assets, so editing a sprite never reshuffles the palette) and **(b)** derivation
+> is deterministic (swatch read-out is exact; reference-art quantization requires
+> the quantizer + params + version pinned — optionally *frozen* by committing the
+> `.pal`). This is **build** reproducibility (stable indexes across
+> machines/rebuilds), required by named color constants (#203), the
+> transparency-255 reservation (#202), and palette cycling (ADR-0061). **Custom
+> cart palettes only**; the bundled palettes (#201) are hand-authored runtime
+> assets.
+>
+> Two further points: (1) processed assets are indexed against the declared
+> palette's **exact ordering** (mapped to that palette's indices, not a per-image
+> palette), so index `i` is the same color everywhere and blit is a pure index
+> copy (ADR-0049, #195 decision 9) — no runtime remap. (2) The `palette:` config
+> shape is designed to extend to **multiple declared palettes** (per-scene)
+> additively in future without a breaking change; per-scene alternate palettes and
+> lerp-to-main (lighting) effects are **deferred to image-asset support** — they
+> break the single-global-palette model.
+
 > **Amendment (2026-07-01, ADR-0134/#196):** the packer emits each `R_<NAME>`
 > constant in the console-wide tagged `u32` encoding (kind `RESOURCE` +
 > provenance bit + 24-bit id) rather than a bare id. The asset *type* is still

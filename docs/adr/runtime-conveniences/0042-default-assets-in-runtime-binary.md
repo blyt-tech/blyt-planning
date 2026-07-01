@@ -1,7 +1,25 @@
 # ADR-0042: Default assets bundled in the runtime binary
 
 ## Status
-Accepted
+Accepted — amended 2026-07-01 (palette specifics tracked by #200)
+
+> **Amendment (2026-07-01, tracked by #200):**
+> - The `palette_default` source palettes named below — **"AAP-256" and
+>   "Blk Neo 256" — do not exist** (verified: the AAP family tops out at
+>   AAP-Splendor128 / 128 colors; "BLK NEO" is ~40 colors). Those citations are
+>   struck.
+> - Provisional `palette_default` = **DawnBringer "Aurora"** (256), used as-is
+>   for prototyping. **Licensing is unresolved** — Aurora has no explicit license,
+>   so it does **not** cleanly meet the "public-domain/permissive, no encumbrance"
+>   bar asserted in the Consequences below; before 1.0, either accept the risk +
+>   attribute, choose a CC0 palette, or author blyt's own (recommended).
+> - `palette_default` must reserve a **sacrificial index 255** for the ADR-0049
+>   transparency key; the packer quantizes transparent sprites to indices 0–254
+>   (the ADR-0049/0088 seam). Aurora's index 255 (`#911437`) serves this.
+> - Named color constants are **palette-specific** (`BLYT_EGA_*` / `BLYT_VGA_*` /
+>   `BLYT_AURORA_*`, using the EGA-16 as a shared naming vocabulary); custom
+>   palettes get packer-generated `C_<NAME>` constants (ADR-0059). Full design +
+>   the Aurora nearest-to-EGA index table are in #200.
 
 ## Context
 
@@ -30,9 +48,10 @@ available to all carts.**
 
 **Palettes:**
 - `palette_default`: modern curated 256-color palette optimized for pixel art
-  production (recommended; AI-generated and off-the-shelf assets fit). Sourced
-  from a permissively-licensed palette (AAP-256, Blk Neo 256, or similar) or
-  designed custom for the console.
+  production (recommended; AI-generated and off-the-shelf assets fit). Source
+  provisionally DawnBringer "Aurora"; see the Amendment above (the palettes
+  originally named here do not exist, and the licensing/authoring decision is
+  open — tracked by #200). Must reserve a sacrificial index 255 (ADR-0049).
 - `palette_vga`: IBM VGA default 256-color palette.
 - `palette_ega`: EGA 16-color palette expanded to 256 entries.
 - `palette_cga`: CGA 4-color palette expanded to 256 entries.
