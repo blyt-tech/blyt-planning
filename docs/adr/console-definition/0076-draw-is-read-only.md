@@ -1,12 +1,13 @@
 # ADR-0076: draw() is read-only over tracked state
 
 ## Status
-Accepted
+Accepted — amended 2026-07-01 (#205, draw()-only extended to surface access)
 
 > **Forward note (2026-06-29):** spec **#195** extends this simulation/
 > presentation boundary to the framebuffer surface itself — the `screen` is
 > read *and* write only within `draw()` (enforced), generalizing ADR-0122's
-> prev-frame phase restriction. See #195.
+> prev-frame phase restriction. This is now **implemented (#205)** — see the
+> amendment at the end of this ADR.
 
 ## Context
 
@@ -133,3 +134,31 @@ detection approach is sufficient:
   visual divergence.
 - The mental model is simple and has no exceptions: `update()` writes,
   `draw()` reads.
+
+## Amendment (#195/#205, 2026-07-01): surface access is draw()-only, enforced
+
+#205 (PR-B surfaces) extends the `update()`/`draw()` boundary to **surface
+access** — all surfaces, including the `screen` — and makes it a *hard* contract,
+not the soft dev-detection this ADR specifies for tracked-state writes:
+
+- **Mechanism.** The runtime tracks a lifecycle `phase` (NONE/INIT/UPDATE/DRAW).
+  The host cannot bracket `draw()` on the emulated path (the guest's `blyt_main`
+  drives the loop and the host only sees ECALLs), so `blyt_main` emits a phase
+  signal (`BLYT_ECALL_PHASE`, `runtime/shared/blyt_phase.h`) around each callback;
+  the native and WASM host-Lua loops mirror it. Every surface access op is
+  permitted only while the phase is `DRAW`.
+- **Enforcement is hard and determinism-bearing** (unlike the soft dev-mode
+  warning for state-buffer writes above, which stays soft). Outside `draw()`:
+  a **debug** cart hard-errors (a dev trap → run abort); a **release** cart gets
+  a *defined, leg-identical* no-op — writes drop, and a tier-2 `acquire` reads as
+  **cleared** (zeros, never the real surface). Never UB, never a content leak.
+  The behaviour must be bit-identical across every execution leg, so it is part
+  of the determinism contract rather than a dev aid.
+- **Why stronger here.** A state-buffer write in `draw()` corrupts *save-state
+  fidelity* (caught by detection); an out-of-phase surface read could leak
+  presentation state into logic or diverge across legs, so it is closed with a
+  defined runtime behaviour on every leg, not merely flagged.
+
+This subsumes ADR-0122's per-accessor phase restriction: the same phase gate now
+governs all surface access. The tracked-state rule in this ADR's Decision is
+unchanged (still soft dev detection).

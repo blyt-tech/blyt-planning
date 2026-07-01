@@ -1,12 +1,15 @@
 # ADR-0122: Runtime-managed previous-frame surface
 
 ## Status
-Proposed — deferred post-v1
+Proposed — deferred post-v1 (the general surface mechanism it builds on landed
+in #205; annotated 2026-07-01)
 
 > **Forward note (2026-06-29):** spec **#195** generalizes "surface" to
 > runtime-managed mutable surfaces (a writable `blyt_image_h`) with an
 > `acquire`/`release` access model; the previous-frame surface here is one
-> read-only instance of that. See #195.
+> read-only instance of that. The general surface model is now **implemented
+> (#205)** — see the amendment at the end of this ADR; this feature (the
+> prev-frame surface itself) stays deferred post-v1.
 
 ## Context
 
@@ -178,3 +181,24 @@ pattern: zero release-build cost.
   previous-frame surface is inaccessible from `update()` by design, so
   framebuffer content can never influence simulation state.
 - Netplay is unaffected. No new wire traffic; no new handshake state.
+
+## Amendment (#195/#205, 2026-07-01): the general surface mechanism now exists
+
+The runtime-managed surface model this ADR anticipated landed in **#205** (PR-B):
+`blyt_surface_h` handles, `blyt_surface_create/destroy/blit`, and the tier-2
+`acquire`/`release` lock (ADR-0008 amendment). The previous-frame surface itself
+**stays deferred post-v1**, but it would now be built as a runtime-maintained
+*read-only* instance layered on that mechanism rather than a bespoke buffer.
+
+Two refinements from the #205 design bear on this ADR when it is eventually built:
+
+- **Surfaces are draw-scoped, not tracked state.** #205 off-screen surfaces are
+  blank-created in `draw()` and auto-reaped at the frame boundary (generation
+  bumped); they are not persisted, not in save-state — exactly this ADR's "not
+  tracked state; not in save states" framing. The prev-frame surface's zero-fill-
+  on-restore semantics remain the right model for a runtime-maintained surface.
+- **The draw()-only phase restriction generalized.** The per-accessor "valid only
+  in `draw()`" rule this ADR gives `blyt_gfx_prev_frame()` is now the general
+  #205 enforcement for *all* surface access (a lifecycle phase gate,
+  `runtime/shared/blyt_phase.h`; see ADR-0076's amendment). A future
+  `prev_frame()` inherits it for free.

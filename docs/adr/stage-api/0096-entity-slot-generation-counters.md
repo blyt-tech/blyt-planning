@@ -14,6 +14,10 @@ notes)
 > `NONE=0`, `RESOURCE=1`, with `SURFACE=2`/`LOCKVIEW=3` reserved for #195.
 > `blyt_entity_ref_t` keeps its own `gen|index` space, deliberately outside that
 > scheme (entity refs never flow into the resource/gfx APIs). See ADR-0134.
+>
+> **Forward note (2026-07-01, #205):** the reserved `SURFACE`/`LOCKVIEW` kinds are
+> now **implemented** (#205) with their own runtime-private `kind | gen | index`
+> layout — see the amendment at the end of this ADR.
 
 ## Context
 
@@ -211,3 +215,32 @@ Generation counters and entity refs landed ahead of the stage API, in the
   to save 2 bytes per slot.
 - The counter is maintained by `blyt_buffer_free_slot` — no cart code is
   required to increment it.
+
+## Amendment (#195/#205, 2026-07-01): SURFACE/LOCKVIEW handle encoding
+
+#205 (PR-B surfaces) implements the reserved `SURFACE=2`/`LOCKVIEW=3` kinds
+(ADR-0134's classifier, `kind = h >> 29`). Three `gen|index` spaces now coexist,
+each fit to its purpose:
+
+- **Entity refs** (this ADR): `gen(16) | index(16)`, its own space, never in the
+  resource/gfx APIs.
+- **Baked `RESOURCE`** (ADR-0134): a forward-compatible id, not a slot generation.
+- **Dynamic `SURFACE`/`LOCKVIEW`** (#205): a *runtime-private* layout
+  `kind(3) | … | gen(17 @ shift 12) | index(12)` — never baked, so the runtime is
+  free to choose the split. `BLYT_SCREEN` is `SURFACE` kind, slot 0, gen 0
+  (`0x40000000`) — the one dynamic handle a cart compiles as an immediate.
+
+The generation mechanism this ADR introduced carries over directly:
+
+- A **surface** handle's generation is bumped when its slot is reaped/destroyed,
+  so a handle to a dead surface goes stale (same stale-reference guard, applied
+  to draw-scoped surfaces).
+- A **lock-view** token carries a separate *lock* generation, bumped on release,
+  so a post-release token fails the generation check — the tier-2 analogue of
+  entity-ref invalidation.
+- The **kind tag is the watertight, language-independent guard**: every runtime
+  entry classifies its handle arguments (classify-at-entry), so a `LOCKVIEW`
+  token passed where a `SURFACE` is expected is rejected as a defined no-op. This
+  is what makes a lock view non-passable across the Lua/native bridge — the live
+  buffer pointer never marshals, and the inert token fails the next op's kind
+  check.

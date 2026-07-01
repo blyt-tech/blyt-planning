@@ -1,12 +1,14 @@
 # ADR-0008: Memory model — API-based, not memory-mapped
 
 ## Status
-Accepted
+Accepted — amended 2026-06-28 (#158, budget enforced) and 2026-07-01 (#205,
+`acquire` generalized to all surfaces)
 
 > **Forward note (2026-06-29):** spec **#195** generalizes `acquire_framebuffer`
 > from the framebuffer to *all* surfaces (the runtime owns every surface buffer,
-> reached via `acquire`/`release`). Read #195 before relying on the
-> framebuffer-only framing of `acquire` here; this ADR is not yet amended.
+> reached via `acquire`/`release`). This is now **implemented (#205)** — see the
+> amendment at the end of this ADR; the framebuffer-only framing of `acquire`
+> below is superseded by the surface model.
 
 ## Context
 
@@ -138,3 +140,35 @@ so its bytes never enter `guest_heap_used` — it is accounted only in the advis
 `resource_cache_used` and, for resident loaded/pinned/persistent entries, in
 `non_evictable_footprint`. If a 64-bit desktop host-Lua path is ever added it
 must not be on the determinism-bearing path without re-establishing this parity.
+
+## Amendment (#195/#205, 2026-07-01): `acquire` generalized to all surfaces
+
+The framebuffer-only `acquire_framebuffer()` / `present_framebuffer()` framing
+above is superseded by the **runtime-managed surface model** (#195 design,
+implemented in **#205** — PR-B). The API-based principle is unchanged; the
+generalization is:
+
+- **The runtime owns every surface buffer**, not just the framebuffer. A surface
+  is a runtime-managed palette-index buffer referenced by an opaque handle
+  (`blyt_surface_h`). The framebuffer is simply the built-in `screen` surface
+  (`BLYT_SCREEN`); `present` is the screen's release.
+- **Two access tiers.** *Tier-1* serviced ops (`blyt_surface_clear/pixel/
+  rect_fill/line/blit(dst, …)`) rasterize host-side — one API crossing each, no
+  lock, the default. *Tier-2* is the generalized `acquire`/`release`
+  (`blyt_surface_acquire(s, &lock)` → `blyt_surface_release(&lock)`): the runtime
+  materializes the surface's buffer where the caller can read/write it — a direct
+  canonical pointer where the address space is shared (host-Lua, native bare
+  metal), a copy-in/copy-out where it is not (emulated, the hybrid native half) —
+  and `release` flushes it back. This is the same raw-write-speed access this ADR
+  promised for the framebuffer, now available on any surface.
+- **Off-screen surfaces are draw-scoped** (blank-create in `draw()`, auto-reaped
+  at the frame boundary) and **count against this ADR's unified 16 MB budget**
+  (the #158 amendment above) — they are non-evictable for the frame, charged
+  against the same `guest_heap_used + non_evictable_footprint + incoming ≤ 16 MB`
+  predicate. They are not tracked state and not serialized (ADR-0076/0122).
+- The old fixed-region raw `acquire_framebuffer` (Spike X #188) still exists but
+  is superseded by the tier-2 lock; the surface model is the API going forward.
+
+Handle encoding is the console-wide tagged `u32` (ADR-0096/ADR-0134); the
+draw()-only access rule is ADR-0076. Lua is tier-1 only (the per-pixel lock is
+C/Rust + native).

@@ -1,12 +1,12 @@
 # ADR-0046: Core API conventions — handles, errors, naming, headers, flags
 
 ## Status
-Accepted
+Accepted — amended 2026-07-01 (#205, canvas-is-the-receiver blit)
 
 > **Forward note (2026-06-29):** the `img:blit(x, y)` example (image as the
-> method receiver) is **superseded** by `gfx.blit(img, x, y)` — canvas-is-the-
-> receiver — per spec **#195**. Read #195 before following the blit shape here;
-> this ADR is not yet amended.
+> method receiver) is **superseded** by canvas-is-the-receiver — per spec
+> **#195**, now implemented in **#205** (see the amendment at the end of this
+> ADR). Follow the amended blit shape, not the `img:blit` examples below.
 
 ## Context
 
@@ -94,3 +94,27 @@ img:blit(x, y, { flip_h = true, opaque = true })
   frontend-only functions.
 - Bitmask flags are fast and compact; the Lua option table variant requires
   no knowledge of bitmask mechanics from Lua authors.
+
+## Amendment (#195/#205, 2026-07-01): canvas-is-the-receiver blit
+
+The `img:blit(x, y)` method-receiver shape (convention 5's Lua example, and the
+image-as-first-argument implication) is superseded by the **canvas-is-the-
+receiver** convention settled in #195 and implemented in **#205** (PR-B surfaces):
+
+- **The destination canvas is the first argument / receiver; sources are
+  arguments.** Tier-1 surface ops are `blyt_surface_clear(dst, …)`,
+  `blyt_surface_blit(dst, src, x, y)`, etc. — the destination surface handle
+  leads. When image assets land, `blit` takes the destination canvas as the
+  receiver and the source image as an argument (`gfx.blit(img, x, y)` draws *into*
+  the screen), superseding ADR-0046's original `img:blit(x, y)`.
+- **`gfx.*` is literal sugar over `BLYT_SCREEN`, not a parallel path.** C
+  `blyt_gfx_*` and Lua `blyt32.gfx.*` forward to `blyt_surface_*(BLYT_SCREEN, …)`
+  through the one rasterizer, so the shorthand can never drift from the surface
+  API (the #193 drift lesson).
+- **Handles keep convention 1** (opaque `u32`, `0` = invalid: `BLYT_HANDLE_NONE`),
+  now with a console-wide *kind* tag distinguishing a passable runtime surface
+  handle (`blyt_surface_h`) from a transient, non-passable cart-side lock view
+  (`blyt_lockview_h`) — see ADR-0096/ADR-0134. Passing a lock-view where a
+  surface is expected fails the classify-at-entry kind check (a defined no-op).
+- **Lua is tier-1 only** (`blyt32.surface.*`); the tier-2 acquire/release lock is
+  C/Rust + native.
