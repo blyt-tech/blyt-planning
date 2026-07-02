@@ -162,6 +162,16 @@ Palette manipulation (loading a palette, remapping entries during draw) stays
 in `blyt32.gfx.*`. `blyt32.color.*` is for arithmetic on color values, not
 for rendering.
 
+> **Amendment (2026-07-02, #201 implemented):** the first `blyt32.gfx.*`
+> palette function landed — `blyt_gfx_palette_set(handle)` /
+> `blyt32.gfx.palette_set(handle)`, loading one of the four built-in palettes
+> wholesale (ADR-0042). It ships **`_set`-only, no `_get`** — a deliberate
+> narrowing of this ADR's `_get`/`_set` pairing rule (§"Getter/setter
+> convention") to what #201 needed; a getter is straightforward to add
+> (`blyt_session_get_palette` already exists host-side for host-side
+> introspection) once a cart-facing use case appears. `blyt32.color.*` remains
+> unimplemented.
+
 ### C-flat / Lua-nested duality
 
 The C API is intentionally flat. All audio operations are at the same level,

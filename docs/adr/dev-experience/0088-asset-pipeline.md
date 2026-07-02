@@ -38,6 +38,26 @@ Accepted — the emitted resource constant's encoding is specified by ADR-0134
 > the provenance bit distinguishes cart-bundled from runtime-shipped assets
 > (population deferred). See ADR-0134.
 
+> **Amendment (2026-07-02, #201 implemented):** the **built-in-palette
+> selection** shape settled distinct from this ADR's `palette:` (singular,
+> `blyt.build.yaml`) custom-source declaration above — that key is reserved for
+> #203's *custom* cart palette, still unimplemented. #201 instead added a
+> `palettes:` node in **`blyt.config.yaml`** (runtime config, not build-time
+> asset declaration):
+> ```yaml
+> palettes:
+>   default: vga   # aurora | vga | ega | cga -- no palette_ prefix
+> ```
+> Chosen deliberately not-plural-adjacent to the future `palette:` key so the
+> two don't collide once #203 lands; `palettes:` is designed to grow sibling
+> keys (e.g. a custom-palette name) additively. Compiles to a new
+> `CartConfig.default_palette: uint32` FlatBuffer field (the encoded
+> `PROV_RUNTIME` handle, ADR-0134; 0 when undeclared) in the `.cart.config`
+> section, read by `cart_load.c` and resolved at session-create — the
+> pre-`init()` auto-load this ADR's context section anticipates. An unknown
+> name is a build error (`blyt.config.yaml: unknown built-in palette …`), per
+> this ADR's "no silent handling" principle.
+
 ## Context
 
 The §17 open item on asset pipeline input formats covers the packer's build

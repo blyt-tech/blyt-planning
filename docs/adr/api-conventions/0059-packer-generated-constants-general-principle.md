@@ -87,6 +87,15 @@ This means:
   table" from "look up in built-in asset table" with a single mask check.
 - Zero remains the universal invalid/null sentinel across all handle types.
 
+> **Amendment (2026-07-02, #201 implemented):** the bare bit-31 sketch above is
+> **superseded** by ADR-0134's console-wide tagged `u32` encoding (kind
+> `RESOURCE` in bits 31–29, provenance bit at bit 24, 24-bit id) — runtime
+> constants are `BLYT_RESOURCE_ENCODE(id, BLYT_RESOURCE_PROV_RUNTIME)`, not a
+> raw high bit. The four built-in palettes are the first shipped instance:
+> `BLYT_PALETTE_AURORA = 0x21000001`, `_VGA = 0x21000002`, `_EGA = 0x21000003`,
+> `_CGA = 0x21000004` (`BLYT_PALETTE_DEFAULT` aliases `_AURORA`). Fonts remain
+> unimplemented (no font subsystem yet).
+
 In C, the `BLYT_` prefix on runtime constants (vs. `R_`, `A_`, `PREF_`, etc.
 on cart constants) is a naming-level signal of the same distinction.
 
@@ -106,6 +115,18 @@ before the cart runs; the packer appends cart-declared constants on top.
 Authors always `require("R")` for any resource handle regardless of origin.
 The `BLYT_` prefix appears only in C (`blyt32.h`); in Lua the module name
 itself provides sufficient namespacing.
+
+> **Amendment (2026-07-02, #201 implemented):** palettes did **not** end up
+> going through the packer-generated `R` module described above. Like
+> `BLYT_SCREEN` before them (a runtime-only handle the packer never mints),
+> `blyt32.gfx.PALETTE_AURORA` / `_VGA` / `_EGA` / `_CGA` / `_DEFAULT` are plain
+> constant fields pushed directly onto the `blyt32.gfx` table at Lua-state
+> setup (both the guest `blyt32lua.c` binding and the wasm host-Lua fast
+> path), not entries in `R`. The `R`-module pre-population approach sketched
+> here remains the right home for future *cart-declared* runtime overrides
+> (§"Cart override of built-in resources" below) once such a case exists; it
+> was simply more machinery than four fixed built-in palette constants
+> needed.
 
 ### Cart override of built-in resources
 

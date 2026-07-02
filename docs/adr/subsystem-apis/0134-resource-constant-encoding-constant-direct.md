@@ -88,6 +88,20 @@ distinguish them.
      id, and `provenance = 1` resolves to `NOT_FOUND` for now. The population
      mechanism for built-in assets (manifest vs runtime, registry plumbing) is
      **deferred to future work** (ties into #160 and ADR-0088).
+
+     > **Amendment (2026-07-02, #201 implemented):** the first `provenance = 1`
+     > constants shipped — the four built-in palettes
+     > (`BLYT_PALETTE_AURORA/VGA/EGA/CGA`, ids 1–4, `BLYT_RESOURCE_ENCODE(id,
+     > PROV_RUNTIME)`). This is **not** the general built-in-asset registry this
+     > ADR deferred above — that population mechanism (manifest vs runtime,
+     > registry plumbing, generalized to every future resource type: fonts,
+     > sounds, …) **remains deferred**. #201 instead added a narrow,
+     > hand-authored `blyt_builtin_palette(handle)` resolver in
+     > `runtime/shared/blyt_palettes.c` — a small `switch` over 4 fixed ids
+     > returning a `const uint32_t[256]` table, proportionate to four assets
+     > that will never grow at runtime. The general registry is still the right
+     > design for when fonts/sounds land and the built-in set is no longer a
+     > fixed handful.
    - The canonical definition lives in a new **`runtime/shared/blyt_handle.h`**
      (kind enum + encode/decode, with a `_Static_assert` round-trip); the Rust
      packer mirrors the constants with a cross-reference comment and a round-trip
