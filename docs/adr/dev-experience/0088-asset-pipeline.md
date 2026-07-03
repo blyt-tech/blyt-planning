@@ -598,3 +598,126 @@ and reject embedded NUL where they parse (e.g. `BLYT_ECALL_CONSOLE_DEBUG`,
 `bridge_read_guest_str`). As long as the runtime treats every resource as an
 opaque bag of bits and never parses it, runtime resource-type validation buys
 nothing.
+
+## Amendment (2026-07-02, #214 Tier A custom palette — design settled)
+
+Issue #214 (Tier A of #203's custom-palette split — the **image-free** slice)
+settled how a cart authors its own palette from a palette *file* (`.hex`/`.gpl`/
+`.pal`). This supersedes the "single-palette mode" prose above and the
+2026-07-01 palette-source amendment's `palette:` (singular, `blyt.build.yaml`)
+shape for the *file-source* case; swatch-image read-out and reference-art
+quantization (Tiers B/C) remain deferred to image-asset support (#195 Stage 3)
+and are unaffected. Settled via grill 2026-07-02.
+
+### A palette is a typed resource, not a bespoke carrier
+
+The custom palette is an ordinary **asset**, auto-scanned by extension under
+`assets.dirs` as a new *processed type* (`ResourceType::Palette`, extensions
+`.hex`/`.gpl`/`.pal`). It reuses the whole resource machinery:
+
+- **Carrier** — the existing `.cart.resource.<id>` section (no new section
+  type); "cart-provenance palette carrier" = a normal PROV_CART resource.
+- **Handle** — the normal console-wide tagged PROV_CART resource handle
+  (ADR-0134). The packer emits `R_<NAME>` as a **typed `Palette` handle**
+  (Rust newtype / Lua typed object / C typedef), consistent with the
+  typed-by-kind constants of #166. `blyt_gfx_palette_set` and the built-in
+  `BLYT_PALETTE_*` constants retype to `Palette`, so Rust/Lua reject a
+  wrong-kind handle at compile time.
+- **Reproducibility** (the build-reproducibility requirement above) falls out
+  of the existing content-addressed staging engine (xxh3): a palette file is
+  staged like any resource; same source → identical bytes.
+
+Build-time it is a distinct type (parse + validate); at runtime it is just
+resource bytes — the runtime stays byte-blind (#166).
+
+### Selection reconciles `palettes:` (config) and `palette:` (this ADR)
+
+The **file source is a build-time asset** (declared/discovered on the
+`blyt.build.yaml` side, as this ADR always held), but **selection stays in
+`blyt.config.yaml`** where #201 put built-in selection. The `palettes: default:`
+key widens from "built-in name" to "built-in name **or** palette-asset canonical
+name":
+
+```yaml
+# blyt.build.yaml — palette files are assets, auto-scanned by extension
+# blyt.config.yaml
+palettes:
+  default: main   # a built-in name (aurora/vga/ega/cga) OR a palette-asset name
+```
+
+The asset is referenced by its **canonical name** (`resource_name_from_rel`) —
+no `R_`/`resource_` prefix in the config value. Compiling `.cart.config`'s
+`default_palette` (ADR-0134 encoded handle) now resolves that name against two
+namespaces: built-in names → `PROV_RUNTIME` handle; palette-asset names →
+`PROV_CART` handle. This forces `.cart.config` compilation to run **after** the
+asset scan (it currently precedes it) so the name→resource-id map exists.
+
+- **Built-in names are reserved.** A palette asset whose canonical name equals
+  a built-in (`aurora`/`vga`/`ega`/`cga`) is a **build error** (no silent
+  handling); `default:` resolves built-in-first, so `default: vga` is
+  unambiguous forever.
+- Naming a **non-palette** asset in `default:` is a build error (the packer
+  knows the asset's type at build time).
+
+### Resolution — provenance-dispatched over two real registries ("registry-lite")
+
+Built-in palettes stop being a static-table special case and become **real
+runtime-shipped resources**, budget-counted and lifecycle-managed like any
+resource (see budget note). They live in a **separate runtime registry** (its
+own small table) rather than the cart resource table, because the two id spaces
+overlap — cart resource ids and `BLYT_PAL_ID_*` both start at 1, and the cart
+table is keyed by the raw 24-bit id. Re-keying that shared structure (which
+#157/#158/#137/#159/#160 all depend on) is the one thing kept off the critical
+path. Resolution therefore dispatches by provenance:
+
+- `PROV_RUNTIME` → the runtime registry (built-in palettes; bytes embedded in
+  the runtime binary via `runtime/shared/blyt_palettes.c`, so **no
+  cart-file-size cost**).
+- `PROV_CART` → the cart resource table (`.cart.resource.<id>`).
+
+`blyt_gfx_palette_set` and the pre-`init()` auto-load call one resolver over
+that dispatch, requiring **exactly 1024 bytes** (256 XRGB8888 LE entries) copied
+into the active palette. `gfx_palette_set` is a fire-and-forget void ECALL: an
+unresolvable, non-resource, or wrong-size handle is a **no-op +
+`BLYT_TRACE_API` diagnostic**. Mirrored host/native/wasm; the resource-table
+populate already precedes the auto-load at session-create.
+
+This **folds the earlier "Level B" runtime-registry work into #214** — there is
+no separate deferral. Full single-table unification (one provenance-aware
+resource table, no dispatch) was considered and **rejected for now**: its only
+payoff is deleting the provenance dispatch, not worth perturbing the shared
+resource table that five merged issues depend on.
+
+### Budget — bundled resources are counted, not exempt
+
+Runtime-provenance buys exactly one thing: the resource's bytes are embedded in
+the **runtime binary** rather than the cart ELF, so it costs nothing against the
+cart's *file size* / size class and is available with no config. It buys
+**nothing** against the cart's 16 MB *runtime working-memory* budget
+(`blyt_mem_budget.h`, ADR-0008/#158): a bundled resource that occupies the
+working set is accounted exactly like a cart-shipped one. (An earlier draft of
+this amendment had this backwards — "budget-exempt via `.rodata`" — which
+conflated file-size savings with runtime-memory cost.) Palettes merely *look*
+free because `gfx_palette_set` memcpys 1024 bytes into `session->palette`, which
+lives in the runtime **overhead** region, not the cart budget — a copy-and-forget
+quirk of palettes, not a bundled-resource exemption. Future resident bundled
+resources (fonts/sprites) will count.
+
+### Parser grammars (exact/integer conversion, no image decode)
+
+Source colors fill indices `0..N-1` verbatim (`N ≤ 256`; `> 256` = build
+error); unspecified indices pad black; the transform always emits a full
+256-entry / 1024-byte XRGB8888 LE table. **Index 255 is not forced** — per
+ADR-0049 it always holds a real color and is transparent only at blit time
+(a deferred Tier B/C concern), so the Tier A parser enforces nothing on it.
+
+- `.hex` (Lospec) — one `RRGGBB` per line; optional leading `#`; blank/
+  whitespace lines skipped; case-insensitive; RGB only (top byte 0); any
+  non-color line is a build error with line number.
+- `.gpl` (GIMP) — `GIMP Palette` magic first line required; skip `#` comments,
+  blanks, and `Name:`/`Columns:` headers; color line is `R G B` decimals
+  (0–255) + an optional trailing label (ignored); malformed color line is a
+  build error.
+- `.pal` — **JASC-PAL text** (`JASC-PAL` / `0100` / count / `R G B` lines),
+  what Aseprite / GrafX2 / Paint Shop Pro actually export; *not* headerless
+  binary, despite #214's "raw table" phrasing.
