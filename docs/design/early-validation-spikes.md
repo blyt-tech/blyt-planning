@@ -17,8 +17,8 @@ Each spike letter links to its section below.
 
 | Spike | Status | Hardware | Manual gate | Eng. followup | External blocker |
 |-------|--------|----------|-------------|---------------|-----------------|
-| [A](#spike-a--interpreter-throughput-on-minimum-emulation-hardware) — hardware measurement pending on Pi Zero 2 W; rv32emu baseline and MIPS cap methodology established | partial | Pi Zero 2 W | — | — | — |
-| [B](#spike-b--lua-running-inside-the-interpreter-on-minimum-hardware) — hardware measurement pending (depends on Spike A MIPS cap); Lua workload structure and frame-timing harness established | partial | Pi Zero 2 W | — | yes | — |
+| [A](#spike-a--interpreter-throughput-on-minimum-emulation-hardware) — measured on a Pi Zero 2 W (Cortex-A53 @ 1 GHz, Trixie): CoreMark + Embench give **≈32 effective guest MIPS** at an `-O2` interpreter core / **≈8 MIPS** at the `-O0` core `cmake -B build` ships today (cap hinges on release opt level, ~4×); a Lua-VM probe measures **≈20 MIPS** (cap ~1.57× optimistic for Lua carts). Harness in `blyt:bench/spike-a/` | done | Pi Zero 2 W (done) | — | yes (pin release interpreter opt level + decide single-vs-per-execution-model cap before baking; rv32emu `aha-mont64` optimizer assert) | — |
+| [B](#spike-b--lua-running-inside-the-interpreter-on-minimum-hardware) — Spike A dependency met; Lua-VM throughput now measured on Pi hardware via the Spike A harness (blyt Lua VM, entity `update()`: **≈20 MIPS at `-O2`**). Remaining: frame-budget/headroom framing at a realistic (budget-fitting) workload + the broader lua.org benchmark suite | partial | Pi Zero 2 W | — | yes | — |
 | [C](#spike-c--lua-as-a-host-provided-shared-library-in-the-vm) — Lua 5.4 builds as a versioned RV32IMFC shared library and is callable via PLT from cart code | done | — | — | yes | Debian rv32 multilib gap |
 | [D](#spike-d--cross-platform-determinism) — the same cart produces bit-identical per-frame digests on arm64 and amd64, including f32 transcendentals | done | — | — | yes | — |
 | [E](#spike-e--performance-and-correctness-in-a-wasm-container) — native-C carts fit the WASM budget; Lua-in-rv32emu is 7.4× over budget on desktop (led to Spike F); mobile measurement pending | partial | mid-range Android | phone perf run | yes | — |
@@ -46,6 +46,44 @@ Each spike letter links to its section below.
 ---
 
 ## Spike A — Interpreter throughput on minimum emulation hardware
+
+**Status:** MEASURED on hardware. Harness lives in the implementation repo at
+`bench/spike-a/` (CoreMark + Embench-IoT cross-compiled to RV32IMAFDC/ilp32d
+against static musl, run to exit through the **same rv32emu interpreter core the
+runtime ships** — interpreter only, Berkeley SoftFloat for F/D; effective MIPS
+derived from rv32emu's retired-instruction counter `rv->csr_cycle` over host
+wall-clock). Run on a **Raspberry Pi Zero 2 W Rev 1.0 (Cortex-A53 @ 1000 MHz,
+aarch64, Debian 13 Trixie)** — exactly the ADR-0082 minimum emulation host. Full
+numbers, method, and findings in `bench/spike-a/RESULTS.md`.
+
+- **Result:** at an `-O2 -fno-strict-aliasing` interpreter core, the floor is
+  **CoreMark ≈ 32 effective guest MIPS** (Embench cluster ~30–40, range ~13–57
+  across 19 kernels). Emulation is correct on hardware: CoreMark's own ≥10 s run
+  reports *"Correct operation validated"* with canonical CRCs; 18/19 Embench
+  kernels verify PASS.
+- **The cap hinges on the interpreter optimization level (~4× on the Pi).**
+  `cmake -B build` sets no `CMAKE_BUILD_TYPE`, so today's build compiles the core
+  at `-O0`, which measures **≈ 8 MIPS** (~133K guest instructions per 16.67 ms
+  frame) versus **≈ 32 MIPS** (~536K/frame) at `-O2`. **Recommendation:** bake
+  the ADR-0082 cap only after pinning the shipped interpreter opt level; ship the
+  core `-O2 -fno-strict-aliasing` and set the cap **≈ 32 effective guest MIPS**.
+  If the interpreter stays at `-O0`, the cap is ≈ 8 MIPS and the floor-hardware
+  performance story needs re-examination. (Dev-Mac baseline ≈ 550 MIPS CoreMark
+  at `-O2` — the Pi is ~17× slower.)
+- **Lua cross-check (a Spike B probe).** The harness also runs the **blyt Lua VM**
+  (int32/float64, fixed seed, guest quad soft-float builtins) on a steady-state
+  entity `update()`. On the Pi at `-O2` the Lua VM sustains only **≈ 20 MIPS** vs
+  CoreMark's 32 (64 %; the gap widens at `-O2` because the in-order A53 punishes
+  the VM's indirect-dispatch + softfloat-f64 mix). So a CoreMark-anchored cap is
+  **~1.57× optimistic for Lua carts** — the cap should be set from the Lua-VM
+  number (~20 MIPS) or made per-execution-model. Directly informs Spike B.
+- **Secondary findings:** any optimized rv32emu build (`-O2` *and* `-O3`) needs
+  `-fno-strict-aliasing` or the core miscompiles (guest starts at `PC=0`) —
+  rv32emu type-puns guest memory, which `-O2`+ alias analysis breaks; `-O3` is
+  otherwise correct but no faster than `-O2` for a dispatch loop. Embench
+  `aha-mont64` deterministically trips an assertion in rv32emu's block/constant
+  optimizer (`optimize_constant`, `emulate.c:1837`) — a vendored-emulator bug a
+  real cart could hit. Both are candidates for engineering follow-up.
 
 **The question:** Can an RV32IMFC interpreter running on a Pi Zero 2 W
 (Cortex-A53 quad-core @ 1 GHz) execute a realistic cart workload within the
@@ -75,7 +113,10 @@ core scores provide a useful reference baseline.
 
 **Secondary output:** The measured effective MIPS figure from this spike
 becomes the emulator MIPS cap baked into all emulator builds (ADR-0082).
-Until this spike runs, the cap is unset and emulators run at full host speed.
+This value is now measured (see Status above): **≈ 32 MIPS** for an `-O2`
+interpreter core, or **≈ 8 MIPS** at the `-O0` core the repo builds today — so
+the cap must be baked together with a decision on the release interpreter opt
+level. Until the cap is baked, emulators run at full host speed.
 
 **Platform:** Raspberry Pi Zero 2 W or equivalent Cortex-A53 device.
 

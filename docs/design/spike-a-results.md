@@ -1,222 +1,162 @@
 # Spike A results — Interpreter throughput on minimum emulation hardware
 
-**Status: build and toolchain complete; ADR-0082 throttle mechanism verified; real-hardware numbers pending.**
+**Status: DONE — measured on real Pi Zero 2 W hardware.**
 
-The question Spike A asks is whether an RV32IMFC interpreter running on a
-Pi Zero 2 W (Cortex-A53 @ 1 GHz) can execute a realistic cart workload within
-the 16.7 ms frame budget at 60 fps. The build infrastructure is done and
-verified correct. The ADR-0082 MIPS cap mechanism has been implemented and
-confirmed to work. The actual performance answer requires Pi Zero 2 W hardware,
-which has not yet been run.
+> **Supersedes an earlier attempt.** A previous Spike A harness (in the planning
+> repo's `spikes/spike-a/` submodule) built CoreMark/Embench against
+> *upstream* `sysprog21/rv32emu` on the **`rv32imfc_zicsr` / `ilp32f`** ISA with
+> a custom crt0, and only ever ran in arm64 Docker (a 500 MIPS placeholder cap,
+> hardware numbers pending). That predates Spike U (hardware doubles) and does
+> not use the interpreter the runtime actually ships, so its numbers are not a
+> valid cap. This document reflects the current, hardware-measured harness in
+> the **implementation repo at `bench/spike-a/`**, which uses the shipped
+> interpreter and the real cart ISA. `bench/spike-a/RESULTS.md` is the
+> authoritative machine-readable record; this is the narrative.
 
----
+## The question
+
+Can the RV32 interpreter the runtime ships execute a realistic cart workload
+within the 16.7 ms frame budget at 60 fps on a Pi Zero 2 W (Cortex-A53 @ 1 GHz)?
+And — the secondary output that ADR-0082 depends on — **what is the effective
+guest MIPS on that hardware**, which becomes the baked-in emulator MIPS cap?
 
 ## What was built
 
-**Interpreter:** [rv32emu](https://github.com/sysprog21/rv32emu) — a
-well-maintained, Apache 2.0-licensed RV32IMFC software interpreter written in
-C. It handles Linux user-space ECALLs and loads ELFs directly. Chosen over
-writing a new interpreter because the licensing is clean, the correctness
-track record is good, and it can be dropped into the target binary build.
+A standalone measurement harness (`bench/spike-a/`) that is deliberately faithful
+to production:
 
-**Build environment:** arm64 Docker container (Ubuntu 24.04) built from
-`spikes/spike-a/Dockerfile`. The container mirrors the Pi Zero 2 W's ISA
-(Cortex-A53, arm64) and is used for build validation on Apple Silicon. All
-timing numbers from this container are substantially faster than Pi hardware
-and must not be treated as the spike answer.
+- **Interpreter:** the **`blyt-tech/rv32emu` fork the runtime actually ships**
+  (`g244cfb3-blyt-v0-p7`), built the same way `libblytemu` is — interpreter only
+  (JIT/T2C/SYSTEM off), Berkeley SoftFloat for the F/D extensions. The runner
+  links this core and drives it exactly as `cart_run.c` does. This is the point:
+  the cap must reflect the interpreter that ships, not a different build.
+- **Guest ISA/ABI:** **`rv32imafdc` / `ilp32d`** — the real cart target since
+  Spike U added hardware doubles. Benchmarks are cross-compiled with the blyt
+  clang toolchain against **static musl** (built from the pinned
+  `blyt-tech/musl`), so libm/FP behaviour matches real carts.
+- **Metric:** effective guest MIPS = retired guest instructions / host
+  wall-clock seconds / 1e6, where the instruction count is rv32emu's own
+  per-instruction counter `rv->csr_cycle`. The runner loads a bare ELF, provides
+  a minimal RV32-Linux syscall shim (write/brk/mmap/clock_gettime/… + a proper
+  SysV auxv stack so full static musl starts), runs the guest to `exit`, and
+  reports the number. Nothing under `runtime/` is modified; this is measurement
+  infrastructure only.
+- **Benchmarks:** **CoreMark** (EEMBC, Apache-2.0) and **Embench-IoT** (19
+  kernels). CoreMark uses the barebones port + static musl and reproduces the
+  canonical validation CRCs; 18/19 Embench kernels build, run, and verify PASS.
+- **Portability:** guest ELFs are host-independent; the runner cross-builds to
+  aarch64 (static) from the Mac via a `linux/arm64` container, so the Pi needs
+  no toolchain.
 
-**Guest cross-toolchain:** `gcc-riscv64-linux-gnu` targeting
-`-march=rv32imfc_zicsr -mabi=ilp32f`, with Berkeley SoftFloat 3 providing
-IEEE 754 double-precision helpers (the `rv64` libgcc.a cannot be used for
-`rv32 ilp32f` targets). A minimal `crt0.S` + `syscalls.c` provides the bare
-C runtime: `_exit`, raw `write`, `memset`/`memcpy`/`strlen`/`strcmp`, and a
-single-character-at-a-time `ee_printf`.
+## Result — Raspberry Pi Zero 2 W (the ADR-0082 floor)
 
-**CoreMark:** The [EEMBC CoreMark](https://github.com/eembc/coremark)
-benchmark compiled to RV32IMFC using a custom port in
-`ports/rv32emu/`. Timing via Linux `clock_gettime64` (ECALL 403). SoftFloat
-provides the double-precision helpers for the score calculation path.
+Hardware: **Pi Zero 2 W Rev 1.0, Cortex-A53 @ 1000 MHz, aarch64, Debian 13
+(Trixie), kernel 6.18.34+rpt-rpi-v8.** Emulation verified correct on hardware:
+CoreMark's own ≥10 s run (18.8 s at 2000 iterations) reports *"Correct operation
+validated"* with the canonical CRCs; 18/19 Embench kernels verify PASS with zero
+unhandled syscalls.
 
-**Embench-IoT:** All 18 benchmarks from
-[embench-iot](https://github.com/embench/embench-iot) compiled to RV32IMFC.
-The port lives in `ports/rv32emu/embench/` and reuses the same crt0/syscalls
-foundation as CoreMark. Each benchmark binary self-reports its elapsed time
-when run under rv32emu. qrduino is excluded (requires `<avr/pgmspace.h>`).
+**The measured floor depends ~4× on how the interpreter core is optimized:**
 
-**ADR-0082 MIPS cap:** `patches/apply-mips-cap.py` patches rv32emu at Docker
-build time (the submodule is unmodified) to add a `nanosleep` throttle in
-`rv_run()`. The cap value is baked in at compile time via `-DFC32_MIPS_CAP=N`;
-`N=0` (default) disables the throttle entirely, preserving upstream behaviour.
-The placeholder value is 500 MIPS; it will be replaced with the Pi Zero 2 W
-measurement once hardware is available.
+| interpreter opt | CoreMark MIPS | CoreMark iters/sec | Embench cluster | guest insns / 16.67 ms frame |
+|---|---:|---:|---:|---:|
+| **`-O0`** — what `cmake -B build` builds **today** | **7.9** | 41 | ~7–9 | ~133K |
+| **`-O2`** — a sane optimized release | **32.1** | 106 | ~30–40 | ~536K |
+| `-O3` | 32.9 | 109 | — | ~549K |
 
----
+Full Embench-per-kernel numbers at both opt levels are in
+`bench/spike-a/RESULTS.md`. The Embench suite at `-O2` spans ~13 MIPS
+(control-flow-heavy `nsichneu`) to ~57 MIPS (tight-integer `crc32`), clustered
+~30–40, with CoreMark at 32.1 — a representative single cap number. The dev-Mac
+baseline (Apple Silicon) is ≈ 550 MIPS CoreMark at `-O2`, so the Pi is ~17×
+slower.
 
-## Docker / Apple Silicon numbers (correctness check only)
+## Cross-check: the Lua bytecode interpreter (a Spike B probe)
 
-These numbers were produced on an arm64 Docker container running on Apple
-Silicon (M-series). They prove the benchmarks build and execute correctly;
-they are **not** the spike's success criterion. The Pi Zero 2 W Cortex-A53
-running at 1 GHz will be materially slower than this container.
+CoreMark/Embench are native C. Lua carts run a *second* interpretation layer —
+the Lua VM (compiled to RV32) dispatched by rv32emu — which is the primary
+authoring path, so its throughput is what actually bounds Lua carts. The harness
+includes `bench/spike-a/guest/lua-port/`: the **blyt Lua 5.4 VM** (int32/float64
+`BLYT_LUA_I32_F64`, the runtime's fixed hash seed, + the guest quad soft-float
+builtins) built to the cart ISA, running a steady-state entity `update()` (256
+entities; position/velocity integration; `sqrt`/`sin` per entity). Deterministic
+— identical digest and instruction count on Mac and Pi.
 
-### CoreMark
+| effective MIPS | CoreMark | Lua-VM | Lua ÷ CoreMark |
+|---|---:|---:|---:|
+| Pi, interp **-O2** | 32.1 | **20.5** | **64 %** |
+| Pi, interp -O0 | 7.9 | 6.7 | 85 % |
+| Mac, interp -O2 | 545 | 438 | 80 % |
 
-```
-2K performance run parameters for coremark.
-CoreMark Size    : 666
-Total ticks      : 20026523
-Total time (secs): 12.134348
-Iterations/Sec   : 1648.925293
-Iterations       : 20000
-Compiler version : GCC13.3.0
-Compiler flags   : -march=rv32imfc_zicsr -mabi=ilp32f -O2 -ffreestanding
-                   -nostdlib -fno-stack-protector -fno-common -static
-                   -no-pie -fno-pie
-Memory location  : STACK
-seedcrc          : 0xe9f5
-[0]crclist       : 0xe714
-[0]crcmatrix     : 0x1fd7
-[0]crcstate      : 0x8e3a
-[0]crcfinal      : 0x65c5
-Correct operation validated. See README.md for run and reporting rules.
-CoreMark 1.0 : 1651.30 / GCC13.3.0 / STACK
-Elapsed (us)     : 12116476
-```
+The Lua VM sustains only **~20 MIPS on the Pi at -O2** — 36 % below CoreMark, and
+the gap is *widest* at the opt level you'd ship (the in-order A53 punishes the
+VM's indirect-dispatch + softfloat-f64 mix harder than Apple Silicon does). So a
+CoreMark-anchored cap is **~1.57× optimistic for Lua carts**: a Lua cart tuned to
+a 32-MIPS dev throttle (~536K guest insns/frame) only gets ~342K/frame on
+hardware → dropped frames. This directly informs Spike B and the cap; the probe
+quantifies the worst-case authoring path so the cap decision is not made on
+native C alone.
 
-The score of **1651 iterations/sec** is the guest workload throughput as seen
-by the rv32emu interpreter, running on the arm64 Docker host. On Pi Zero 2 W
-Cortex-A53 this number will be lower — the arm64 Docker host runs at ~3 GHz
-effective throughput versus the Pi's 1 GHz, and the interpreter overhead
-ratio is not 1:1 with clock speed.
+## The cap value, and the decision it forces
 
-### Embench-IoT
+**The ADR-0082 cap cannot be a single number until the release interpreter's
+optimization level is pinned**, because that choice moves the cap 4×:
 
-All 18 benchmarks pass verification (`verify_benchmark()` returns correct).
+- Ship the core **`-O2 -fno-strict-aliasing`** → cap **≈ 32 effective guest
+  MIPS** (~536K guest instructions per frame). Draw calls are native-speed
+  ECALLs, not counted here, so this is a comfortable retro-era budget and meets
+  the spike's success criterion (a non-trivial game loop leaving ≥ half the
+  frame for subsystem overhead).
+- Keep the core at **`-O0`** (today's `cmake -B build`, no `CMAKE_BUILD_TYPE`) →
+  cap **≈ 8 MIPS** (~133K/frame). That is tight enough that the floor-hardware
+  performance story needs re-examination.
 
-| Benchmark      | Docker time (ms) | Notes                              |
-|----------------|------------------|------------------------------------|
-| aha-mont64     | 9.6              | Montgomery multiplication          |
-| crc32          | 5.5              | CRC-32                             |
-| depthconv      | 6.5              | CNN depthwise convolution (float)  |
-| edn            | 6.6              | FIR filter                         |
-| huffbench      | 5.9              | Huffman encoding                   |
-| matmult-int    | 7.3              | Integer matrix multiply            |
-| md5sum         | 5.2              | MD5 hash                           |
-| nettle-aes     | 6.0              | AES cipher                         |
-| nettle-sha256  | 12.6             | SHA-256                            |
-| nsichneu       | 15.4             | Large state machine                |
-| picojpeg       | 6.9              | JPEG decoder                       |
-| sglib-combined | 10.8             | Linked list / tree operations      |
-| slre           | 5.5              | Regular expression matching        |
-| statemate      | 6.0              | State machine (int recast as float)|
-| tarfind        | 4.3              | Tar archive search                 |
-| ud             | 5.3              | LU decomposition (int)             |
-| wikisort       | 4.5              | Merge sort (calls sqrt via double) |
-| xgboost        | 12.8             | Decision tree inference            |
+**Recommendation:** ship the interpreter core built `-O2 -fno-strict-aliasing`
+(the `-O0` the repo builds today would set the cap ~4× too low). Then decide
+whether the cap is one number or per-execution-model: native-C carts sit at
+**≈ 32 MIPS**, but Lua carts (the primary authoring path) only sustain **≈ 20
+MIPS** (see the Lua cross-check above), so a single 32-MIPS cap is ~1.57×
+optimistic for Lua. Either bake the cap conservatively at **≈ 20 MIPS** (safe for
+every cart type) or make it **per-execution-model** (native ≈ 32, Lua ≈ 20).
 
-Times range from 4–16 ms on this host. On Pi hardware all of these will
-increase by a factor that depends on the host clock ratio, memory bandwidth,
-and how well Cortex-A53's out-of-order pipeline amortises the interpreter
-dispatch loop overhead. A rough estimate based on the 3:1 clock ratio alone
-gives 12–48 ms Pi times, which would exceed the 16.7 ms budget for several
-benchmarks — but this is not a meaningful prediction without real data.
-Published RV32 soft-core scores on Cortex-A53 range from 200–400
-CoreMark/MHz; at 1 GHz that gives 200–400 iterations/sec, compared to our
-~1650 on the faster Docker host. Validating this against real hardware is the
-remaining work.
+## Secondary findings
 
----
+1. **Any optimized rv32emu build needs `-fno-strict-aliasing`.** At `-O2` *and*
+   `-O3` the interpreter core starts the guest at `PC=0` ("failed to allocate or
+   translate block") unless the flag is set — rv32emu reads/writes guest memory
+   through incompatible pointer types, which the type-based alias analysis
+   enabled at `-O2`+ breaks; the flag makes it well-defined (same reason the
+   Linux kernel uses it). `-O3` is otherwise correct but buys nothing over `-O2`
+   for an interpreter dispatch loop (occasionally marginally slower), which is
+   why `-O2` is the recommendation. Latent risk the moment the runtime build is
+   optimized; the harness sets the flag.
+2. **`aha-mont64` deterministically aborts rv32emu.** It builds and runs, then
+   trips an assertion in rv32emu's block/constant optimizer
+   (`assert(rv->X[0] == 0)`, `optimize_constant`, `emulate.c:1837`). This is
+   inside the vendored core, so a real cart with a similar instruction stream
+   could hit it too — worth an engineering follow-up against the emulator. The
+   other 18 Embench kernels and CoreMark run clean.
+3. **Instruction counts are deterministic.** For a fixed ELF the retired-
+   instruction count is bit-identical across hosts (Mac vs Pi vs arm64
+   container); only wall-clock — hence MIPS — varies. (CoreMark's count wobbles
+   by ~300 because its printed elapsed-time string has host-dependent digits;
+   Embench prints no timing and is exactly deterministic.)
 
-## ADR-0082 MIPS cap — mechanism verified
+## Reproducing
 
-The throttle described in ADR-0082 has been implemented and confirmed correct
-against the Docker numbers.
-
-### How it works
-
-`patches/apply-mips-cap.py` (run from within the Docker build) patches two
-files inside `rv32emu/`:
-
-- **`Makefile`** — adds `FC32_EXTRA_CFLAGS ?=` so the cap value can be
-  injected without overriding the Makefile's CFLAGS line.
-- **`src/riscv.c`** — wraps the `rv_run()` inner loop: after each `rv_step()`
-  it reads `rv->csr_cycle`, computes how long those cycles "should" have taken
-  at the target MIPS rate, and calls `nanosleep()` for the difference if the
-  host ran ahead. When `FC32_MIPS_CAP == 0` the code compiles away entirely.
-
-```c
-/* after rv_step(): */
-emulated_ns = cycles_this_step * 1000 / FC32_MIPS_CAP;
-wall_ns     = clock_gettime(CLOCK_MONOTONIC) delta;
-if (emulated_ns > wall_ns)
-    nanosleep(emulated_ns - wall_ns);
-```
-
-### Verification run (arm64 Docker, Apple Silicon)
-
-| Cap | CoreMark score | Elapsed |
-|-----|---------------|---------|
-| uncapped | 1589 iter/sec | 12.6 s |
-| 500 MIPS | 362 iter/sec  | 55.3 s |
-
-The 4.4× slowdown implies the effective uncapped MIPS on this host is
-~2200 MIPS (500 × 4.4). The score ratio 362/1589 ≈ 23% matches
-500/2200 ≈ 23%, confirming the throttle arithmetic is correct.
-
-The placeholder cap of **500 MIPS** is intentionally well below the Docker
-host's capability. It will be replaced with the Pi Zero 2 W measured value.
-
-### Make targets
+In the implementation repo:
 
 ```sh
-make docker-bench-capped              # CoreMark at default 500 MIPS cap
-make docker-bench-capped MIPS_CAP=N  # CoreMark at N MIPS
-make docker-embench-capped            # all 18 Embench at default cap
+cd bench/spike-a
+scripts/build-guest.sh && scripts/build-embench.sh   # host-independent RV32 ELFs
+scripts/build-host.sh   && scripts/run.sh            # dev-Mac baseline + table
+scripts/run-matrix.sh                                # MIPS across interpreter -O0/-O2/-O3
+
+# Pi Zero 2 W (authoritative floor):
+scripts/build-pi.sh                                  # aarch64 static runner (Docker)
+scp -r artifacts/pi/runner artifacts/guest scripts pi@<pi>:spike-a/
+ssh pi@<pi> 'cd spike-a && ./scripts/run.sh --runner ./runner'
 ```
 
----
-
-## What remains
-
-1. **Pi Zero 2 W hardware.** Run `make docker-bench` (CoreMark) and
-   `make docker-embench` (Embench) on a real Pi Zero 2 W with rv32emu built
-   natively for arm64. The Makefile already supports this path (the Docker
-   image is `linux/arm64`; the ELFs run unchanged on real hardware).
-
-2. **Score against the success criterion.** The criterion is that a
-   non-trivial retro-era game loop leaves at least half the frame budget (~8 ms)
-   headroom after the interpreter workload. The CoreMark score expressed as
-   effective MIPS, and the Embench median time, are the two inputs to this
-   judgment.
-
-3. **Set the MIPS cap (ADR-0082).** Replace the 500 MIPS placeholder with the
-   measured Pi Zero 2 W effective MIPS. Rebuild with `FC32_MIPS_CAP=<pi_mips>`
-   to lock in the final cap value.
-
----
-
-## Running the benchmarks
-
-```sh
-# Correctness check on Apple Silicon (arm64 Docker):
-make docker-bench                    # CoreMark, uncapped
-make docker-embench                  # all 18 Embench, uncapped
-
-# MIPS cap verification (arm64 Docker):
-make docker-bench-capped             # CoreMark at 500 MIPS placeholder
-make docker-bench-capped MIPS_CAP=N  # CoreMark at N MIPS
-make docker-embench-capped           # Embench at 500 MIPS placeholder
-
-# On real Pi Zero 2 W (ssh in, clone repo, build from spikes/spike-a/):
-make -C rv32emu OUT=build -j4
-make -C coremark PORT_DIR=../ports/rv32emu ITERATIONS=3000 compile
-./rv32emu/build/rv32emu coremark/coremark.elf
-
-for f in ports/rv32emu/embench/build/embench-*.elf; do
-  ./rv32emu/build/rv32emu "$f"
-done
-```
-
-The `ITERATIONS=3000` value targets approximately 10 seconds of CoreMark at
-the expected Pi throughput; adjust if the run completes in under 10 seconds
-(CoreMark requires at least 10 seconds for a valid score).
+See `bench/spike-a/README.md` for the full method and `RESULTS.md` for all
+measured numbers.
