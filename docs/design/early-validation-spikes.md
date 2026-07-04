@@ -18,7 +18,7 @@ Each spike letter links to its section below.
 | Spike | Status | Hardware | Manual gate | Eng. followup | External blocker |
 |-------|--------|----------|-------------|---------------|-----------------|
 | [A](#spike-a--interpreter-throughput-on-minimum-emulation-hardware) — measured on a Pi Zero 2 W (Cortex-A53 @ 1 GHz, Trixie): CoreMark + Embench give **≈32 effective guest MIPS** at an `-O2` interpreter core / **≈8 MIPS** at the `-O0` core `cmake -B build` ships today (cap hinges on release opt level, ~4×); a Lua-VM probe measures **≈20 MIPS** (cap ~1.57× optimistic for Lua carts). Harness in `blyt:bench/spike-a/` | done | Pi Zero 2 W (done) | — | yes (pin release interpreter opt level + decide single-vs-per-execution-model cap before baking; rv32emu `aha-mont64` optimizer assert) | — |
-| [B](#spike-b--lua-running-inside-the-interpreter-on-minimum-hardware) — Spike A dependency met; Lua-VM throughput now measured on Pi hardware via the Spike A harness (blyt Lua VM, entity `update()`: **≈20 MIPS at `-O2`**). Remaining: frame-budget/headroom framing at a realistic (budget-fitting) workload + the broader lua.org benchmark suite | partial | Pi Zero 2 W | — | yes | — |
+| [B](#spike-b--lua-running-inside-the-interpreter-on-minimum-hardware) — measured on Pi Zero 2 W via the Spike A harness (blyt Lua VM, `ilp32d`): **≈20 MIPS** (17–23 across operation types); frame budget ~342K guest insns → a bounded **~60–120-entity** `update()` holds 60 fps; GC p99 ~28% over mean. Double-interpretation viable; load-bearing risks closed. Remaining: real cart-path (`libblyt32lua`) timing | done | Pi Zero 2 W (done) | — | yes (real cart-path timing; feeds the per-execution-model cap decision) | — |
 | [C](#spike-c--lua-as-a-host-provided-shared-library-in-the-vm) — Lua 5.4 builds as a versioned RV32IMFC shared library and is callable via PLT from cart code | done | — | — | yes | Debian rv32 multilib gap |
 | [D](#spike-d--cross-platform-determinism) — the same cart produces bit-identical per-frame digests on arm64 and amd64, including f32 transcendentals | done | — | — | yes | — |
 | [E](#spike-e--performance-and-correctness-in-a-wasm-container) — native-C carts fit the WASM budget; Lua-in-rv32emu is 7.4× over budget on desktop (led to Spike F); mobile measurement pending | partial | mid-range Android | phone perf run | yes | — |
@@ -123,6 +123,29 @@ level. Until the cap is baked, emulators run at full host speed.
 ---
 
 ## Spike B — Lua running inside the interpreter on minimum hardware
+
+**Status:** MEASURED on hardware — load-bearing risks closed. Results in
+`spike-b-results.md`; harness in the implementation repo at `bench/spike-a/`
+(`guest/lua-port/`). The blyt Lua VM (`BLYT_LUA_I32_F64`: int32/float64, fixed
+hash seed) built to the real cart ISA (`rv32imafdc`/`ilp32d`) and run through the
+shipped rv32emu core on a **Pi Zero 2 W** (Cortex-A53 @ 1 GHz, Trixie).
+
+- **The double-interpretation stack is viable for a bounded 60 Hz loop.** Lua-VM
+  throughput ≈ **20 MIPS** on the Pi at `-O2` (17–23 across `fib`/`binarytrees`/
+  `nbody`/`mandelbrot`/`strings`/`tables` — `strings` worst at 17; tight 1.36×
+  band on hardware). The per-frame budget is ~342K guest instructions (≈ 171K
+  for ≥ 8 ms headroom), so a **~60–120-entity** `sqrt`/`sin`-per-entity
+  `update()` holds the frame budget — the founding fear (order-of-magnitude
+  infeasible) is not realized (a heavy 256-entity loop is only ~2× over).
+- **GC must be budgeted for:** an allocation-heavy tic shows frame-time
+  **p99 ≈ 28 % above mean** (mark/sweep pauses) — carts budget to p99 and
+  minimise per-frame allocation. Native C/Rust remains the hot-path escape hatch.
+- **Feeds the cap:** the Lua VM sits ~1.6× below native CoreMark (20 vs 32 MIPS),
+  so a CoreMark-anchored cap is optimistic for Lua; conservative Lua-safe cap
+  ≈ 17–20 MIPS (see Spike A / `spike-a-results.md`).
+- **Remaining:** real cart-path timing via `libblyt32lua` (vs the static-linked
+  probe) — a small follow-up; the load-bearing throughput/fps/GC questions are
+  answered.
 
 **The question:** Can Lua 5.4 (`LUA_32BITS`) compiled to RV32IMFC, running
 under the interpreter from Spike A, execute a realistic game-loop workload
