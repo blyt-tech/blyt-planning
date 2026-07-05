@@ -2,10 +2,13 @@
 
 ## Status
 
-Proposed — pending the transcendental-parity investigation (blyt#223) and the
-broader decision on whether host-Lua becomes the primary Lua execution path on
-emulated hosts (Spike Y follow-on). This ADR records the *mechanism* that makes
-that direction safe; it does not by itself decide the direction.
+Accepted (2026-07-05) — being implemented for the WASM host-Lua fast path
+(blyt#223 Phase A). The broader decision on whether host-Lua becomes the primary
+Lua execution path on emulated hosts (Spike Y follow-on) remains open; this ADR
+records the *mechanism* that makes that direction safe, and its Phase-A landing
+pins the WASM fast path today. See **Implementation notes (2026-07-05)** below
+for how the mechanism is realized on WASM (which cannot soft-float) and what
+defers to the future native host-Lua leg.
 
 ## Context
 
@@ -154,6 +157,50 @@ diffing frame hashes against it and host-vs-host across x86/arm64/riscv64/wasm.
   separate decision (Spike Y follow-on); this ADR does not make it.
 - **New surface:** `blyt_fpm.h`/`blyt_fpm_soft.c`, the `BLYT_HOSTLUA_FP` build
   axis, and a host-vs-host cross-arch parity gate.
+
+## Implementation notes (2026-07-05)
+
+The parity investigation (blyt#223 AC1) and Phase-A implementation surfaced two
+facts that refine — not contradict — the mechanism above:
+
+- **WASM cannot soft-float.** `clang`/`emcc` ignore `-msoft-float` on wasm32
+  ("argument unused"); wasm always uses native `f64`. So the literal "Mode A =
+  explicit `blyt_f64_*` calls / `-msoft-float` inside the Zone-2 kernels" cannot
+  be realized on the only host-Lua target that exists today. It is not needed
+  there: the AC1 parity gate proves native `f64` reproduces the Berkeley-SoftFloat
+  reference **bit-for-bit** across an adversarial transcendental/NaN/subnormal
+  corpus (WASM MVP has no scalar FMA, so contraction-off native == softfloat).
+  **WASM therefore realizes Mode A as: pinned blyt-tech musl generic-C kernels
+  compiled into the host-Lua VM behind the `blyt_fpm` seam + native `f64` +
+  `-ffp-contract=off` + hermetic (no host libm).** The value delivered is the
+  in-house, version-pinned libm — immune to emsdk bumps — not a bit change today.
+  The `uint64_t` seam boundary is kept so a future native host-Lua leg (x86-64 /
+  arm64, which *do* have FMA) can add true `-msoft-float` lowering inside the
+  kernels without touching the interpreter ABI; that is where Mode A's soft-float
+  form and the Mode-B native-Zone-1 flip become both feasible and necessary.
+
+- **Phased Zone-2 landing.** Phase A routes the transcendental surface — `sin cos
+  tan asin acos atan atan2 exp log log2 log10` (lmathlib) and `pow` (Lua `^`, via
+  `luai_numpow`) — through `blyt_fpm` to the in-house musl kernels. `strtod` /
+  number-format (`lua_str2number` / `lua_number2str`) is the other Zone-2 surface
+  and is **Phase B**: pinning it to musl on WASM requires a *renamed* musl
+  stdio/stdlib subset, because musl's `strtod`/`printf` would otherwise override
+  the whole module's libc (unlike the math kernels, whose global override is
+  benign). It remains behaviorally covered by the AC1 gate (`tostring`/`tonumber`
+  round-trips) meanwhile.
+
+- **AC4 (cross-arch host-vs-host) and AC2's FMA-contraction test** both require a
+  native-player host-Lua build, which blyt#223 lists as out of scope. On a
+  wasm-only host there is one arch and no FMA, so both **defer to the native
+  host-Lua leg**. The committed WASM-vs-emulated parity gate (AC1) stands as the
+  determinism guard until then.
+
+- **Seam lives in the `blyt-tech/lua` fork.** The `l_mathop`/`luai_numpow`
+  routing edits are in `lmathlib.c`/`llimits.h`, gated behind
+  `BLYT_HOSTLUA_FP_SEAM` (defined only by the WASM host-Lua build, so the
+  RV32-guest/emulated reference is byte-unchanged). Landing the seam therefore
+  requires a new fork tag + pinned tarball; developed against a local
+  `third_party/lua` override.
 
 ## Related ADRs
 
