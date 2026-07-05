@@ -202,6 +202,23 @@ facts that refine — not contradict — the mechanism above:
   requires a new fork tag + pinned tarball; developed against a local
   `third_party/lua` override.
 
+- **NaN sign/payload is NOT pinned by the seam — and does not need to be.** The
+  "bit-identical by construction" guarantee is for *finite* results. An
+  invalid-operation NaN (`sqrt(-1)`, `asin(2)`, `0/0`, `inf−inf`) has a
+  hardware-/spec-nondeterministic sign bit on the host-Lua path: the WASM spec
+  leaves an arithmetically-produced NaN's sign to the engine (x86-64 yields
+  `0xfff8…`, arm64 yields the RISC-V-canonical `0x7ff8…`), and native x86-64 vs
+  arm64 diverge the same way. This surfaced in the blyt#223 parity gate the moment
+  it ran on x86-64 CI (arm-only local runs matched the reference by luck). It is
+  **not** a contract divergence: **ADR-0010** canonicalizes NaN at the
+  state-buffer boundary (`blyt_canon_f64` → `0x7ff8000000000000`), so the
+  *observable* value is identical across every host. The determinism guarantee for
+  NaN therefore rests on ADR-0010 boundary canonicalization, not on the FP unit or
+  the seam kernels — the seam pins the transcendental *values*, ADR-0010 pins the
+  NaN *representation*. (The parity gate canonicalizes NaN before hashing to test
+  the contract-relevant value; `tostring(NaN)` — which could stringify to `-nan`
+  on a sign-set host — is governed by the Phase-B number-format work.)
+
 ## Related ADRs
 
 - ADR-0007 (structural determinism) — the contract this protects.

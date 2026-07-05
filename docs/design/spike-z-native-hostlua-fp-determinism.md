@@ -164,6 +164,22 @@ that diverges on GC order or heap accounting would also block the decision.
 
 ---
 
+### Known finding to account for — NaN sign is not FP-pinned (ADR-0010)
+
+blyt#223 Phase A already surfaced one determinism subtlety this spike must build
+in from the start: an **invalid-operation NaN's sign bit is nondeterministic on
+the host-Lua path** — native x86-64 yields `0xfff8…`, arm64 (and the softfloat
+reference) yield the RISC-V-canonical `0x7ff8…`. It is **not** a contract
+divergence: **ADR-0010** canonicalizes NaN at the state-buffer boundary, so the
+observable value is identical. Implications for this spike: (1) the Q1/Q3 digests
+must **canonicalize NaN before hashing** (as the #223 gate now does) so they test
+the contract-relevant value, not the transient sign — otherwise the cross-arch
+gate red-herrings on a difference ADR-0010 already handles; (2) Q5 must
+**positively confirm** that boundary canonicalization (`blyt_canon_f64`) covers
+every NaN that reaches a state buffer on the native leg, since that — not the FP
+unit — is what makes NaN deterministic when host-Lua runs native. `tostring(NaN)`
+divergence (`-nan` on a sign-set host) belongs to Q4 (number-format).
+
 ## Why this is a risk
 
 - **Q1 is the signature risk class** (cross-target *execution*, not algorithms),
