@@ -34,3 +34,5 @@ work as structural properties of the system rather than bolt-ons.
 | [0106](0106-audio-voice-end-events-as-frame-inputs.md) | Audio voice-end events recorded as frame inputs (supersedes ADR-0006) |
 | [0115](0115-emulator-wx-and-ecall-trap.md) | Memory protection, W^X enforcement, and ecall trap |
 | [0116](0116-standalone-os-sandbox.md) | OS-level sandbox for the standalone deployment |
+| [0132](0132-ilp32d-hardware-doubles.md) | ilp32d / hardware doubles — RV32IMAFDC as the console ABI |
+| [0135](0135-host-lua-fp-determinism-seam.md) | Host-Lua FP determinism — softfloat-backed math seam (Zone-1 basic / Zone-2 composite) |
