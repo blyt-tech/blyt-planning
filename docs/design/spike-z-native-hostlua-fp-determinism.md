@@ -351,10 +351,21 @@ removes the determinism blocker from it.
 - Soft-float ABI template: `runtime/guest/src/libblyt32lua/softfloat_builtins.c`.
 - Fork seam edits: `lmathlib.c` / `llimits.h` (gated `BLYT_HOSTLUA_FP_SEAM`),
   Lua pin `v5.5.0-blyt-v0-p2` in `CMakeLists.txt`.
+- **Fork edit + release workflow (needed only at Phase B / Q4, when you touch
+  `l_str2d`/`lua_number2str` in the fork):** clone `blyt-tech/lua` into
+  `third_party/lua` — `_blyt_fc_local` in `CMakeLists.txt` auto-detects it and
+  builds against the local checkout, so you develop + validate the fork edit
+  before publishing. To land: commit on the fork's `blyt-patches-v0` branch, tag
+  `v5.5.0-blyt-v0-p<N+1>` and `git push` the tag (the GitHub tag-tarball URL is
+  what `FetchContent` fetches — no Release object required; `scripts/release-dep.sh
+  lua <tag>` automates it), then bump `LUA_VERSION` + `SHA256` in `CMakeLists.txt`
+  (`shasum -a 256` the fetched tarball) and remove the `third_party/lua` override
+  to confirm the pinned tarball builds.
 - Parity harness + corpus: `tests/integration/tests/fp_parity.rs`
   (`fp_transcendental_parity_across_legs`, `fp_seam_hermetic_no_host_libm_transcendentals`).
-- Native Lua runner starting point: Spike Y's harness (`blyt:bench/spike-y/` /
-  session scratchpad).
+- Native Lua runner starting point: rebuild from `spike-y-lua-per-pixel.md`
+  §"What was built" → "Native leg" (the runner is uncommitted — see the
+  state-of-repo note above).
 - SoftFloat config: `SF_DEFINES` (RISC-V specialize + `SOFTFLOAT_ROUND_ODD`) in
   `cmake/blyt_guest_libs.cmake`; musl `src/math` glob + include set in the same
   file.
