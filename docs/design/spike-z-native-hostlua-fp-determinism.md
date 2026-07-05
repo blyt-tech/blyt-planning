@@ -8,6 +8,16 @@ produces the determinism evidence the decision hinges on.
 WASM only), Spike Y (native host-Lua runner + throughput — `done`), Spike U
 (SoftFloat FP reference / `ilp32d` — `done`), Spikes D / K (cross-host
 determinism methodology — `done`).
+**Where the code is:** blyt#223 Phase A merged via **blyt#224 onto the `host-lua`
+integration branch, NOT `main`** (squash commit `719870c`). All this spike's work
+also targets `host-lua`, and a session picking this up must **check out
+`host-lua`** — `main` has no seam. `host-lua` has CI.
+**Sequencing (blyt#225 discussion):** this spike is the **decision gate** and
+runs **before Phase B** (the strtod/number-format seam). Its determinism core —
+Stages 1–3 (Q1–Q3) — is the go/no-go for the whole direction and needs *no* Phase
+B. Only Stage 4 (Q4) needs Phase B, and it is gated on Stages 1–3 passing. So:
+Q1–Q3 (decide) → Phase B (build the mechanism) → Q4/Q5. Do not invest in the
+Phase-B build ahead of the Q1–Q3 result.
 **Hardware gate:** none exotic. The FMA hosts *are* the dev machines: arm64
 (Apple silicon / Pi Zero 2 W A53) and x86-64 (a `linux/amd64` container or Intel
 host) both have hardware FMA; the riscv64 reference runs under the existing QEMU
@@ -75,10 +85,15 @@ hosts, which Phase A did not touch.
 
 ### State of the implementation repo (`../blyt`)
 
+- **All of the below is on the `host-lua` branch, not `main`** (blyt#223 Phase A,
+  merged via blyt#224). Check out `host-lua` first.
 - `blyt_fpm` seam: `runtime/shared/blyt_fpm.{h,soft.c}` — `uint64_t` bit-pattern
   seam + inline double wrappers; wraps in-house musl `sin/cos/…/pow`. Compiled
   into the WASM host-Lua VM (`frontends/wasm/CMakeLists.txt`, gated
-  `BLYT_HOSTLUA_FP_SEAM`).
+  `BLYT_HOSTLUA_FP_SEAM`). The WASM CMake recipe (musl `src/math` +
+  `blyt_fpm_soft.c` as a scoped static lib `blyt_hostlua_fpm`) is the pattern to
+  mirror for the native leg; the musl-source-dir passthrough is in
+  `cmake/blyt_sdk.cmake`.
 - Soft-float ABI shim: `runtime/guest/src/libblyt32lua/softfloat_builtins.c`
   (`__adddf3`/`__muldf3`/… over Berkeley SoftFloat, RISC-V config) — the exact
   template for a native `-msoft-float` realization.
@@ -88,8 +103,13 @@ hosts, which Phase A did not touch.
 - Parity harness: `tests/integration/tests/fp_parity.rs` — the adversarial
   transcendental/NaN/subnormal corpus, folded to an FNV-1a digest and asserted
   identical across legs via `run_cart_all_legs`.
-- Spike Y's native runner (session scratchpad; promotable to `blyt:bench/`) —
-  links the native-compiled Lua fork with the per-pixel API bound to native C.
+- Spike Y's native runner is the *starting-point pattern* — a ~150-line
+  standalone runner linking the native-compiled Lua fork (`onelua.c`,
+  `BLYT_LUA_I32_F64`, `-O2`), per-pixel API bound to native C, no rv32emu. It was
+  built in a working session and is **not committed**, so a cold pickup rebuilds
+  it from the description in `spike-y-lua-per-pixel.md` (§"What was built" →
+  "Native leg") rather than expecting to find it. This spike extends that shape to
+  wire in the `blyt_fpm` seam + the parity cart.
 - The `liblua_host` static lib (`CMakeLists.txt`) is **inspection-only**
   (`blyt_cart_lua_lifecycle_mask`) — it links host `m` (libm) but never runs
   gameplay math; it is *not* a determinism-relevant execution path and is not
@@ -205,6 +225,14 @@ Minimal, mirroring prior spikes — a native host-Lua execution leg wired faithf
 enough to be trustworthy, plus the cross-arch harness. **No** shipping of the
 native host-Lua path in the players (that is implementation once green).
 
+**Order (the decision gate comes first).** Stages 0–3 are the go/no-go and use
+only the already-landed transcendental seam — run them first. **Stage 3 is the
+decision point: if the cross-arch digest is not bit-identical there, the direction
+is no-go — stop and report before any Phase-B work.** Stage 4 is *gated on Stages
+1–3 passing* and has a hard prerequisite (the Phase-B strtod/number-format
+mechanism); Stage 5 can run any time. Do not front-load Stage 4 / Phase B ahead of
+the Q1–Q3 result.
+
 ### Stage 0 — Native host-Lua leg (x86-64 + arm64)
 
 - Promote Spike Y's native runner into a faithful native host-Lua leg: link the
@@ -239,20 +267,28 @@ native host-Lua path in the players (that is implementation once green).
   compile + run + reproduce-by-construction on x86-64 and arm64? Produce the
   ship-mode recommendation.
 
-### Stage 3 — Q3: cross-arch host-vs-host gate
+### Stage 3 — Q3: cross-arch host-vs-host gate (THE DECISION POINT)
 
-- Run the full parity corpus (transcendentals + Zone-1 + conversions) on
-  **x86-64 host-Lua, arm64 host-Lua, wasm host-Lua**, and the SoftFloat
-  reference. Assert one digest across all. This is the promotable artifact — a
-  `native_hostlua` parity leg alongside the existing `run_cart_all_legs`. Run
-  both cross-host directions with many iterations, as Spikes D/K/U did.
+- Run the transcendental + Zone-1 parity corpus (the seam surface that already
+  exists — **not** conversions; those arrive in Stage 4) on **x86-64 host-Lua,
+  arm64 host-Lua, wasm host-Lua**, and the SoftFloat reference. Assert one digest
+  across all. This is the promotable artifact — a `native_hostlua` parity leg
+  alongside the existing `run_cart_all_legs`. Run both cross-host directions with
+  many iterations, as Spikes D/K/U did.
+- **Decision:** identical ⇒ FP determinism holds → the direction is viable →
+  proceed to Phase B / Stage 4. Not identical ⇒ **no-go**: stop, report the
+  divergence, and do not start Phase B.
 
-### Stage 4 — Q4: strtod / number-format (Phase B)
+### Stage 4 — Q4: strtod / number-format (Phase B) — GATED
 
-- Implement the renamed-musl-stdio subset (`strtod` / `floatscan` / `vfprintf`
-  float path under a `blyt_fpm_`-prefixed namespace so it does not override the
-  module libc), route `lua_str2number` / `lua_number2str` through it, and fold it
-  into the Stage-3 cross-arch gate.
+- **Runs only after Stages 1–3 are green** (direction confirmed). **Prerequisite:
+  Phase B** — the strtod/number-format seam deferred from blyt#223 (a
+  *renamed* musl stdio/stdlib subset: `strtod` / `floatscan` / `vfprintf` float
+  path under a `blyt_fpm_`-prefixed namespace so it does not override the module
+  libc). Build Phase B here (or reuse it if it has already landed on `host-lua`),
+  route `lua_str2number` / `lua_number2str` through it, then fold conversions into
+  the Stage-3 cross-arch gate. Phase B's WASM half hardens the shipping path
+  regardless of the strategic decision; its *native* validation is this stage.
 
 ### Stage 5 — Q5: non-FP parity matrix (enumerate + smoke)
 
