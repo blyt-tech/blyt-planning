@@ -219,6 +219,41 @@ facts that refine — not contradict — the mechanism above:
   the contract-relevant value; `tostring(NaN)` — which could stringify to `-nan`
   on a sign-set host — is governed by the Phase-B number-format work.)
 
+## Spike Z results (2026-07-06)
+
+Spike Z (blyt#225) built the native host-Lua leg this ADR's implementation notes
+deferred to, and exercised the seam off WASM on FMA silicon. Full write-up:
+[`docs/design/spike-z-results.md`](../../design/spike-z-results.md). Findings that
+refine this ADR:
+
+- **Native realization = Mode A only.** Mode A (native f64 + pinned in-house musl
+  kernels + `-ffp-contract=off` + hermetic) reproduces the SoftFloat reference
+  **bit-for-bit** on x86-64 and arm64 (the cross-arch parity gate). The
+  anticipated **Mode B (`-msoft-float` lowering of the Zone-2 kernels) is not
+  viable and not needed**: on x86-64 the SysV ABI returns doubles in SSE, so
+  `-mno-sse` fails to compile `double exp(double)` (*"SSE register return with SSE
+  disabled"*) and `-msoft-float` alone still emits SSE; on arm64 clang ignores
+  `-msoft-float` and `-mgeneral-regs-only` rejects the double ABI. Drop the
+  "future native `-msoft-float`" retrofit — Mode A is the shipped native form.
+- **Invariant 1 (`-ffp-contract=off`) is a belt-and-suspenders guard for the
+  host-Lua path, not the load-bearing pin it is for the guest.** The path is
+  contraction-invariant: a Lua cart's `a*b+c` compiles to two separate rounded VM
+  ops (never fused), and the musl kernels are contraction-safe — so the flag only
+  bites on *C-level* multiply-add. A deliberately contraction-prone C torture
+  confirms the flag is load-bearing there and the gate detects FMA divergence
+  (the AC2 negative control). Two build subtleties: FMA is never emitted at `-O0`
+  (build `-O2`), and baseline `-march=x86-64` (SSE2) has no FMA3 — x86-64 needs
+  `-mfma` to expose fusion at all (AArch64 FMA is baseline).
+- **The fixed hash seed is a native requirement too.** The native host-Lua VM
+  must define `luai_makeseed()=0x424C5954` exactly as the WASM/guest builds do,
+  or the default `time()`-based seed randomizes string hashing and table
+  iteration order diverges from the reference (caught by the Q5 non-FP smoke).
+
+Q4 (strtod / number-format) remains Phase B and is gated on the renamed-musl-stdio
+mechanism; its native validation folds into the cross-arch gate once Phase B
+lands. The NaN-sign note below is confirmed on the native leg (ADR-0010 boundary
+canonicalization covers it).
+
 ## Related ADRs
 
 - ADR-0007 (structural determinism) — the contract this protects.
