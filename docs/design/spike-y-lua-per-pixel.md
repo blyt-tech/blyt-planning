@@ -213,35 +213,45 @@ query per tic, projectile `table.insert`/`table.remove` GC churn) and a Doom
 colormap light lookup, 320×240). Same blyt Lua fork (`BLYT_LUA_I32_F64`, fixed
 seed), same bytecode — only native-aarch64 vs RV32-under-`rv32emu` differs.
 
-| tier | native host-Lua | emulated rv32emu | speedup |
-|---|---|---|---|
-| logic — `doom_tick` (P_Ticker) | 15.2 ms/sim | 811 ms/sim (≈19 MIPS) | **53×** |
-| draw — `R_DrawColumn` in Lua (320×240) | 33.9 ms/frame (~30 fps) | 1638 ms/frame (~0.6 fps) | **48×** |
+A **native-C twin** of each workload (same algorithm/doubles, compiled RV32 and
+run under the *same* `rv32emu`) adds the "write the hot path in C and emulate it"
+escape hatch as a third leg. All legs produce the identical integer checksum
+(logic 117/sim; framebuffer FNV `1688251611`) — a 3–4-way determinism
+cross-check; only the execution model varies.
 
-(Startup-cancelled slope, best-of-N. On an M-series Mac desktop the same
-benchmarks show ~185× / ~180× — the fast out-of-order core widens the gap that
-the in-order A53 narrows to the ~50× floor.) Both legs are **bit-identical**
-(logic checksum 117/sim; framebuffer FNV `1688251611`), so determinism holds
-through both game logic *and* a software renderer on real hardware.
+| tier | host-Lua | emulated native-C | emulated Lua | host-Lua vs C |
+|---|---|---|---|---|
+| logic — `doom_tick` (P_Ticker) | 15.2 ms/sim | 16.7 ms/sim | 811 ms/sim (≈19 MIPS) | **0.91× — tie** |
+| draw — `R_DrawColumn` (320×240) | 33.9 ms/frame (~30 fps) | **23.6 ms/frame** | 1638 ms/frame (~0.6 fps) | **1.43× — C wins** |
 
-**Reading:** both tiers land in the same ~50× band because both are pure Lua-VM
-work — a Lua per-pixel texture mapper has no native primitive to offload to, so
-it pays the same emulation tax as the game logic (confirming finding #4). The
-consequence for a Doom-class cart:
+(Startup-cancelled slope, best-of-N. Mac desktop reference: host-Lua ~185× / ~180×
+over emulated Lua.)
 
-- **All-Lua renderer** (texture mapping in Lua): the *whole frame* runs at ~50× —
-  ~30 fps native vs ~0.6 fps emulated for one full-screen textured pass.
-  Emulated is unplayable; host-Lua drags a pure-Lua software renderer into
-  borderline-playable range.
-- **Native renderer module** (the idiomatic Doom-scale choice — C/Rust does
-  `R_DrawColumn`): draw is native on both legs (leg-neutral), and host-Lua's 53×
-  applies to the logic tier — a ~50× larger Lua game-logic budget, enough to
-  author full Doom-scale AI/simulation in Lua instead of dropping it to native.
+**Reading (host-Lua vs emulated Lua):** both tiers sit in the same ~50× band
+(53× logic, 48× draw) because both are pure Lua-VM work — a Lua per-pixel texture
+mapper has no native primitive to offload to, so it pays the same emulation tax
+as the logic (confirming finding #4). A pure-Lua software renderer is ~30 fps
+native vs ~0.6 fps emulated: unplayable emulated, borderline-playable host-Lua.
 
-Either way the lever is the one Spike Y identifies: run Lua native. Harness +
-ports live in `bench/spike-a` (`lua_doom.c`/`doom_bench.lua`,
-`lua_draw.c`/`draw_bench.lua`); built static for aarch64 in a `debian:trixie`
-`linux/arm64` container and run on the Pi.
+**Reading (host-Lua vs emulated native-C) — the escape-hatch test:** the leader
+*flips between tiers*, and the pivot is code shape via the emulated MIPS:
+
+- **Logic is branchy / pointer-heavy** → `rv32emu` ~17 MIPS (its worst case). The
+  C twin's ~57× fewer instructions are eaten by the low emulated throughput →
+  **host-Lua ties emulated-C.** So on an emulated aarch64 handheld there is *no
+  reason to drop game logic to a C module* — host-Lua matches native-C-under-
+  emulation while staying in Lua.
+- **Draw is a tight arithmetic inner loop** → `rv32emu` ~31 MIPS (its good case).
+  The C twin keeps its ~51× instruction advantage at ~2× the emulated MIPS while
+  host-Lua pays Lua's per-pixel table-index overhead → **native-C wins 1.43×**
+  (and a *native gfx primitive*, no emulation at all, wins far more).
+
+So host-Lua **obsoletes the native escape hatch for game logic but not for the
+renderer** — which is exactly the console's intended split: **Lua sim (host-Lua,
+free) + native draw (native primitive/module).** The two benchmarks land on that
+design independently. Harness + ports (`doom`/`draw` Lua + `doom_c`/`draw_c` C
+twins) live in `bench/spike-a`, built static for aarch64 in a `debian:trixie`
+`linux/arm64` container and run on the Pi (`RESULTS-doom-draw.md`).
 
 ## Reproducing
 
