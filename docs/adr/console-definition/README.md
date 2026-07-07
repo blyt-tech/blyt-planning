@@ -36,3 +36,4 @@ work as structural properties of the system rather than bolt-ons.
 | [0116](0116-standalone-os-sandbox.md) | OS-level sandbox for the standalone deployment |
 | [0132](0132-ilp32d-hardware-doubles.md) | ilp32d / hardware doubles — RV32IMAFDC as the console ABI |
 | [0135](0135-host-lua-fp-determinism-seam.md) | Host-Lua FP determinism — softfloat-backed math seam (Zone-1 basic / Zone-2 composite) |
+| [0136](0136-host-lua-everywhere.md) | Host-Lua everywhere — retire the emulated RV32 Lua VM as a shipped exec path on non-RISC-V hosts |

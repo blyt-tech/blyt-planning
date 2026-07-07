@@ -77,3 +77,23 @@ hook described in ADR-0025).
 - LuaJIT is not used. WASM portability requires a single Lua VM build
   (vanilla PUC Lua) that runs everywhere including browser. LuaJIT's WASM
   support is incomplete.
+
+## Amendment (ADR-0136, 2026-07-07)
+
+**The "drop to native for performance" premise is superseded by host-Lua.**
+This ADR assumed Lua authors will inevitably drop to native code *for speed*.
+With host-Lua everywhere (ADR-0136), the Lua tier runs native and is fast: on
+the floor device, cart-native-C over host-Lua is ~1.0× on game logic (a tie —
+native is ~10% slower interpreted) and ~1.4× on a tight numeric loop. The ~50×
+that once looked like "Lua is slow" was **emulation overhead**, which host-Lua
+reclaims — it was never a Lua-vs-C gap.
+
+So the native tier is **not primarily a performance escape hatch**. Its role is
+(a) **bring your preferred native toolbox** — reach an existing C/C++/Rust
+library rather than reimplement it in Lua; and (b) **language preference** —
+author in Rust/C because that is the workflow you want. The **performance**
+surface is the console's rich native API primitives (Layer 1 above — gfx/audio,
+host-C, fast and meterable-as-calls on every target); a cart never needs to go
+native *for speed*. Genuinely compute-bound cart-native work that the primitives
+do not cover (a custom software renderer, DSP, procedural generation) is the
+exception, and is a signal to add a primitive rather than to JIT the cart tier.
