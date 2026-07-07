@@ -43,9 +43,38 @@ retired as a shipped execution path there.
   **native half of hybrid carts** on non-RISC-V hosts (ADR-0130 bridge). Removing
   the Lua VM from the shipped path does not remove rv32emu.
 - **Kept — the RV32 Lua build:** on **real RISC-V hardware** carts run native
-  (RV32 on RV32), so the RV32 Lua VM build stays for that target.
-- **Kept — emulated RV32 Lua as a determinism reference/oracle** in the test
-  suite (the parity gates hash host-Lua against it).
+  (RV32 on RV32), so the RV32 Lua VM build stays for that target — and is
+  exercised in CI via the QEMU native gate (see below).
+- **Retired — emulated RV32 Lua as a determinism oracle.** *This ADR does not
+  keep the emulated-RV32-Lua-under-rv32emu leg as the determinism reference.*
+  rv32emu-as-oracle proves host-Lua == rv32emu-softfloat == the IEEE/RISC-V
+  *spec* reference — it does not prove parity with real silicon (a model, not the
+  hardware), it is entangled with the interpreter path being retired, and the
+  property it verifies is already guaranteed by construction (below). It is
+  replaced by the determinism-verification model that follows.
+
+### Determinism verification (replaces the emulated-Lua oracle)
+
+Determinism is a property of the *shipped* legs agreeing with each other, plus a
+by-construction FP guarantee — not of matching a separate emulated leg.
+
+- **Non-FP** (GC/iteration/interning/integer-overflow): guaranteed by the same
+  Lua bytecode + fixed hash seed on every leg. Reference = a pinned golden;
+  regression caught by cross-leg agreement (host-Lua x86-64 / arm64 / wasm).
+- **FP: by construction.** IEEE-754 correctly-rounded ops + `-ffp-contract=off`
+  (no FMA) + RISC-V NaN canonicalization (ADR-0010) ⇒ native f64 == the softfloat
+  reference. Proven on real arm64 + x86-64 + wasm (Spike Z). Guarded — not
+  re-derived each run — by the contraction-torture test (catches FMA regressions)
+  + cross-leg agreement + the golden. A "pure softfloat Lua" (Mode B) as a live
+  oracle is *non-viable to build natively* (Spike Z: `-msoft-float` fails on
+  x86-64 SSE-return / is ignored on arm64) for the transcendental kernels, and
+  unnecessary given the by-construction guarantee.
+- **RISC-V hardware parity** (a public target): validated by the **QEMU native
+  gate** — an *independent* RISC-V implementation, running the *native* cart path
+  (the same path real hardware runs — RV32 Lua executing natively), with its
+  *own* softfloat — plus periodic real-hardware spot-checks (Spike U Stage 6).
+  This is a stronger RISC-V check than rv32emu (native path, independent impl)
+  and is where the RISC-V-public-target confidence actually comes from.
 
 ## Rationale
 
