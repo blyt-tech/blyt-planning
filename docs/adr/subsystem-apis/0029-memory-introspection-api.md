@@ -55,6 +55,66 @@ overlay is a separate dev-mode aid (a display surface over these numbers), not a
 determinism surface — because the advisory figures it shows can differ per
 platform.
 
+### Amendment (2026-07-09, issue #231): `cart_allocations` is a canonical diagnostic; the budget is the contract
+
+The #159 amendment tiered `budget_cap` + the allocation **outcome** as
+deterministic and left `cart_allocations` (guest_heap_used) untiered. #231
+(native host-Lua fast path, ADR-0136) makes that placement explicit and
+strengthens the number, while keeping the **contract on the budget, not the byte
+count**.
+
+- **The contract is the budget.** What a cart may branch game logic on is the
+  16 MB cap and the *outcome* of an allocation against it (does malloc /
+  `blyt_resource_load` succeed or return `nil`/`NULL`). That outcome is
+  deterministic across every peer/platform — a cart can never exceed the budget,
+  and the fail-point coincides across legs for any realistic workload.
+
+- **`cart_allocations` is deterministic (#267).** The cart heap runs through one
+  arena (ADR-0008/#158), counted at the **32-bit-canonical** object sizes on
+  every leg: on a 64-bit host the #231/#267 accounting seam
+  (`BLYT_HOSTLUA_HEAP_SEAM` / `BLYT_HOSTLUA_HEAP_ACCT`) models Lua object sizes
+  down to their rv32 widths, so wider host pointers do not inflate the count. It
+  is byte-identical on every leg — the native ones (64-bit desktop and rv32
+  hardware) and wasm32 — and therefore safe to branch on. It remains a poor thing
+  to branch on: it is stable across peers and replays at a given cart+runtime
+  version, but a runtime upgrade or Lua bump legitimately moves it, so a cart that
+  branches on the exact byte count pins itself to an implementation detail that is
+  promised to be *the same everywhere*, not *the same forever*. Branch on the fail
+  outcome to express "am I out of memory".
+
+- **What is excluded from `cart_allocations` (why it is "cart-attributable").**
+  Two classes of allocation are runtime overhead, not cart heap, and are excluded
+  so the figure is comparable across legs: (a) the per-leg **runtime-scaffolding
+  baseline** (the VM, stdlibs, blyt/blyt32 API, loaded cart bytecode), captured
+  after a settling collection and subtracted; (b) **VM execution scratch** — a
+  Lua thread's data stack and `CallInfo` — excluded at allocation time, so the
+  count does not depend on call depth or on how the runtime drives the cart.
+
+- **One execution model, one setup (#242/#267).** Every host-Lua leg drives the
+  cart through the same shared coroutine driver, and builds its blyt/blyt32
+  scaffolding through the same shared registration, so the allocation *sequence*
+  is identical by construction rather than by two implementations agreeing. (The
+  coroutine is forced by the single-threaded browser/Node event loop — a debugger
+  breakpoint must `lua_yield` out; a native player instead pauses by blocking a
+  thread. Sharing it does not force native to yield for debugging: native keeps
+  thread-blocking pause, and the coroutine is only the shared execution container.)
+
+- **Pin host-width constants, not just object sizes (#267).** Modelling object
+  sizes down to the rv32 canonical is necessary but not sufficient.
+  `cart_allocations` is read from a *first-fit* arena that charges a recycled
+  block whole when the remainder cannot be split, so the count depends on
+  allocation and free ORDER, not on sizes alone. Any host-width constant that can
+  reach that order is therefore part of this contract and must be pinned to the
+  32-bit canonical. Three did in practice: the auxlib buffer threshold
+  (`LUAL_BUFFERSIZE`, `16 * sizeof(void*) * sizeof(lua_Number)`), the GC step size
+  (`200 * sizeof(Table)`), and the GC's work-per-step divisor (`sizeof(void*)`).
+  The latter two are pure *pacing*: left on host widths they make the 64-bit VM
+  sweep at different points than the 32-bit legs, changing which blocks get
+  recycled and so the count — a divergence with no per-object explanation at all,
+  which is what made it expensive to find. The rule for any future fork bump: *a
+  host-width constant reachable from a cart-visible number is part of this
+  contract, even when it is not a size.*
+
 **Deferred to v2:** memory pressure callbacks
 (`on_memory_pressure(severity)`) — notifying the cart when budget usage
 crosses warning/critical thresholds so it can proactively release non-
