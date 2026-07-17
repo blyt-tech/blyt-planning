@@ -174,6 +174,37 @@ On the trusted path they are performed file-based by the launcher before
 exec; the TOCTOU risk is accepted given the hardware threat model (trusted
 = pre-installed on device).
 
+## Amendment (issue #71, 2026-06-16)
+
+The section name check is inverted from an allowlist to a **denylist**.
+
+**Rationale:** an allowlist requires `cart_load.c` to enumerate every section
+name a new compiler or language toolchain may emit, coupling the validator to
+language-toolchain details. The genuinely dangerous sections — constructor and
+destructor tables that execute at load time, bypassing the cart lifecycle — are
+a small, stable set. A denylist is a cleaner invariant and makes the loader
+language-agnostic.
+
+**Denied sections (exact match):**
+- `.init_array`
+- `.fini_array`
+- `.preinit_array`
+- `.ctors`
+- `.dtors`
+
+A cart containing any of these section names is rejected with
+`BLYT_CART_ERR_DENIED_SECT`. All other unknown sections are passed through
+without validation — language-specific metadata sections (e.g. `.swift_modhash`,
+`.llvm_addrsig`) are harmless, and stripping them at finalise time is the
+language toolchain's responsibility.
+
+The `.cart.*` namespace remains controlled by blyt tooling; unknown `.cart.*`
+sections from newer tooling are treated as forward-compatible content and are
+not denied.
+
+The `DT_NEEDED` allowlist and symbol import allowlist are unaffected by this
+amendment.
+
 ## Consequences
 
 - The loader's rejection surface is well-defined and auditable. A
