@@ -114,6 +114,20 @@ by-construction FP guarantee — not of matching a separate emulated leg.
 - **Execution-model change:** `cart_run.c` gains a third model — non-RISC-V host
   + pure-Lua → host-Lua native (alongside emulated-native-code and
   bare-metal-RISC-V).
+- **Implementation layering (blyt#238, the epic's core slice).** The third model
+  is realized as a **sibling runner** (`runtime/host/src/libblyt/cart_run_hostlua.c`),
+  not folded into the rv32-coupled `blyt_session` — mirroring the WASM fast path
+  (pure-Lua ⇒ no session). The seam VM (Spike Z recipe) is extracted into a shared
+  `cmake/blyt_hostlua_vm.cmake` and linked into `libblyt`, which both blytplay and
+  the libretro `.so` share; the pre-existing host-libm inspection VM (`liblua_host`,
+  for `blyt_cart_lua_lifecycle_mask`) is **unified onto that seam VM** (the linker
+  permits only one `onelua.c`-derived VM per binary). Dispatch lives at the shared
+  libretro-core seam (`blyt_libretro.c`). During the epic build-out the path is
+  **opt-in** (`BLYT_HOSTLUA=1` / `blytplay --host-lua`, default rv32emu) so the still-
+  shipping emulated legs keep full test coverage; **blyt#236 flips the default and
+  deletes the flag + the RV32 Lua shipped path**. End-state matches this ADR; the
+  opt-in is transitional scaffolding. Heap accounting (`guest_heap_used`) is deferred
+  to blyt#231, DAP/GDB to blyt#234.
 
 ## Alternatives considered
 
