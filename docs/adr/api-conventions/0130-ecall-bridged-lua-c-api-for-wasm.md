@@ -407,3 +407,68 @@ Fallbacks on failure are recorded in the spike definition
 - The deferred list keeps `lua_CFunction` registration host-controlled;
   the Lua-visible function surface on WASM remains exactly the
   `.lua_exports` section contents.
+
+## Amendment (#262, 2026-07-17): the reverse-trampoline (native→Lua calls)
+
+The original v1 deliberately shipped **no call opcode** and stated that "a
+reverse-trampoline design is explicitly deferred" — the native half could be
+*called by* Lua but could not *call* Lua back. This amendment implements that
+deferred design so a bridged/raw wrapper (and the rv32/bare-metal full-lib path)
+can invoke a Lua value it has pushed. Without it, native→Lua callbacks worked
+only on the (retiring) emulated legs and on bare-metal RISC-V, and were missing
+outright on every host-Lua leg — a cross-runtime divergence against ADR-0007.
+
+**New opcode.** One opcode, `PCALL` (a0 = 25), carrying `a2 = nargs`,
+`a3 = nresults` (`LUA_MULTRET = -1`), `a4 = is_protected`. The function and its
+`nargs` arguments are already on the exchange stack (pushed via the existing
+ops). The host **always** runs `lua_pcall` internally — an unprotected
+`lua_call` error would `longjmp` past the host's own C frames — and the flag
+decides the guest-visible behaviour: `lua_pcall` returns the Lua status (the
+error object is left on the exchange stack); `lua_call` re-raises into the guest
+(halt-without-advancing, the existing ADR-0084 error path). Argument/result
+counts are bounds-checked; a bad count is a catchable Lua error, not a trap.
+
+**Export-surface additions.** `lua_pcall` and `lua_call` join the allowed
+`libblyt32lua.so` export list (ADR-0118 amendment). They call an *existing* Lua
+value and load no new code, so they stay within ADR-0118's restricted surface
+(the do-not-export list targets the loading/compiling class). `msgh` is
+restricted to 0 in v1 — the bridge cannot run a message handler, and the
+constraint is enforced identically on the rv32/bare-metal wrapper so the
+reverse-trampoline behaves the same on every leg. `lua_pcall`/`lua_call` are
+macros over `lua_pcallk`/`lua_callk` in `lua.h`, so the full lib materialises
+real symbols (`runtime/guest/src/libblyt32lua/lua_reverse_tramp.c`); the bridge
+stub provides the ECALL versions.
+
+**Re-entrancy (native→Lua→native), now supported.** v1 declared native calls
+from within bridged ops "unsupported"; the reverse-trampoline makes them work.
+The parity anchor is **bare-metal RISC-V**, where the whole cart shares one
+address space and re-entrant native→Lua→native runs on the natural call stack.
+The host-Lua legs reproduce that with two mechanisms, both on the
+determinism-critical path:
+
+1. **CPU + bridge-state save/restore.** The single rv32 CPU drives every native
+   call, so a nested `begin_fn_call`/`begin_bridged_call` would clobber the
+   suspended outer call's PC, register file, `trace_fn_addr`, and bridged-call
+   token. The `PCALL` op saves that state (32 GPR + PC + fcsr + 32 FP + the
+   bridge snapshot + token/active/error/fn_return_done) before its internal
+   `lua_pcall` and restores it after — a protected boundary, so the restore runs
+   even if the callback raised. `run_frame` save/restores the static run-context
+   pointer instead of nulling it, so a nested drive leaves the outer context
+   intact.
+2. **Exchange-thread pool.** A reverse-trampoline callback runs *on* an exchange
+   thread, so a nested native call cannot reuse it (its args would alias the
+   outer frame at absolute indices `1..n`). Each frontend pre-creates a small
+   pool of exchange threads (depth `BLYT_HOSTLUA_EXCH_POOL_DEPTH`) as scaffolding
+   in the VM build — before the `guest_heap_used` baseline, so it is excluded
+   from `cart_allocations` (ADR-0029) and identical across host-Lua legs. The
+   trampoline drives nesting level `d` on `pool[d]` (guaranteed distinct from the
+   caller) and pops back on the way out, before any `lua_error` longjmp. Nesting
+   beyond the pool depth is a clean Lua error, not corruption.
+
+**Debugging.** On the native host-Lua path the DAP master hook is armed on every
+pool thread (hooks are per-thread in Lua 5.4), so a breakpoint in a Lua function
+reached via a native→Lua callback fires — the block-a-thread pause model needs
+no yieldable boundary. On WASM, a breakpoint *inside* such a callback would have
+to `lua_yield` across the `lua_pcall(exch)` and rv32-interpreter C frames, which
+the exchange-thread architecture cannot do today; that case is deferred (#272),
+as is DAP *stepping* across the native↔Lua thread boundary (#273).

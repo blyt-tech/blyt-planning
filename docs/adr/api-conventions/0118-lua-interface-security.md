@@ -137,3 +137,22 @@ remain unexported.
   the WASM target (Lua in host, Rust in guest) is explicit in the
   security model. The host-side `.lua_exports` parsing on WASM is covered
   by ADR-0112 rather than duplicated here.
+
+## Amendment (#262, 2026-07-17): `lua_call` / `lua_pcall` join the export surface
+
+ADR-0130's reverse-trampoline (native→Lua calls) adds `lua_call` and `lua_pcall`
+to the `libblyt32lua.so` export list and the bridge opcode allowlist.
+
+This stays within this ADR's model. The **do-not-export** list targets the
+*loading/compiling/executing-new-code* class (`lua_load`, `luaL_loadstring`,
+`luaL_openlibs`, `luaL_requiref`, …). `lua_call`/`lua_pcall` introduce **no new
+code**: they invoke a Lua *value the cart already reached* (a global, a table
+field), so the native half gains no capability the Lua half does not already
+have, and the stripped-stdlib posture is unchanged. Layer 1 (the ECALL
+dispatch) remains the complete security perimeter regardless.
+
+The bridge opcode allowlist stays the enforcement point on WASM: the single new
+`PCALL` opcode is host-mediated, runs the callee under a host `lua_pcall` (errors
+are caught, never panic the module), bounds-checks arg/result counts, and
+restricts the message-handler argument to 0. No loading/compiling opcode is
+added, so the WASM Layer-2 guarantee for native cart portions is preserved.
