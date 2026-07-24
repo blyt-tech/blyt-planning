@@ -516,3 +516,41 @@ also reports `reason: "step"` rather than `"breakpoint"`, matching the emulated
 leg. **WASM** stepping inside a callback remains out of scope — it needs the
 same yieldable rv32 ECALL dispatch #272 tracks; **bare-metal RISC-V** has no DAP
 (GDB only), so this contract is native-host-Lua/emulated only.
+
+## Amendment (#272, 2026-07-25): DAP breakpoints inside a callback on WASM
+
+The #262 amendment armed the master hook on the exchange-thread pool so a
+breakpoint *inside* a native→Lua callback fires — but only on the **native**
+host-Lua leg, which pauses by blocking the executing thread. **WASM** pauses by
+`lua_yield` (the browser/Node event loop cannot block), and the reverse
+callback ran synchronously via `lua_pcall(EX)` from *inside* the rv32 ECALL
+dispatch (deep inside `rv_step`), so a `lua_yield` there had to cross both the
+`lua_pcall` and the non-continuation-based rv32-interpreter C frames — which it
+cannot. So a breakpoint inside a callback silently never stopped on WASM.
+
+**Contract.** On the WASM host-Lua leg a DAP breakpoint *inside* a native→Lua
+callback now **stops** the cart, and the paused callback frame's own locals are
+inspectable (`scopes`/`variables`/`evaluate`), matching the native leg and the
+emulated oracle. Cross-boundary **stepping** and the parent-frame **stackTrace
+splice** (the #273 contract) remain out of scope on WASM — tracked as a
+follow-up; bare-metal RISC-V still has no DAP.
+
+**Mechanism (deferred reverse call).** When the host-Lua DAP master hook is
+armed, the reverse-trampoline PCALL op no longer runs `lua_pcall(EX)` inline.
+It **parks** the rv32 (saves the outer call's CPU+bridge frame, halts with the
+PC left at the op) and `run_frame` returns a new `REVERSE_CALL_PENDING`. The
+frontend trampoline — now at a clean, *yieldable* C boundary below its driver
+coroutine — drives the callback via `lua_resume(EX)` (which also makes
+`lua_yield(EX)` legal, unlike `lua_pcall`). The two yields then **decouple**:
+the callback's DAP pause yields `EX` (the inner `lua_resume` returns to C
+cleanly), and the trampoline then yields the driver coroutine via a standard
+`lua_yieldk`; no C frame is abandoned mid-flight, so no ASYNCIFY is needed. On
+continue, the continuation re-resumes `EX`; on completion a `finish` step
+restores the parked frame, writes the pcall status into the guest register, and
+advances past the op. Nesting composes for free — each level yields its own
+driver thread up the nested resume/yieldk chain, bounded by the existing
+exchange-pool depth. This model is **unified** across the host-Lua legs (native
++ WASM share it) but **gated on the DAP master hook**: run mode, release, the
+emulated leg, and bare-metal keep the synchronous `lua_pcall`, so the
+determinism contract and the byte-exact `cart_allocations` parity gates
+(ADR-0029; blyt#267/#270) are untouched.
