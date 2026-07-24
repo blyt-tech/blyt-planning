@@ -120,6 +120,14 @@ Specific number assignments within each range are made during implementation
 and frozen at that point. They are not speculatively assigned in advance of
 the implementation.
 
+### Console debug framing
+
+The console-debug call (`blyt_console_debug`, lifecycle range) is
+line-oriented: one call emits exactly one line, and the *runtime* appends the
+trailing newline — the emulated legs in their host log sink, native hardware by
+writing it after the payload, since there is no host sink between the cart and
+the fd (blyt#291).
+
 ### Versioning
 
 ECALL numbers, argument layouts, and semantics are frozen per major API
