@@ -470,5 +470,49 @@ pool thread (hooks are per-thread in Lua 5.4), so a breakpoint in a Lua function
 reached via a native→Lua callback fires — the block-a-thread pause model needs
 no yieldable boundary. On WASM, a breakpoint *inside* such a callback would have
 to `lua_yield` across the `lua_pcall(exch)` and rv32-interpreter C frames, which
-the exchange-thread architecture cannot do today; that case is deferred (#272),
-as is DAP *stepping* across the native↔Lua thread boundary (#273).
+the exchange-thread architecture cannot do today; that case is deferred (#272).
+DAP *stepping* across the native↔Lua thread boundary is addressed by the #273
+amendment below (native host-Lua); on WASM it stays gated behind #272.
+
+## Amendment (#273, 2026-07-24): DAP stepping across the native↔Lua boundary
+
+The #262 amendment armed the master hook on the exchange-thread pool, so a
+breakpoint *inside* a native→Lua callback fires. It left the harder case open:
+DAP **stepping** (step in/over/out) and **stackTrace** *across* the boundary.
+The step logic walks the call depth of a **single `lua_State`**
+(`dap_call_depth`), and a reverse-trampoline callback runs on an exchange thread
+— a *different* `lua_State` from the driver coroutine, with the rv32 native half
+in between — so a depth captured on one thread does not compose against a depth
+computed on another. A step out of a callback ran away past the caller, and a
+callback-paused `stackTrace` showed only the callback's own frame.
+
+**Contract (native host-Lua).** Observable behaviour matches the emulated leg,
+where the whole hybrid is one `lua_State` and stepping/stackTrace compose for
+free — that leg is the parity oracle (an emulated control runs the identical
+scripted step walk and must produce identical landings). Concretely:
+
+- **Spliced view.** While paused inside a native→Lua callback, `stackTrace`
+  shows the callback's Lua frames spliced onto the live frames of the native
+  caller's thread (and any further nesting), and `scopes`/`variables`/`evaluate`
+  resolve against a frame's **owning** thread — so the caller's locals are
+  inspectable across the boundary. C/synthetic frames are skipped as elsewhere,
+  so the two DAP backends' incidental C-frame display difference is not part of
+  the contract; the Lua-source frames and step landings are.
+- **Stepping.** `stepIn` at a native-export call **dives** into the Lua callback
+  it triggers (the next Lua line executed); `stepOver`/`stepOut` that exit a
+  callback land on the next Lua line in the caller. There is no bespoke rule —
+  the landings are whatever the single-`lua_State` emulated leg produces.
+
+**Mechanism.** A per-`lua_State` depth cannot express the spliced stack, so the
+reverse-trampoline publishes a **frame base** — the caller thread's logical
+depth — around each nested drive (saved/restored on the C recursion, before any
+error re-raise), and the master hook compares `frame_base + dap_call_depth(L)`.
+A **splice provider** hands the shared inspection core the paused thread's parent
+chain (exchange thread → its caller → … → driver coroutine), which stackTrace
+and the frame-id→(thread, level) resolver walk. Both are inert off the native
+host-Lua path: `frame_base` stays 0 and the provider stays unset on the emulated
+(guest) and WASM legs, which keep their single-stack behaviour. A step stop now
+also reports `reason: "step"` rather than `"breakpoint"`, matching the emulated
+leg. **WASM** stepping inside a callback remains out of scope — it needs the
+same yieldable rv32 ECALL dispatch #272 tracks; **bare-metal RISC-V** has no DAP
+(GDB only), so this contract is native-host-Lua/emulated only.
